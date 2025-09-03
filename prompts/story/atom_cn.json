@@ -1,0 +1,4 @@
+{
+    "goal_update": "优化后的任务目标描述。无需修改，则省略此字段",
+    "atom_result": "atom/complex"
+}

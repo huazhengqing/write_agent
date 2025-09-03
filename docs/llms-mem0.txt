@@ -1,0 +1,92 @@
+# Mem0
+
+## 概述
+
+[什么是Mem0?](https://docs.mem0.ai/overview): 在构建具有记忆功能的对话AI代理时考虑使用Mem0。该页面讨论了使用Mem0的主要原因：上下文管理、智能检索系统、简单API集成和双存储架构（向量和图数据库）。
+[Mem0与传统RAG有何不同?](https://docs.mem0.ai/faqs#how-mem0-is-different-from-traditional-rag): Mem0为LLMs提供的记忆功能相比RAG具有更优的实体关系理解、上下文连续性和自适应学习能力。它能跨会话保留信息，动态更新新数据，并个性化交互，非常适合需要上下文感知的AI应用。
+
+## 核心概念
+
+[记忆类型](https://docs.mem0.ai/core-concepts/memory-types): Mem0实现了短期记忆(用于对话历史和即时上下文)和长期记忆(用于持久存储事实性、情景性和语义信息)，以保持跨交互的上下文和个性化。
+[记忆操作](https://docs.mem0.ai/core-concepts/memory-operations): 两个核心操作支撑Mem0的功能：`add`通过信息提取、冲突解决和双重存储处理和存储对话；`search`通过语义搜索、查询处理和结果排序检索相关记忆。
+[信息处理](https://docs.mem0.ai/core-concepts/memory-operations): 当添加记忆时，Mem0使用LLMs提取相关信息，识别实体和关系，并解决与现有数据的冲突。
+[存储架构](https://docs.mem0.ai/core-concepts/memory-types): Mem0将用于语义信息存储的向量嵌入与高效检索机制相结合，在保持用户特定上下文的同时，能够快速访问相关的历史交互。
+
+## 操作指南
+
+### 安装
+
+[Mem0安装](https://docs.mem0.ai/quickstart): Mem0提供两种安装选项：Mem0平台(托管解决方案)和Mem0开源版。
+[如何安装Mem0开源版](https://docs.mem0.ai/quickstart#mem0-open-source): 如果您更喜欢管理自己的基础设施，可以安装Mem0开源版。此选项需要设置自己的基础设施并管理自己的向量数据库。
+
+## 功能特性
+
+[图记忆](https://docs.mem0.ai/platform/features/graph-memory): Mem0的图记忆系统在数据中的实体间建立关系，通过分析信息点之间的连接实现上下文相关的检索 - 使用`enable_graph=True`激活此功能，可增强超越直接语义匹配的搜索结果，非常适合跟踪演化关系的应用。
+[高级检索](https://docs.mem0.ai/platform/features/advanced-retrieval): Mem0通过三种高级检索模式提供增强的搜索能力：关键词搜索(通过匹配特定术语提高召回率)、重排序(使用神经网络确保最相关的结果排在前面)和过滤(根据特定条件缩小结果范围) - 每种模式可以独立启用或组合使用，以优化搜索精度和相关性。
+[多模态支持](https://docs.mem0.ai/platform/features/multimodal-support): Mem0超越文本支持，可处理图像和文档(JPG、PNG、MDX、TXT、PDF)，允许用户通过直接URL或Base64编码集成视觉和文档内容，增强记忆系统理解和回忆各种媒体类型信息的能力。
+[记忆定制](https://docs.mem0.ai/platform/features/selective-memory): Mem0通过包含和排除规则实现选择性记忆存储，允许用户聚焦相关信息(如特定主题)同时忽略无关数据(如食物偏好)，从而实现更高效、准确且注重隐私的AI交互。
+[自定义分类](https://docs.mem0.ai/platform/features/custom-categories): Mem0允许在项目级别和单个API调用时设置自定义分类，用更具体的分类覆盖默认分类(如personal_details、family、sports) - 只需在添加记忆时提供带有描述性定义的分类字典列表即可提高记忆分类准确性。
+[异步客户端](https://docs.mem0.ai/platform/features/async-client): Mem0提供AsyncMemoryClient用于非阻塞操作，提供与同步客户端相同的功能(add、search、get_all、delete等)但支持async/await，非常适合需要在不阻塞执行的情况下执行记忆操作的高并发应用。
+[记忆导出](https://docs.mem0.ai/platform/features/memory-export): Mem0支持使用可定制的Pydantic模式以结构化格式导出记忆，允许您通过定义模式、提交带有可选处理指令的导出作业以及使用各种过滤选项检索格式化数据，将存储的记忆转换为特定数据结构。
+
+## 开源版
+
+### 使用
+
+#### Python
+
+[初始化Python客户端](https://docs.mem0.ai/open-source/python-quickstart#installation): 使用`pip install mem0ai`安装Mem0，然后通过`from mem0 import Memory; m = Memory()`初始化客户端(需要OpenAI API密钥)。对于高级用法，可使用自定义参数配置或通过`Memory(enable_graph=True)`启用图记忆。
+[配置参数](https://docs.mem0.ai/open-source/python-quickstart#configuration-parameters): Mem0提供广泛的配置选项，包括向量存储(提供商、主机、端口)、LLMs(提供商、模型、温度、API密钥)、嵌入器(提供商、模型)、图存储(提供商、URL、凭证)和常规设置(历史路径、API版本、自定义提示) - 所有这些都可通过综合配置字典进行自定义。
+[如何添加记忆](https://docs.mem0.ai/open-source/python-quickstart#store-a-memory): 使用Python开源版客户端的`add`方法，通过消息或简单字符串向Mem0添加记忆。此方法允许通过提供`user_id`、`agent_id`、`run_id`或`app_id`向特定记忆添加内容。
+[如何搜索记忆](https://docs.mem0.ai/open-source/python-quickstart#search-memories): 使用Python开源版客户端，通过传递查询字符串和可选参数在Mem0中搜索记忆。`search`方法返回按相关性排序的记忆列表。还可以传递自定义过滤器使搜索更具体。
+[如何获取所有记忆](https://docs.mem0.ai/open-source/python-quickstart#retrieve-memories): 使用Python开源版客户端，通过传递`user_id`、`agent_id`、`run_id`或`app_id`获取所有记忆。也可以传递自定义过滤器来筛选记忆。
+[如何获取记忆历史](https://docs.mem0.ai/open-source/python-quickstart#memory-history): 在使用`add`方法添加记忆后，通过传递`memory_id`获取特定记忆的历史记录。
+[如何更新记忆](https://docs.mem0.ai/open-source/python-quickstart#update-a-memory): 在使用`add`方法添加记忆后，通过传递`memory_id`更新记忆。
+[如何删除记忆](https://docs.mem0.ai/open-source/python-quickstart#delete-memory): 在使用`add`方法添加记忆后，通过传递`memory_id`删除记忆。
+
+### 功能特性
+
+[OpenAI兼容性](https://docs.mem0.ai/open-source/features/openai_compatibility): Mem0提供与OpenAI兼容API的无缝集成，开发者可通过使用Mem0 API密钥(或本地无需密钥)初始化客户端，支持多种LLM提供商，并通过user_id、agent_id和自定义过滤器等参数实现跨交互的用户上下文持久化，从而增强对话代理的结构化记忆能力。
+[自定义事实提取提示](https://docs.mem0.ai/open-source/features/custom-fact-extraction-prompt): Mem0支持自定义事实提取提示，通过定义领域特定的示例和格式来定制信息提取，精确控制从消息中提取哪些信息 - 只需在初始化Memory客户端时在配置中提供带有少量示例的自定义提示即可。
+[自定义记忆更新提示](https://docs.mem0.ai/open-source/features/custom-update-memory-prompt): Mem0支持自定义记忆更新提示，通过比较新检索到的事实与现有记忆，并根据提示配置中提供的自定义逻辑和示例确定适当的操作(添加、更新、删除或不更改)，从而控制记忆的修改方式。
+[REST API服务器](https://docs.mem0.ai/open-source/features/rest-api): Mem0提供基于FastAPI的REST API服务器，支持核心操作(创建/检索/搜索/更新/删除记忆)，在/docs提供OpenAPI文档，可通过Docker Compose轻松部署，并预配置数据库(postgres pgvector, neo4j) - 只需设置OPENAI_API_KEY即可开始使用。
+[图记忆](https://docs.mem0.ai/open-source/graph_memory/overview): Mem0的开源图记忆系统通过安装`pip install "mem0ai[graph]"`并配置图存储提供商(如Neo4j)，支持构建和查询实体间的关系 - 通过结合向量和图数据库方法跟踪信息点之间的演化关系，实现更具上下文的记忆检索。
+
+### 组件
+
+#### 语言模型
+
+[OpenAI](https://docs.mem0.ai/components/llms/models/openai): 通过设置OPENAI_API_KEY并配置Memory客户端的提供商设置来集成OpenAI语言模型 - 支持标准模型(如gpt-4)和结构化输出，可配置温度参数、最大token数和Openrouter集成。
+[Anthropic](https://docs.mem0.ai/components/llms/models/anthropic): 通过从账户设置页面获取ANTHROPIC_API_KEY并配置Memory客户端的提供商设置来集成Anthropic语言模型 - 支持如claude-3-7-sonnet-latest等模型，可自定义温度参数和max_tokens参数。
+[Google AI](https://docs.mem0.ai/components/llms/models/google_AI): 通过从Google Maker Suite获取GEMINI_API_KEY并使用litellm提供商配置Memory客户端来集成Gemini语言模型 - 支持如gemini-pro等模型，可自定义温度参数和max_tokens参数。
+[Groq](https://docs.mem0.ai/components/llms/models/groq): 通过设置GROQ_API_KEY并配置Memory客户端的提供商设置来集成Groq语言处理单元(LPU)优化模型 - 支持如mixtral-8x7b-32768等模型，可自定义温度参数和max_tokens参数，适用于高性能AI推理。
+[Together](https://docs.mem0.ai/components/llms/models/together): 通过设置TOGETHER_API_KEY并配置Memory客户端的提供商设置来集成Together语言模型 - 支持标准模型(如together-llama-3-8b-instant)和结构化输出，可配置温度参数、最大token数和Openrouter集成。
+[Deepseek](https://docs.mem0.ai/components/llms/models/deepseek): 通过设置DEEPSEEK_API_KEY并配置Memory客户端的提供商设置来集成Deepseek语言模型 - 支持标准模型(如deepseek-chat)和结构化输出，可配置温度参数、最大token数和Openrouter集成。
+[xAI](https://docs.mem0.ai/components/llms/models/xai): 通过设置XAI_API_KEY并配置Memory客户端的提供商设置来集成xAI语言模型 - 支持标准模型(如xai-chat)和结构化输出，可配置温度参数、最大token数和Openrouter集成。
+[LM Studio](https://docs.mem0.ai/components/llms/models/lmstudio): 通过配置Memory客户端的提供商设置和本地LM Studio服务器来本地运行Mem0 - 支持将LM Studio用于语言模型推理和嵌入，当完全本地运行并加载适当模型时无需外部API密钥。
+[Ollama](https://docs.mem0.ai/components/llms/models/ollama): 通过配置Memory客户端的提供商设置(如模型mixtral:8x7b、温度参数和max_tokens参数)来本地运行Ollama语言模型 - 支持工具调用功能，仅需OpenAI API密钥用于嵌入。
+[AWS Bedrock](https://docs.mem0.ai/components/llms/models/aws_bedrock): 通过设置AWS_ACCESS_KEY_ID和AWS_SECRET_ACCESS_KEY并配置Memory客户端的提供商设置来集成AWS Bedrock语言模型 - 支持标准模型(如bedrock-anthropic-claude-3-5-sonnet)和结构化输出，可配置温度参数、最大token数和Openrouter集成。
+[Azure OpenAI](https://docs.mem0.ai/components/llms/models/azure_openai): 通过设置LLM_AZURE_OPENAI_API_KEY、LLM_AZURE_ENDPOINT、LLM_AZURE_DEPLOYMENT和LLM_AZURE_API_VERSION环境变量并配置Memory客户端的提供商设置来集成Azure OpenAI语言模型 - 支持标准和结构化输出模型，可自定义部署、API版本、端点和头部(注意：某些功能如并行工具调用和温度参数当前不支持)。
+[LiteLLM](https://docs.mem0.ai/components/llms/models/litellm): 通过设置LITELLM_API_KEY并配置Memory客户端的提供商设置来集成LiteLLM语言模型 - 支持标准模型(如llama3.1:8b)和结构化输出，可配置温度参数、最大token数和Openrouter集成。
+[Mistral](https://docs.mem0.ai/components/llms/models/mistral): 通过设置MISTRAL_API_KEY并配置Memory客户端的提供商设置来集成Mistral语言模型 - 支持标准模型(如mistral-large-latest)和结构化输出，可配置温度参数、最大token数和Openrouter集成。
+
+#### 嵌入器
+
+[OpenAI](https://docs.mem0.ai/components/embedders/models/openai): 通过设置OPENAI_API_KEY并配置Memory客户端的提供商设置来集成OpenAI嵌入模型 - 支持如text-embedding-3-small(默认)和text-embedding-3-large等模型，可自定义维度。
+[Azure OpenAI](https://docs.mem0.ai/components/embedders/models/azure_openai): 通过设置EMBEDDING_AZURE_OPENAI_API_KEY、EMBEDDING_AZURE_ENDPOINT、EMBEDDING_AZURE_DEPLOYMENT和EMBEDDING_AZURE_API_VERSION环境变量并配置Memory客户端的提供商设置来集成Azure OpenAI嵌入模型 - 支持如text-embedding-3-large等模型，可自定义维度和通过azure_kwargs进行Azure特定配置。
+[Vertex AI](https://docs.mem0.ai/components/embedders/models/google_ai): 通过将GOOGLE_APPLICATION_CREDENTIALS环境变量设置为服务账户凭证JSON文件并配置Memory客户端的提供商设置来集成Google Cloud的Vertex AI嵌入模型 - 支持如text-embedding-004等模型，可自定义嵌入类型(RETRIEVAL_DOCUMENT、RETRIEVAL_QUERY等)和维度。
+[Groq](https://docs.mem0.ai/components/embedders/models/groq): 通过设置GROQ_API_KEY并配置Memory客户端的提供商设置来集成Groq嵌入模型 - 支持如text-embedding-3-small(默认)和text-embedding-3-large等模型，可自定义维度。
+[Hugging Face](https://docs.mem0.ai/components/embedders/models/hugging_face): 通过配置Memory客户端的提供商设置(如模型multi-qa-MiniLM-L6-cos-v1、嵌入维度和model_kwargs)来本地运行Hugging Face嵌入模型 - 仅需OpenAI API密钥用于语言模型功能。
+[Ollama](https://docs.mem0.ai/components/embedders/models/ollama): 通过配置Memory客户端的提供商设置(如模型nomic-embed-text、嵌入维度默认512和自定义基础URL)来本地运行Ollama嵌入模型 - 仅需OpenAI API密钥用于语言模型功能。
+[Gemini](https://docs.mem0.ai/components/embedders/models/gemini): 通过设置GOOGLE_API_KEY并配置Memory客户端的提供商设置来集成Gemini嵌入模型 - 支持如text-embedding-004等模型，可自定义维度(默认768)，需要OpenAI API密钥用于语言模型功能。
+
+#### 向量存储
+
+[Qdrant](https://docs.mem0.ai/components/vectordbs/dbs/qdrant): 通过配置Memory客户端的提供商设置(如collection_name、host、port等参数)来集成Qdrant向量数据库 - 支持本地和远程部署，可选择持久化存储和自定义客户端配置。
+[Pinecone](https://docs.mem0.ai/components/vectordbs/dbs/pinecone): 通过配置Memory客户端的提供商设置(如index_name、environment等参数)来集成Pinecone向量数据库 - 支持无服务器和基于pod的部署，可选择自定义客户端配置和混合搜索。
+[Weaviate](https://docs.mem0.ai/components/vectordbs/dbs/weaviate): 通过配置Memory客户端的提供商设置(如class_name、host、port等参数)来集成Weaviate向量数据库 - 支持本地和远程部署，可选择持久化存储和自定义客户端配置。
+[Chroma](https://docs.mem0.ai/components/vectordbs/dbs/chroma): 通过配置Memory客户端的提供商设置(如collection_name、host、port等参数)来集成Chroma向量数据库 - 支持本地和远程部署，可选择持久化存储和自定义客户端配置。
+[Postgres pgvector](https://docs.mem0.ai/components/vectordbs/dbs/pgvector): 通过配置Memory客户端的提供商设置(如table_name、host、port等参数)来集成Postgres pgvector扩展 - 支持本地和远程部署，可选择持久化存储和自定义客户端配置。
+[Redis](https://docs.mem0.ai/components/vectordbs/dbs/redis): 通过配置Memory客户端的提供商设置(如index_name、host、port等参数)来集成Redis向量数据库 - 支持本地和远程部署，可选择持久化存储和自定义客户端配置。
+[LanceDB](https://docs.mem0.ai/components/vectordbs/dbs/lancedb): 通过配置Memory客户端的提供商设置(如table_name、uri等参数)来集成LanceDB向量数据库 - 支持本地和远程部署，可选择持久化存储和自定义客户端配置。
+[FAISS](https://docs.mem0.ai/components/vectordbs/dbs/faiss): 通过配置Memory客户端的提供商设置(如index_name、file_path等参数)来集成FAISS向量数据库 - 支持本地部署，可选择持久化存储和自定义客户端配置。

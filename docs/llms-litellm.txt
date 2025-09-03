@@ -1,0 +1,170 @@
+# LiteLLM 
+
+## 安装
+```
+pip install litellm
+pip install "litellm[caching]"
+pip install lunary
+```
+
+## /chat/completions
+
+### 示例
+调用：
+```python
+import litellm
+import openai
+import os 
+
+from litellm.caching.caching import Cache
+litellm.cache = Cache(type="disk")
+
+## set env variables for logging tools (API key set up is not required when using MLflow)
+os.environ["LUNARY_PUBLIC_KEY"] = "your-lunary-public-key" # get your public key at https://app.lunary.ai/settings
+# set callbacks
+litellm.input_callback = ["lunary"]
+litellm.success_callback = ["lunary"]
+litellm.failure_callback = ["lunary"]
+
+## set ENV variables
+# os.environ["OPENAI_API_KEY"] = "your-api-key"
+# os.environ["OPENROUTER_API_KEY"] = "openrouter_api_key"
+
+api_base = "http://0.0.0.0:4000"     # set API Base of your Custom OpenAI Endpoint
+api_key = "sk-1234"                  # api key to your openai compatible endpoint
+model = "openai/mistral"              # add `openai/` prefix to model so litellm knows to route to OpenAI
+
+user_message = "Hello, whats the weather in San Francisco??"
+
+try:
+    response = litellm.completion(
+        model=model,
+        api_key=api_key,
+        api_base=api_base,
+        temperature=0.7,
+        # max_tokens=8192,
+        messages=[{"role": "user", "content": user_message}], 
+        # timeout=300, 
+        caching=True, 
+        user="ishaan_litellm",
+        # reasoning_effort="low",  # 推理模型
+        num_retries=5       # 重试失败的请求
+    )
+    print(response)
+except openai.OpenAIError as e:
+    # should_retry = litellm._should_retry(e.status_code) # 是否应该重试异常
+    # print(f"should_retry: {should_retry}")
+    # print("Passed: Raised correct exception. Got openai.APITimeoutError\nGood Job", e)
+    # print(type(e))
+    print(e)
+```
+返回输出：
+```python
+{
+    "id": "chatcmpl-565d891b-a42e-4c39-8d14-82a1f5208885",
+    "created": 1734366691,
+    "model": "claude-3-sonnet-20240229",
+    "object": "chat.completion",
+    "system_fingerprint": null,
+    "choices": [
+        {
+            "finish_reason": "stop",
+            "index": 0,
+            "message": {
+                "content": "Hello! As an AI language model, I don't have feelings, but I'm operating properly and ready to assist you with any questions or tasks you may have. How can I help you today?",
+                "role": "assistant",
+                "tool_calls": null,
+                "function_call": null
+            }
+        }
+    ],
+    "usage": {
+        "completion_tokens": 43,
+        "prompt_tokens": 13,
+        "total_tokens": 56,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cached_tokens": 0
+        },
+        "cache_creation_input_tokens": 0,
+        "cache_read_input_tokens": 0
+    }
+}
+```
+
+### 接口说明 litellm.completion()
+输入参数：
+```python
+def completion(
+    model: str,
+    messages: List = [],
+    # Optional OpenAI params
+    timeout: Optional[Union[float, int]] = None,
+    temperature: Optional[float] = None,
+    top_p: Optional[float] = None,
+    n: Optional[int] = None,
+    stream: Optional[bool] = None,
+    stream_options: Optional[dict] = None,
+    stop=None,
+    max_completion_tokens: Optional[int] = None,
+    max_tokens: Optional[int] = None,
+    presence_penalty: Optional[float] = None,
+    frequency_penalty: Optional[float] = None,
+    logit_bias: Optional[dict] = None,
+    user: Optional[str] = None,
+    # openai v1.0+ new params
+    response_format: Optional[dict] = None,
+    seed: Optional[int] = None,
+    tools: Optional[List] = None,
+    tool_choice: Optional[str] = None,
+    parallel_tool_calls: Optional[bool] = None,
+    logprobs: Optional[bool] = None,
+    top_logprobs: Optional[int] = None,
+    deployment_id=None,
+    # soon to be deprecated params by OpenAI
+    functions: Optional[List] = None,
+    function_call: Optional[str] = None,
+    # set api_base, api_version, api_key
+    base_url: Optional[str] = None,
+    api_version: Optional[str] = None,
+    api_key: Optional[str] = None,
+    model_list: Optional[list] = None,  # pass in a list of api_base,keys, etc.
+    # Optional liteLLM function params
+    **kwargs,
+
+) -> ModelResponse:
+```
+输出格式:
+```python
+{
+  'choices': [
+    {
+      'finish_reason': str,     # String: 'stop'
+      'index': int,             # Integer: 0
+      'message': {              # Dictionary [str, str]
+        'role': str,            # String: 'assistant'
+        'content': str,          # String: "default message"
+        # "tool_calls": null,
+        # "function_call": null,
+        "reasoning_content": str,
+        "thinking_blocks": [ # only returned for Anthropic models
+            {
+                "type": "thinking",
+                "thinking": str,
+                "signature": str
+            }
+        ]
+      }
+    }
+  ],
+  'created': str,               # String: None
+  'model': str,                 # String: None
+  'usage': {                    # Dictionary [str, int]
+    'prompt_tokens': int,       # Integer
+    'completion_tokens': int,   # Integer
+    'total_tokens': int         # Integer
+  }
+}
+```
+
