@@ -1,13 +1,5 @@
 #!/bin/bash
 
-echo "检查配置文件..."
-if [ ! -f "./prefect.toml" ]; then
-    echo "错误：prefect.toml 配置文件不在当前目录下！"
-    echo "请确保在正确的项目根目录下运行此脚本。"
-    exit 1
-else
-    echo "prefect.toml 配置文件存在。"
-fi
 
 if [ ! -d "venv" ]; then
     echo "未找到虚拟环境。正在创建..."
@@ -32,11 +24,12 @@ echo
 
 echo "从 requirements.txt 安装依赖..."
 pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+echo
 
 
-# 查看当前生效的配置（会显示来源为 project: ./prefect.toml）
-# 若输出中包含 project: /path/to/你的项目/prefect.toml，说明配置已被正确读取。
+echo "prefect 当前生效的配置"
 prefect config view --show-sources
+echo
 
 
 echo "安装 Playwright 浏览器..."
