@@ -1,11 +1,12 @@
-import litellm
 from loguru import logger
 from ..util.models import Task
-from ..util.llm import get_llm_params
+from ..util.llm import get_llm_params, llm_acompletion
 from ..memory import get_llm_messages
 
 
 async def design(task: Task) -> Task:
+    logger.info(f"{task}")
+
     if not task.id or not task.goal:
         raise ValueError("任务ID和目标不能为空。")
     if task.task_type != "design":
@@ -24,17 +25,9 @@ async def design(task: Task) -> Task:
         raise ValueError(f"未知的 category: {task.category}")
 
     llm_params = get_llm_params(messages, temperature=0.75)
-    logger.info(f"{llm_params}")
-
-    response = await litellm.acompletion(**llm_params)
-    if not response.choices or not response.choices[0].message:
-        raise ValueError("LLM API 调用失败, 没有返回任何 choices 或 message。")
-    
-    message = response.choices[0].message
+    message = await llm_acompletion(llm_params)
     reason = message.get("reasoning_content") or message.get("reasoning", "")
     content = message.content
-    if not content:
-        raise ValueError("LLM API 调用失败, 没有返回任何 content。")
     
     updated_task = task.model_copy(deep=True)
     updated_task.results = {

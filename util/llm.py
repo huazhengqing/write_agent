@@ -1,5 +1,6 @@
 import copy
 import litellm
+from loguru import logger
 from litellm.caching.caching import Cache
 from typing import List, Dict, Any, Optional
 
@@ -9,12 +10,7 @@ litellm.cache = Cache(type='disk')
 # litellm.success_callback = ["lunary"]
 # litellm.failure_callback = ["lunary"]
 
-
 litellm.enable_json_schema_validation=True
-
-
-###############################################################################
-
 
 DEFAULT_LLM_PARAMS = {
     'model': 'openrouter/deepseek/deepseek-r1-0528:free',
@@ -39,6 +35,16 @@ DEFAULT_LLM_PARAMS = {
 }
 
 
+###############################################################################
+
+
+def get_llm_messages(SYSTEM_PROMPT: str, USER_PROMPT: str, context_dict: Dict[str, Any] = None) -> list[dict]:
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": USER_PROMPT.format(**context_dict)}
+    ]
+    return messages
+
 def get_llm_params(
     messages: List[Dict[str, Any]],
     temperature: Optional[float] = None,
@@ -54,13 +60,25 @@ def get_llm_params(
     llm_params['messages'] = copy.deepcopy(messages)
     return llm_params
 
+async def llm_acompletion(llm_params):
+    logger.info(f"{llm_params}")
 
-def get_llm_messages(SYSTEM_PROMPT: str, USER_PROMPT: str, context_dict: Dict[str, Any] = None) -> list[dict]:
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": USER_PROMPT.format(**context_dict)}
-    ]
-    return messages
+    response = await litellm.acompletion(**llm_params)
 
+    if not response.choices or not response.choices[0].message:
+        raise ValueError(f"{llm_params}")
+    
+    message = response.choices[0].message
+    logger.info(f"{message}")
+
+    content = message.content
+    if not content:
+        raise ValueError(f"{message}")
+    
+    reason = message.get("reasoning_content") or message.get("reasoning", "")
+    if not reason:
+        logger.error(f"{message}")
+    
+    return message
 
 

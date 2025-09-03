@@ -53,12 +53,9 @@ def sanitize_filename(name: str) -> str:
 async def _run_task_in_context(coro, run_id: str):
     with logger.contextualize(run_id=run_id):
         try:
-            logger.debug(f"任务开始...")
             result = await coro
-            logger.debug(f"任务成功结束。")
             return result
         except Exception:
-            logger.exception(f"任务执行期间发生未捕获的异常。")
             raise
 
 
@@ -90,9 +87,8 @@ async def run_all_tasks(tasks_data: list, max_steps: int):
         sanitized_language = sanitize_filename(language)
         run_id = f"{sanitized_category}_{sanitized_name}_{sanitized_language}_{stable_unique_id}"
         root_task.run_id = run_id
-        
-        logger.debug(f"为任务创建协程: {root_task}")
 
+        logger.info(f"{root_task} {max_steps}")
         agent_coro = agent_flow(current_task=root_task, max_steps=max_steps)
         wrapped_coro = _run_task_in_context(agent_coro, run_id)
         coroutines.append(wrapped_coro)
@@ -106,8 +102,8 @@ async def run_all_tasks(tasks_data: list, max_steps: int):
             failed_tasks += 1
         else:
             successful_tasks += 1
-            
-    logger.debug(f"所有任务执行完毕。成功: {successful_tasks}, 失败: {failed_tasks}.")
+    
+    logger.info(f"{successful_tasks} {failed_tasks}")
 
 
 def main():
@@ -121,21 +117,15 @@ def main():
         with open(args.json_file, 'r', encoding='utf-8') as f:
             data = json.load(f)
     except FileNotFoundError:
-        logger.error(f"错误: JSON文件未找到 at '{args.json_file}'")
         sys.exit(1)
     except json.JSONDecodeError:
-        logger.error(f"错误: 无法解析JSON文件 at '{args.json_file}'")
         sys.exit(1)
 
     tasks_data = data.get("tasks")
     if not tasks_data:
-        logger.warning(f"在 '{args.json_file}' 中未找到 'tasks' 列表或列表为空。程序退出。")
         return
         
     asyncio.run(run_all_tasks(tasks_data, 100))
-
-
-###############################################################################
 
 
 if __name__ == "__main__":

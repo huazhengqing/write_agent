@@ -45,6 +45,11 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+echo "查看当前配置的 API 地址"
+prefect --version
+prefect config view
+prefect config view --show-sources
+
 echo "⏳ 正在等待 Prefect server 响应... (PID: $PREFECT_PID)"
 max_attempts=30
 attempt=0

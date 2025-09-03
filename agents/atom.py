@@ -1,10 +1,9 @@
 import os
-import litellm
 from loguru import logger
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
 from ..util.models import Task
-from ..util.llm import get_llm_params
+from ..util.llm import get_llm_params, llm_acompletion
 from ..memory import get_llm_messages
 
 
@@ -14,6 +13,8 @@ class AtomOutput(BaseModel):
 
 
 async def atom(task: Task) -> Task:
+    logger.info(f"{task}")
+
     if not task.id or not task.goal:
         raise ValueError("任务ID和目标不能为空。")
 
@@ -39,7 +40,6 @@ async def atom(task: Task) -> Task:
                     "atom_result": data.atom_result,
                 }
                 return updated_task
-
         if task.task_type == "design":
             from ..prompts.story.atom_design_cn import SYSTEM_PROMPT, USER_PROMPT
             messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
@@ -86,19 +86,11 @@ async def atom(task: Task) -> Task:
 
     llm_params = get_llm_params(messages, temperature=0.1)
     llm_params['response_format'] = {"type": "json_object", "schema": AtomOutput.model_json_schema()}
-    logger.info(f"{llm_params}")
-
-    response = await litellm.acompletion(**llm_params)
-    if not response.choices or not response.choices[0].message:
-        raise ValueError(f"LLM API 调用失败(task: {task.id}), 没有返回任何 choices。")
-    
-    message = response.choices[0].message
+    message = await llm_acompletion(llm_params)
     reason = message.get("reasoning_content") or message.get("reasoning", "")
     content = message.content
-    if not content:
-        raise ValueError(f"LLM API 调用失败(task: {task.id}), 返回的 content 为空。")
-    
     data = AtomOutput.model_validate_json(content)
+
     updated_task = task.model_copy(deep=True)
     updated_task.results = {
         "result": content,

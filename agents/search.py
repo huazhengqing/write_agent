@@ -2,7 +2,6 @@ import os
 import json
 import httpx
 import asyncio
-import litellm
 import functools
 from loguru import logger
 from diskcache import Cache
@@ -16,7 +15,7 @@ from langchain_community.utilities import SearxSearchWrapper
 from langdetect import detect, LangDetectException
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from ..util.models import Task
-from ..util.llm import get_llm_params
+from ..util.llm import get_llm_params, llm_acompletion
 from ..memory import memory, get_llm_messages
 
 
@@ -80,23 +79,10 @@ SEARCH_CACHE = Cache(os.path.join(cache_dir, 'search_cache'), size_limit=int(128
 SCRAPE_CACHE = Cache(os.path.join(cache_dir, 'scrape_cache'), size_limit=int(128 * 1024 * 1024))
 
 
-"""
-初始化一个 SearxNG 搜索工具的实例。
-SearxSearchWrapper 是 LangChain 提供的一个工具类, 用于与 SearxNG 这个元搜索引擎进行交互。
-searx_host 从环境变量 "SearXNG" 中读取, 如果未设置, 则默认为本地地址。
-这与 docker-compose.yml 中配置的 searxng 服务相对应。
-"""
 search_tool = SearxSearchWrapper(searx_host=os.environ.get("SearXNG", "http://127.0.0.1:8080"))
 
 
 def get_embedding_model(language: str) -> SentenceTransformer:
-    """
-    根据语言加载并返回相应的句子嵌入模型。
-    - 中文任务使用 'BAAI/bge-small-zh'。
-    - 其他语言任务使用 'all-MiniLM-L6-v2'。
-    模型会优先从本地 '../models/' 目录加载, 如果找不到则从 Hugging Face Hub 下载。
-    这种动态加载策略确保了为不同语言的任务选择最优且高效的模型。
-    """
     if language.startswith('zh'):
         model_name = 'BAAI/bge-small-zh'
         model_local_dir = 'bge-small-zh'
@@ -109,7 +95,6 @@ def get_embedding_model(language: str) -> SentenceTransformer:
     if not os.path.isdir(model_path):
         logger.warning(f"本地模型路径 '{model_path}' 不存在, 将尝试从网络下载 '{model_name}'。")
         logger.warning("请考虑运行 ./start.sh 脚本中的 hf download 命令来本地化模型, 以提高加载速度和稳定性。")
-        # 回退到在线下载
         model_path = model_name
     
     logger.info(f"正在为语言 '{language}' 加载嵌入模型: {model_path}")
@@ -130,7 +115,6 @@ def async_retry(retries=3, backoff_in_seconds=1):
                         raise e
                     
                     sleep = backoff_in_seconds * (2 ** x)
-                    logger.warning(f"函数 {func.__name__} 失败, 错误: {e}。将在 {sleep} 秒后重试...")
                     await asyncio.sleep(sleep)
                     x += 1
         return wrapper
@@ -265,16 +249,13 @@ PROMPT_SELF_CORRECTION = """
 # 图节点
 
 async def get_structured_output_with_retry(messages: List[dict], response_model: BaseModel, retries: int = 1):
-    """
-    调用 LLM 以获取结构化输出, 并在解析失败时自动尝试纠错。
-    """
     response = None # 初始化 response 以避免 UnboundLocalError
     for i in range(retries + 1):
         try:
             llm_params = get_llm_params(messages, response_model=response_model)
-            response = await litellm.acompletion(llm_params)
 
-            message = response.choices[0].message
+            message = await llm_acompletion(llm_params)
+
             # 增加对LLM响应格式的健壮性检查, 防止因缺少 tool_calls 导致崩溃
             if not message.tool_calls or len(message.tool_calls) == 0:
                 raise ValueError("LLM响应中缺少预期的工具调用 (tool_calls)。")
@@ -569,8 +550,9 @@ async def rolling_summary_node(state: SearchAgentState) -> dict:
         raise ValueError(f"未知的 category: {task.category}")
 
     llm_params = get_llm_params([{"role": "user", "content": prompt}])
-    response = await litellm.acompletion(llm_params)
-    summary = response.choices[0].message.content
+
+    message = await llm_acompletion(llm_params)
+    summary = message.content
 
     logger.info(f"🔄 生成滚动总结: {summary[:200]}...")
     return {"rolling_summary": summary, "previous_rolling_summary": previous_summary}
@@ -609,8 +591,9 @@ async def synthesize_node(state: SearchAgentState) -> dict:
         raise ValueError(f"未知的 category: {task.category}")
 
     llm_params = get_llm_params(messages, temperature=0.4)
-    response = await litellm.acompletion(llm_params)
-    final_report = response.choices[0].message.content
+
+    message = await llm_acompletion(llm_params)
+    final_report = message.content
 
     logger.info("✅ 报告生成完毕。")
 
@@ -661,8 +644,9 @@ async def should_continue_search(state: SearchAgentState) -> str:
             current_summary=current_summary
         )
         llm_params = get_llm_params([{"role": "user", "content": prompt}], temperature=0)
-        response = await litellm.acompletion(llm_params)
-        is_stagnant = response.choices[0].message.content.strip().lower() == 'true'
+        
+        message = await llm_acompletion(llm_params)
+        is_stagnant = message.content.strip().lower() == 'true'
         if is_stagnant:
             logger.info("⏹️ 研究停滞（LLM判断）, 新一轮未发现显著信息, 结束当前任务研究。")
             return "end_task"
@@ -697,6 +681,8 @@ async def search(task: Task) -> Task:
     3.  报告生成与结束 (Termination):
         -   `synthesize`: 汇集所有信息, 生成最终报告, 流程结束 (`END`)。
     """
+    logger.info(f"{task}")
+
     if not task.id or not task.goal:
         raise ValueError("任务ID和目标不能为空。")
     if task.task_type != "search":
@@ -706,8 +692,8 @@ async def search(task: Task) -> Task:
     try:
         lang = detect(task.goal)
     except LangDetectException:
-        lang = 'en' # 默认为英文
-        logger.warning(f"无法检测任务 '{task.goal}' 的语言, 默认使用英文模型。")
+        lang = 'zh'
+        logger.warning(f"无法检测任务 '{task.goal}' 的语言")
     
     embedding_model = get_embedding_model(lang)
     
@@ -768,6 +754,7 @@ async def search(task: Task) -> Task:
         final_state = await app.ainvoke(initial_state)
     except Exception as e:
         logger.error(f"执行研究任务 '{task.goal}' 时发生意外错误: {e}", exc_info=True)
+
         updated_task = task.model_copy(deep=True)
         updated_task.results = {
             "result": f"任务执行失败: {e}",
@@ -784,6 +771,8 @@ async def search(task: Task) -> Task:
         "result": final_state['final_report'],
         "reasoning": reasoning_str,
     }
+
+    logger.info(f"{updated_task}")
     return updated_task
 
 

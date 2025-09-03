@@ -28,6 +28,7 @@ echo
 
 
 echo "prefect 当前生效的配置"
+prefect --version
 prefect config view --show-sources
 echo
 
