@@ -1,0 +1,45 @@
+# 核心 API 配置（本地服务器）
+# 连接本地运行的 Prefect 服务器（默认地址，若未修改可省略）
+# PREFECT_API_URL = "http://localhost:4200/api"
+
+# 数据库配置（若使用自定义 SQLite 路径）
+# 本地服务器默认使用 ~/.prefect/prefect.db（SQLite）
+# 注意：路径中的 "./" 表示项目根目录（与 prefect.toml 同目录）
+PREFECT_API_DATABASE_CONNECTION_URL = "sqlite+aiosqlite:///./prefect/prefect.db"
+
+# 存储配置（本地文件系统）
+# 流程运行结果、缓存等默认存在 ~/.prefect/storage
+PREFECT_STORAGE_DEFAULT_BASEPATH = "./prefect/storage"
+
+# 本地文件存储块的详细配置（覆盖默认存储块设置）
+[storage.local_file_system]
+# 存储块的根路径（与上面的基础路径保持一致，确保数据集中管理）
+basepath = "./prefect/storage"
+# 自动创建不存在的存储目录（推荐开启）
+create_directory = true
+
+# 结果持久化配置
+# 默认持久化所有流程/任务结果（本地开发推荐开启）
+PREFECT_RESULTS_PERSIST_BY_DEFAULT = true
+# 指定默认使用本地文件存储块保存结果
+PREFECT_RESULTS_DEFAULT_STORAGE_BLOCK = "local-file-system/default"
+
+# 缓存配置
+# 缓存数据的默认存储块（与结果存储块保持一致，方便管理）
+PREFECT_CACHE_DEFAULT_STORAGE_BLOCK = "local-file-system/default"
+# 缓存默认过期时间（86400秒 = 24小时，按需调整）
+PREFECT_CACHE_DEFAULT_EXPIRY = 86400
+
+# 流程默认超时时间（3600秒 = 1小时）
+PREFECT_FLOW_DEFAULT_TIMEOUT_SECONDS = 3600
+# 任务默认重试次数
+PREFECT_TASK_DEFAULT_RETRIES = 2
+# 任务重试间隔（10秒）
+PREFECT_TASK_DEFAULT_RETRY_DELAY_SECONDS = 10
+
+# 日志配置
+# 设置日志级别（DEBUG/INFO/WARNING/ERROR，默认 INFO）
+#PREFECT_LOGGING_LEVEL = "INFO"
+# 日志输出格式（可选）
+#PREFECT_LOGGING_FORMATTERS_STANDARD_FMT = "%(asctime)s | %(levelname)s | %(message)s"
+

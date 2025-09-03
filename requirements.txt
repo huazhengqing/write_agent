@@ -1,5 +1,4 @@
 nltk
-mem0
 httpx
 jieba
 loguru

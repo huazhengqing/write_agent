@@ -14,10 +14,11 @@
 .env
 models/
 venv/
+prefect/*
 bug/
 logs/
 docs/*.pdf
-output/
+output/*
 node_modules/
 __pycache__/
 searxng/
@@ -26,7 +27,7 @@ searxng/
 *.pdf
 test_*.py
 *_test.py
-
+init.md
 
 
 
