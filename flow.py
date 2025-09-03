@@ -14,22 +14,6 @@ from agents.search import search
 from agents.search_aggregate import search_aggregate
 
 
-"""
-
-
-分析、审查当前文件的代码，找出bug并改正， 指出可以优化的地方。
-
-
-根据以上分析，改进建议， 请直接修改 文件，并提供diff。
-
-
-
-"""
-
-
-###############################################################################
-
-
 def generate_task_cache_key(context: TaskRunContext, parameters: Dict[str, Any]) -> str:
     flow_run_name = context.flow_run.name
     task_id = parameters['task'].id
@@ -44,7 +28,7 @@ def generate_task_cache_key(context: TaskRunContext, parameters: Dict[str, Any])
 )
 async def task_atom(task: Task) -> Task:
     logger = get_run_logger()
-    logger.info(f"判断任务 '{task.id}' 的原子性...")
+    logger.debug(f"判断任务 '{task.id}' 的原子性...")
     updated_task = await atom(task)
     return updated_task
 
@@ -57,7 +41,7 @@ async def task_atom(task: Task) -> Task:
 )
 async def task_plan(task: Task) -> Task:
     logger = get_run_logger()
-    logger.info(f"为任务 '{task.id}' 进行规划和分解...")
+    logger.debug(f"为任务 '{task.id}' 进行规划和分解...")
     pland_task = await plan(task)
     return pland_task
 
@@ -70,7 +54,7 @@ async def task_plan(task: Task) -> Task:
 )
 async def task_execute(task: Task) -> Task:
     logger = get_run_logger()
-    logger.info(f"执行任务 '{task.id}' (类型: {task.task_type})...")
+    logger.debug(f"执行任务 '{task.id}' (类型: {task.task_type})...")
     if task.task_type == "design":
         return await design(task)
     elif task.task_type == "write":
@@ -89,7 +73,7 @@ async def task_execute(task: Task) -> Task:
 )
 async def task_aggregate(task: Task) -> Task:
     logger = get_run_logger()
-    logger.info(f"整合任务 '{task.id}' 的子任务结果...")
+    logger.debug(f"整合任务 '{task.id}' 的子任务结果...")
     if task.task_type == "design":
         return await design_aggregate(task)
     elif task.task_type == "search":
@@ -100,7 +84,7 @@ async def task_aggregate(task: Task) -> Task:
 @task(name="存储结果到记忆库", cache_key_fn=generate_task_cache_key)
 async def store_memory(task: Task, operation_name: str):
     logger = get_run_logger()
-    logger.info(f"将任务 '{task.id}' 在 '{operation_name}' 步骤的结果存入记忆库...")
+    logger.debug(f"将任务 '{task.id}' 在 '{operation_name}' 步骤的结果存入记忆库...")
     await memory.add(task, operation_name)
     return True
 
@@ -112,29 +96,29 @@ async def store_memory(task: Task, operation_name: str):
 async def agent_flow(current_task: Task, max_steps: int = 50, current_step: int = 0) -> int:
     logger = get_run_logger()
     if current_step >= max_steps:
-        logger.warning(f"已达到最大步骤数 {max_steps}，流程终止。")
+        logger.warning(f"已达到最大步骤数 {max_steps}, 流程终止。")
         return current_step
 
     current_step += 1
-    logger.info(f"--- [步骤 {current_step}/{max_steps}] --- 开始处理任务: {current_task.id} ---")
+    logger.debug(f"--- [步骤 {current_step}/{max_steps}] --- 开始处理任务: {current_task.id} ---")
 
     ret_atom = await task_atom(current_task)
     await store_memory(ret_atom, "task_atom")
 
     is_atom = ret_atom.results.get("atom_result") == "atom"
     if is_atom:
-        logger.info(f"任务 '{current_task.id}' 是原子任务，准备执行。")
+        logger.debug(f"任务 '{current_task.id}' 是原子任务, 准备执行。")
         ret_excute = await task_execute(ret_atom)
         await store_memory(ret_excute, "task_execute")
     else:
-        logger.info(f"任务 '{current_task.id}' 是复杂任务，准备规划子任务。")
+        logger.debug(f"任务 '{current_task.id}' 是复杂任务, 准备规划子任务。")
         ret_plan = await task_plan(ret_atom)
         await store_memory(ret_plan, "task_plan")
 
         if ret_plan.sub_tasks:
             for sub_task in ret_plan.sub_tasks:
                 if current_step >= max_steps:
-                    logger.info("在处理子任务时达到最大步骤数，中断执行。")
+                    logger.debug("在处理子任务时达到最大步骤数, 中断执行。")
                     break
                 current_step = await agent_flow(sub_task, max_steps, current_step)
 
@@ -142,9 +126,9 @@ async def agent_flow(current_task: Task, max_steps: int = 50, current_step: int 
                 ret_aggregate = await task_aggregate(ret_plan)
                 await store_memory(ret_aggregate, "task_aggregate")
         else:
-            logger.error(f"任务 '{ret_plan.id}' 被判断为复杂任务，但规划后没有产生任何子任务。")
-            raise Exception(f"任务 '{ret_plan.id}' 规划失败，没有子任务。")
+            logger.error(f"任务 '{ret_plan.id}' 被判断为复杂任务, 但规划后没有产生任何子任务。")
+            raise Exception(f"任务 '{ret_plan.id}' 规划失败, 没有子任务。")
 
-    logger.info(f"--- [步骤 {current_step}] --- 完成处理任务: {current_task.id} ---")
+    logger.debug(f"--- [步骤 {current_step}] --- 完成处理任务: {current_task.id} ---")
     return current_step
 

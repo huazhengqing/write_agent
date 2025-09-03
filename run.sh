@@ -21,7 +21,7 @@ PREFECT_PID=$!
 
 
 echo "⏳ 正在等待 Prefect server 响应... (PID: $PREFECT_PID)"
-# 使用 curl 循环检查健康检查端点，直到服务可用
+# 使用 curl 循环检查健康检查端点, 直到服务可用
 while ! curl -s -f http://127.0.0.1:4200/api/health > /dev/null; do
     echo -n "."
     sleep 1
@@ -36,6 +36,6 @@ python main.py "tasks.json" >> run.log 2>&1
 echo -e "\n🏁 主程序执行完毕。"
 echo "================================================="
 echo "🛑 Prefect server 仍在后台运行 (PID: $PREFECT_PID)。"
-echo "   要停止它，请运行以下命令:"
+echo "   要停止它, 请运行以下命令:"
 echo "   kill $PREFECT_PID"
 echo "================================================="

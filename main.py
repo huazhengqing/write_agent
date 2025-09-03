@@ -1,3 +1,4 @@
+import re
 import sys
 import json
 import asyncio
@@ -7,24 +8,7 @@ from pathlib import Path
 from loguru import logger
 from dotenv import load_dotenv
 from util.models import Task
-from memory import memory
 from flow import agent_flow
-
-
-"""
-
-
-分析、审查当前文件的代码，找出bug并改正， 指出可以优化的地方。
-
-
-根据以上分析，改进建议， 请直接修改 文件，并提供diff。
-
-
-
-"""
-
-
-###############################################################################
 
 
 load_dotenv()
@@ -36,17 +20,46 @@ load_dotenv()
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
 logger.remove()
+
 logger.add(
-    log_dir / "story_agent_{time:YYYY-MM-DD}.log",
-    rotation="00:00",
-    retention="7 days",
-    level="DEBUG",
+    log_dir / "{extra[run_id]}.log",
+    filter=lambda record: "run_id" in record["extra"],
+    rotation="10 MB",
+    level="INFO",
     encoding="utf-8",
     format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
     enqueue=True,
     backtrace=True,
-    diagnose=True
+    diagnose=True,
 )
+
+logger.add(
+    log_dir / "main.log",
+    filter=lambda record: "run_id" not in record["extra"],
+    rotation="00:00",
+    level="INFO",
+    encoding="utf-8",
+    format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
+    enqueue=True,
+    backtrace=True,
+    diagnose=True,
+)
+
+def sanitize_filename(name: str) -> str:
+    s = re.sub(r'[\\/*?:"<>|]', "", name)
+    s = s.replace(" ", "_")
+    return s[:100]
+
+async def _run_task_in_context(coro, run_id: str):
+    with logger.contextualize(run_id=run_id):
+        try:
+            logger.debug(f"任务开始...")
+            result = await coro
+            logger.debug(f"任务成功结束。")
+            return result
+        except Exception:
+            logger.exception(f"任务执行期间发生未捕获的异常。")
+            raise
 
 
 ###############################################################################
@@ -57,25 +70,45 @@ async def run_all_tasks(tasks_data: list, max_steps: int):
     for task_info in tasks_data:
         task_params = {
             "id": "1",
-            "root_name": task_info["name"], 
-            "goal": task_info["goal"],
+            "parent_id": "",
             "task_type": "write",
+            "goal": task_info["goal"],
             "length": task_info.get("length", "根据任务要求确定"),
             "category": task_info.get("category"),
             "language": task_info.get("language"),
+            "root_name": task_info["name"], 
         }
 
         task_args = {k: v for k, v in task_params.items() if v is not None}
         root_task = Task(**task_args)
         stable_unique_id = hashlib.sha256(root_task.goal.encode('utf-8')).hexdigest()[:16]
-        root_task.run_id = f"{task_info.get('category', '')}_{stable_unique_id}"
-        logger.info(f"{root_task}")
+        
+        category = task_info.get('category') or 'uncategorized'
+        language = root_task.language or 'unknown'
+        sanitized_category = sanitize_filename(category)
+        sanitized_name = sanitize_filename(root_task.root_name)
+        sanitized_language = sanitize_filename(language)
+        run_id = f"{sanitized_category}_{sanitized_name}_{sanitized_language}_{stable_unique_id}"
+        root_task.run_id = run_id
+        
+        logger.debug(f"为任务创建协程: {root_task}")
 
-        coro = agent_flow(current_task=root_task, max_steps=max_steps)
-        coroutines.append(coro)
+        agent_coro = agent_flow(current_task=root_task, max_steps=max_steps)
+        wrapped_coro = _run_task_in_context(agent_coro, run_id)
+        coroutines.append(wrapped_coro)
 
-    await asyncio.gather(*coroutines, return_exceptions=True)
-    logger.info("所有任务已完成。")
+    results = await asyncio.gather(*coroutines, return_exceptions=True)
+    
+    successful_tasks = 0
+    failed_tasks = 0
+    for res in results:
+        if isinstance(res, Exception):
+            failed_tasks += 1
+        else:
+            successful_tasks += 1
+            
+    logger.debug(f"所有任务执行完毕。成功: {successful_tasks}, 失败: {failed_tasks}.")
+
 
 def main():
     parser = argparse.ArgumentParser()
@@ -84,9 +117,21 @@ def main():
         type=str, 
     )
     args = parser.parse_args()
-    with open(args.json_file, 'r', encoding='utf-8') as f:
-        data = json.load(f)
+    try:
+        with open(args.json_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        logger.error(f"错误: JSON文件未找到 at '{args.json_file}'")
+        sys.exit(1)
+    except json.JSONDecodeError:
+        logger.error(f"错误: 无法解析JSON文件 at '{args.json_file}'")
+        sys.exit(1)
+
     tasks_data = data.get("tasks")
+    if not tasks_data:
+        logger.warning(f"在 '{args.json_file}' 中未找到 'tasks' 列表或列表为空。程序退出。")
+        return
+        
     asyncio.run(run_all_tasks(tasks_data, 100))
 
 
@@ -95,4 +140,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

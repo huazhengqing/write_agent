@@ -17,18 +17,18 @@ import threading
 
 """
 # KeywordExtractorEn
-- 英文关键词提取器，基于 KeyBERT 和 NLTK 库
+- 英文关键词提取器, 基于 KeyBERT 和 NLTK 库
 - 支持从文本和 Markdown 中提取关键词
 - 实现文本分块处理、预处理和缓存功能
 - 使用 all-MiniLM-L6-v2 模型进行英文语义理解
 
 # model
 英文：
-all-MiniLM-L6-v2（轻量高效，适合大多数场景）
-all-mpnet-base-v2（精度更高，但速度稍慢）
+all-MiniLM-L6-v2（轻量高效, 适合大多数场景）
+all-mpnet-base-v2（精度更高, 但速度稍慢）
 多语言：
-paraphrase-multilingual-MiniLM-L12-v2（轻量，支持 100 + 语言）
-xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多，精度较高）
+paraphrase-multilingual-MiniLM-L12-v2（轻量, 支持 100 + 语言）
+xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多, 精度较高）
 """
 
 
@@ -75,7 +75,7 @@ class KeywordExtractorEn:
         包含层级结构（全书、卷、幕、章、场景、节拍、段落）
         KeyBERT 批处理：
             - 输入：`docs` 参数传文本列表 `[text1, text2, ...]`
-            - 返回：嵌套列表，每个子列表对应输入文本的关键词 `[(kw, score), ...]`
+            - 返回：嵌套列表, 每个子列表对应输入文本的关键词 `[(kw, score), ...]`
         """
         if not text or not text.strip():
             return []
@@ -102,15 +102,15 @@ class KeywordExtractorEn:
             if not processed_chunks:
                 return []
 
-            # 优化KeyBERT参数，提升英文语义理解
+            # 优化KeyBERT参数, 提升英文语义理解
             batch_results = self.model.extract_keywords(
                 processed_chunks,
-                keyphrase_ngram_range=(1, 4),  # 扩展到4-gram，适合英文词组
+                keyphrase_ngram_range=(1, 4),  # 扩展到4-gram, 适合英文词组
                 stop_words="english",
                 use_mmr=True,
                 diversity=0.75,  # 较高的多样性
                 top_n=min(top_k * 3, 60),  # 提取更多候选词用于后续筛选
-                batch_size=16  # 减少批次大小，提升处理稳定性
+                batch_size=16  # 减少批次大小, 提升处理稳定性
             )
 
             for idx, keywords_with_scores in enumerate(batch_results):
@@ -261,14 +261,14 @@ class KeywordExtractorEn:
         return [chunk for chunk in chunks if chunk.strip()]
     
     def _get_overlap_context(self, text):
-        """获取重叠上下文，优先保留完整句子"""
+        """获取重叠上下文, 优先保留完整句子"""
         if len(text) <= self.chunk_overlap:
             return text
         
         # 尝试从末尾找到完整句子
         sentences = sent_tokenize(text)
         if len(sentences) <= 1:
-            # 如果只有一个句子，按单词返回末尾部分
+            # 如果只有一个句子, 按单词返回末尾部分
             words = text.split()
             overlap_words = min(self.chunk_overlap // 10, len(words) // 3)
             return ' '.join(words[-overlap_words:]) if overlap_words > 0 else ''
@@ -290,7 +290,7 @@ class KeywordExtractorEn:
         chunk = re.sub(r'[.!?]', ' PERIOD ', chunk)
         chunk = re.sub(r'[;:]', ' SEMICOLON ', chunk)
         
-        # 提取单词，包括连字符单词
+        # 提取单词, 包括连字符单词
         words = re.findall(r'\b[\w-]{2,}\b|COMMA|PERIOD|SEMICOLON', chunk, flags=re.IGNORECASE)
         
         # 改进的过滤策略

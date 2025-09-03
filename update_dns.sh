@@ -8,20 +8,20 @@ fi
 
 # 定义要配置的公共 DNS 列表（多组提高稳定性）
 DNS_LIST=(
-    "223.5.5.5"   # 阿里云DNS（国内常用，稳定）
+    "223.5.5.5"   # 阿里云DNS（国内常用, 稳定）
     "223.6.6.6"   # 阿里云DNS（备用）
-    "114.114.114.114"  # 114DNS（国内老牌，兼容性强）
-    "114.114.115.115"  # 114DNS（备用，防污染）
-    "119.29.29.29"  # DNSPod DNS+（腾讯旗下，国内速度快）
+    "114.114.114.114"  # 114DNS（国内老牌, 兼容性强）
+    "114.114.115.115"  # 114DNS（备用, 防污染）
+    "119.29.29.29"  # DNSPod DNS+（腾讯旗下, 国内速度快）
     "182.254.116.116"  # DNSPod DNS+（备用）
-    "8.8.8.8"     # 谷歌DNS（国际通用，备选）
-    "1.1.1.1"     # Cloudflare DNS（隐私优先，国际稳定）
+    "8.8.8.8"     # 谷歌DNS（国际通用, 备选）
+    "1.1.1.1"     # Cloudflare DNS（隐私优先, 国际稳定）
 )
 
 # 步骤1：配置 wsl.conf 禁用自动生成 resolv.conf
 echo -e "\n1️⃣  配置 wsl.conf 禁用自动DNS生成..."
 WSL_CONF="/etc/wsl.conf"
-# 检查文件是否存在，不存在则创建
+# 检查文件是否存在, 不存在则创建
 if [ ! -f "$WSL_CONF" ]; then
     sudo touch "$WSL_CONF"
 fi
@@ -47,7 +47,7 @@ done
 
 # 步骤3：重启 WSL 网络服务（临时生效）
 echo -e "\n3️⃣  重启网络服务..."
-sudo service network-manager restart 2>/dev/null  # 部分系统可能无此服务，忽略错误
+sudo service network-manager restart 2>/dev/null  # 部分系统可能无此服务, 忽略错误
 
 # 步骤4：验证 DNS 配置
 echo -e "\n4️⃣  验证 DNS 配置是否生效..."
@@ -59,7 +59,7 @@ nslookup hf-mirror.com 2>/dev/null
 if [ $? -eq 0 ]; then
     echo -e "\n✅ DNS 更新成功！请在 Windows 中执行 'wsl --shutdown' 后重新打开 WSL 以完全生效"
 else
-    echo -e "\n⚠️  DNS 配置已写入，但域名解析测试失败，可能是网络环境限制"
+    echo -e "\n⚠️  DNS 配置已写入, 但域名解析测试失败, 可能是网络环境限制"
 fi
 
 

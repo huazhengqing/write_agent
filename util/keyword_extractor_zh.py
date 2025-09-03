@@ -18,7 +18,7 @@ from collections import defaultdict
 
 """
 # KeywordExtractorZh
-- 中文关键词提取器，基于 KeyBERT 和 jieba 库
+- 中文关键词提取器, 基于 KeyBERT 和 jieba 库
 - 支持从文本和 Markdown 中提取关键词
 - 实现文本分块处理、预处理和缓存功能
 - 使用 BAAI/bge-small-zh 模型进行中文语义理解
@@ -26,10 +26,10 @@ from collections import defaultdict
 # model
 中文：
 shibing624/text2vec-base-chinese（专为中文优化的通用模型）
-BAAI/bge-small-zh（中文语义理解能力强，适合长文本）
+BAAI/bge-small-zh（中文语义理解能力强, 适合长文本）
 多语言：
-paraphrase-multilingual-MiniLM-L12-v2（轻量，支持 100 + 语言）
-xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多，精度较高）
+paraphrase-multilingual-MiniLM-L12-v2（轻量, 支持 100 + 语言）
+xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多, 精度较高）
 """
 
 
@@ -72,7 +72,7 @@ class KeywordExtractorZh:
         包含层级结构（全书、卷、幕、章、场景、节拍、段落）
         KeyBERT 批处理：
             - 输入：`docs` 参数传文本列表 `[text1, text2, ...]`
-            - 返回：嵌套列表，每个子列表对应输入文本的关键词 `[(kw, score), ...]`
+            - 返回：嵌套列表, 每个子列表对应输入文本的关键词 `[(kw, score), ...]`
         """
         if not text or not text.strip():
             return []
@@ -99,15 +99,15 @@ class KeywordExtractorZh:
             if not processed_chunks:
                 return []
 
-            # 优化KeyBERT参数，提升中文语义理解
+            # 优化KeyBERT参数, 提升中文语义理解
             batch_results = self.model.extract_keywords(
                 processed_chunks,
-                keyphrase_ngram_range=(1, 3),  # 扩展到3-gram，捕获更多中文词组
+                keyphrase_ngram_range=(1, 3),  # 扩展到3-gram, 捕获更多中文词组
                 stop_words="chinese",
                 use_mmr=True,
                 diversity=0.7,  # 提高多样性
                 top_n=min(top_k * 2, 50),  # 提取更多候选词用于后续筛选
-                batch_size=16  # 减少批次大小，提升处理稳定性
+                batch_size=16  # 减少批次大小, 提升处理稳定性
             )
 
             for idx, keywords_with_scores in enumerate(batch_results):
@@ -178,7 +178,7 @@ class KeywordExtractorZh:
         return text
 
     def split_long_text(self, text):
-        # 改进的句子感知分块，考虑段落结构
+        # 改进的句子感知分块, 考虑段落结构
         # 首先按段落分割
         paragraphs = text.split('\n\n')
         chunks = []
@@ -220,7 +220,7 @@ class KeywordExtractorZh:
         return [chunk for chunk in chunks if chunk.strip()]
     
     def _get_overlap_context(self, text):
-        """获取重叠上下文，优先保留完整句子"""
+        """获取重叠上下文, 优先保留完整句子"""
         if len(text) <= self.chunk_overlap:
             return text
         
@@ -233,15 +233,15 @@ class KeywordExtractorZh:
             if text[i] in sentence_markers:
                 return text[i+1:].lstrip()
         
-        # 如果没找到句子边界，返回字符重叠
+        # 如果没找到句子边界, 返回字符重叠
         return text[-self.chunk_overlap:].lstrip()
 
 
     def preprocess_chunk(self, chunk):
-        # 清理特殊字符，但保留关键标点
+        # 清理特殊字符, 但保留关键标点
         chunk = re.sub(r'[\u3000-\u303F\uff00-\uffef\u2018-\u201f]', ' ', chunk)
         # 保留基本标点符号的语义信息
-        chunk = re.sub(r'[，,]', ' COMMA ', chunk)
+        chunk = re.sub(r'[, ,]', ' COMMA ', chunk)
         chunk = re.sub(r'[。！？]', ' PERIOD ', chunk)
         
         # 使用jieba分词

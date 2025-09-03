@@ -11,24 +11,15 @@
 .pytest_cache/
 .mem0/
 .litellm_cache/
-.models/
 .env
-api_key.env
 models/
 venv/
-bak/
-tmp/
 bug/
-output/cache/
-output/story/
-output/report/
-output/book/
+logs/
+docs/*.pdf
+output/
 node_modules/
 __pycache__/
-recursive.egg-info/
-recursive/.litellm_cache/
-recursive/.mem0/
-recursive/.cache/
 searxng/
 *.pyc
 *.log
@@ -36,5 +27,7 @@ searxng/
 test_*.py
 *_test.py
 
-output.jsonl
-done.txt
+
+
+
+

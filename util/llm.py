@@ -4,22 +4,6 @@ from litellm.caching.caching import Cache
 from typing import List, Dict, Any, Optional
 
 
-"""
-
-
-分析、审查当前文件的代码，找出bug并改正， 指出可以优化的地方。
-
-
-根据以上分析，改进建议， 请直接修改 文件，并提供diff。
-
-
-
-"""
-
-
-###############################################################################
-
-
 litellm.cache = Cache(type='disk')
 # litellm.input_callback = ["lunary"]
 # litellm.success_callback = ["lunary"]
@@ -69,4 +53,14 @@ def get_llm_params(
         llm_params['tools'] = tools
     llm_params['messages'] = copy.deepcopy(messages)
     return llm_params
+
+
+def get_llm_messages(SYSTEM_PROMPT: str, USER_PROMPT: str, context_dict: Dict[str, Any] = None) -> list[dict]:
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": USER_PROMPT.format(**context_dict)}
+    ]
+    return messages
+
+
 
