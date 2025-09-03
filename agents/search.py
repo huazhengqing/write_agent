@@ -228,6 +228,40 @@ async def scrape_webpages(urls: List[str]) -> List[dict]:
 ###############################################################################
 
 
+PROMPT_STAGNATION_DETECTION = """
+# 任务: 评估信息增益
+对比以下两个总结, 判断“当前总结”是否比“上一轮总结”提供了显著的、有价值的新信息。
+
+## 上一轮总结:
+{prev_summary}
+
+## 当前总结:
+{current_summary}
+
+如果“当前总结”没有提供显著新信息 (例如, 只是重述、细化或补充了无关紧要的细节), 则判定为停滞。
+
+停滞了吗? (只回答 true 或 false)
+"""
+
+
+PROMPT_SELF_CORRECTION = """
+# 任务: 修正JSON输出
+上次的输出因格式错误导致解析失败。
+
+# 错误信息
+{error}
+
+# 格式错误的原始输出
+{raw_output}
+
+# 要求 
+严格根据 Pydantic 模型的要求, 修正并仅返回完整的、有效的 JSON 对象。禁止任何额外解释。
+"""
+
+
+###############################################################################
+
+
 # 图节点
 
 async def get_structured_output_with_retry(messages: List[dict], response_model: BaseModel, retries: int = 1):
@@ -269,7 +303,6 @@ async def get_structured_output_with_retry(messages: List[dict], response_model:
                     elif message.content: # 如果LLM未按工具调用格式返回, 尝试从内容中获取
                         raw_output = message.content
 
-                    from ..prompts.story.search_cn import PROMPT_SELF_CORRECTION
                     correction_prompt = PROMPT_SELF_CORRECTION.format(error=str(e), raw_output=raw_output)
                     messages = messages + [response.choices[0].message, {"role": "user", "content": correction_prompt}]
                     logger.info("...正在尝试自我纠错...")
@@ -299,8 +332,17 @@ async def planner_node(state: SearchAgentState) -> dict:
     # 2. 确定当前的研究焦点
     logger.info(f"▶️ 1. 进入规划节点 (第 {turn} 轮)...")
 
-    from ..prompts.story.search_cn import SYSTEM_PROMPT, USER_PROMPT
-    messages = get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT, context_dict)
+    if task.category == "story":
+        from ..prompts.story.search_cn import SYSTEM_PROMPT, USER_PROMPT
+        messages = get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT, context_dict)
+    elif task.category == "report":
+        from ..prompts.report.search_cn import SYSTEM_PROMPT, USER_PROMPT
+        messages = get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT, context_dict)
+    elif task.category == "book":
+        from ..prompts.book.search_cn import SYSTEM_PROMPT, USER_PROMPT
+        messages = get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT, context_dict)
+    else:
+        raise ValueError(f"未知的 category: {task.category}")
     
     plan = await get_structured_output_with_retry(messages, Plan)
     
@@ -423,13 +465,32 @@ async def information_processor_node(state: SearchAgentState) -> dict:
         ensure_ascii=False,
         indent=2
     )
-    from ..prompts.story.search_cn import PROMPT_INFORMATION_PROCESSOR
-    prompt = PROMPT_INFORMATION_PROCESSOR.format(
-        task_goal=state['task'].goal,
-        current_focus=state['current_focus'],
-        scraped_content_json=scraped_content_json
-    )
 
+    task = state['task']
+    if task.category == "story":
+        from ..prompts.story.search_cn import PROMPT_INFORMATION_PROCESSOR
+        prompt = PROMPT_INFORMATION_PROCESSOR.format(
+            task_goal=state['task'].goal,
+            current_focus=state['current_focus'],
+            scraped_content_json=scraped_content_json
+        )
+    elif task.category == "report":
+        from ..prompts.report.search_cn import PROMPT_INFORMATION_PROCESSOR
+        prompt = PROMPT_INFORMATION_PROCESSOR.format(
+            task_goal=state['task'].goal,
+            current_focus=state['current_focus'],
+            scraped_content_json=scraped_content_json
+        )
+    elif task.category == "book":
+        from ..prompts.book.search_cn import PROMPT_INFORMATION_PROCESSOR
+        prompt = PROMPT_INFORMATION_PROCESSOR.format(
+            task_goal=state['task'].goal,
+            current_focus=state['current_focus'],
+            scraped_content_json=scraped_content_json
+        )
+    else:
+        raise ValueError(f"未知的 category: {task.category}")
+    
     # 调用 LLM
     messages = [{"role": "user", "content": prompt}]
     processed_results = await get_structured_output_with_retry(messages, ProcessedResults)
@@ -479,13 +540,33 @@ async def rolling_summary_node(state: SearchAgentState) -> dict:
         logger.info("... 本轮未发现新的有效信息, 跳过滚动总结。")
         return {"previous_rolling_summary": previous_summary}
 
-    from ..prompts.story.search_cn import PROMPT_ROLLING_SUMMARY
-    prompt = PROMPT_ROLLING_SUMMARY.format(
-        task_goal=state['task'].goal,
-        current_focus=state['current_focus'],
-        previous_summary=previous_summary,
-        new_info=new_info_str
-    )
+    task = state['task']
+    if task.category == "story":
+        from ..prompts.story.search_cn import PROMPT_ROLLING_SUMMARY
+        prompt = PROMPT_ROLLING_SUMMARY.format(
+            task_goal=state['task'].goal,
+            current_focus=state['current_focus'],
+            previous_summary=previous_summary,
+            new_info=new_info_str
+        )
+    elif task.category == "report":
+        from ..prompts.report.search_cn import PROMPT_ROLLING_SUMMARY
+        prompt = PROMPT_ROLLING_SUMMARY.format(
+            task_goal=state['task'].goal,
+            current_focus=state['current_focus'],
+            previous_summary=previous_summary,
+            new_info=new_info_str
+        )
+    elif task.category == "book":
+        from ..prompts.book.search_cn import PROMPT_ROLLING_SUMMARY
+        prompt = PROMPT_ROLLING_SUMMARY.format(
+            task_goal=state['task'].goal,
+            current_focus=state['current_focus'],
+            previous_summary=previous_summary,
+            new_info=new_info_str
+        )
+    else:
+        raise ValueError(f"未知的 category: {task.category}")
 
     llm_params = get_llm_params([{"role": "user", "content": prompt}])
     response = await litellm.acompletion(llm_params)
@@ -515,8 +596,17 @@ async def synthesize_node(state: SearchAgentState) -> dict:
         'supplementary_summaries': supplementary_summaries, 
     }
 
-    from ..prompts.story.search_cn import SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE
-    messages = get_llm_messages(task, SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE, context_dict)
+    if task.category == "story":
+        from ..prompts.story.search_cn import SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE
+        messages = get_llm_messages(task, SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE, context_dict)
+    elif task.category == "report":
+        from ..prompts.report.search_cn import SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE
+        messages = get_llm_messages(task, SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE, context_dict)
+    elif task.category == "book":
+        from ..prompts.book.search_cn import SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE
+        messages = get_llm_messages(task, SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE, context_dict)
+    else:
+        raise ValueError(f"未知的 category: {task.category}")
 
     llm_params = get_llm_params(messages, temperature=0.4)
     response = await litellm.acompletion(llm_params)
@@ -566,7 +656,6 @@ async def should_continue_search(state: SearchAgentState) -> str:
 
         # 如果语义相似度不高, 再使用LLM进行最终的、更深层次的判断
         logger.info("...摘要相似度不高, 使用 LLM 进行深度停滞检测...")
-        from ..prompts.story.search_cn import PROMPT_STAGNATION_DETECTION
         prompt = PROMPT_STAGNATION_DETECTION.format(
             prev_summary=prev_summary,
             current_summary=current_summary

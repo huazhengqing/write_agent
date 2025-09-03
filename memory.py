@@ -85,9 +85,13 @@ class MemoryService:
             config["custom_fact_extraction_prompt"] = custom_fact_extraction_prompt
             config["custom_update_memory_prompt"] = custom_update_memory_prompt
         elif category == "book":
-            pass
+            from prompts.book.mem_cn import custom_fact_extraction_prompt, custom_update_memory_prompt
+            config["custom_fact_extraction_prompt"] = custom_fact_extraction_prompt
+            config["custom_update_memory_prompt"] = custom_update_memory_prompt
         elif category == "report":
-            pass
+            from prompts.report.mem_cn import custom_fact_extraction_prompt, custom_update_memory_prompt
+            config["custom_fact_extraction_prompt"] = custom_fact_extraction_prompt
+            config["custom_update_memory_prompt"] = custom_update_memory_prompt
         else:
             logger.error(f"不支持的任务类型: {category}")
             raise ValueError(f"不支持的任务类型: {category}")
@@ -368,7 +372,7 @@ class MemoryService:
     async def get_query(self, task: Task, category: str, dependent_results:str, text_latest: str) -> list:
         logger.info(f"为任务 {task.id} 生成上下文检索查询, 类别: {category}")
 
-        if task.category == "story":    
+        if task.category == "story":
             from prompts.story.mem_cn import SYSTEM_PROMPT_design, USER_PROMPT_design, SYSTEM_PROMPT_text, USER_PROMPT_text, SYSTEM_PROMPT_search, USER_PROMPT_search
             PROMPTS = {
                 "design": (SYSTEM_PROMPT_design, USER_PROMPT_design),
@@ -376,9 +380,19 @@ class MemoryService:
                 "search": (SYSTEM_PROMPT_search, USER_PROMPT_search),
             }
         elif task.category == "book":
-            raise ValueError(f"不支持的任务类型: {task.category}")
+            from prompts.book.mem_cn import SYSTEM_PROMPT_design, USER_PROMPT_design, SYSTEM_PROMPT_text, USER_PROMPT_text, SYSTEM_PROMPT_search, USER_PROMPT_search
+            PROMPTS = {
+                "design": (SYSTEM_PROMPT_design, USER_PROMPT_design),
+                "text": (SYSTEM_PROMPT_text, USER_PROMPT_text),
+                "search": (SYSTEM_PROMPT_search, USER_PROMPT_search),
+            }
         elif task.category == "report":
-            raise ValueError(f"不支持的任务类型: {task.category}")
+            from prompts.report.mem_cn import SYSTEM_PROMPT_design, USER_PROMPT_design, SYSTEM_PROMPT_text, USER_PROMPT_text, SYSTEM_PROMPT_search, USER_PROMPT_search
+            PROMPTS = {
+                "design": (SYSTEM_PROMPT_design, USER_PROMPT_design),
+                "text": (SYSTEM_PROMPT_text, USER_PROMPT_text),
+                "search": (SYSTEM_PROMPT_search, USER_PROMPT_search),
+            }
         else:
             raise ValueError(f"不支持的任务类型: {task.category}")
         

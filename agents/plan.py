@@ -21,24 +21,54 @@ async def plan(task: Task) -> Task:
     if not task.id or not task.goal:
         raise ValueError("任务ID和目标不能为空。")
     
-    if task.task_type == "design":
-        from ..prompts.story.plan_design_cn import SYSTEM_PROMPT, USER_PROMPT
-        messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-    elif task.task_type == "search":
-        from ..prompts.story.plan_search_cn import SYSTEM_PROMPT, USER_PROMPT
-        messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-    elif task.task_type == "write":
-        if not task.length:
-            raise ValueError("Task length must be set.")
-        
-        if os.getenv("deployment_environment") == "test":
-            from ..prompts.story.plan_write_cn import SYSTEM_PROMPT, USER_PROMPT, test_get_task_level
-            messages = await get_llm_messages(task, SYSTEM_PROMPT.format(**test_get_task_level(task.goal)), USER_PROMPT)
+    if task.category == "story":
+        if task.task_type == "design":
+            from ..prompts.story.plan_design_cn import SYSTEM_PROMPT, USER_PROMPT
+            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
+        elif task.task_type == "search":
+            from ..prompts.story.plan_search_cn import SYSTEM_PROMPT, USER_PROMPT
+            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
+        elif task.task_type == "write":
+            if not task.length:
+                raise ValueError("Task length must be set.")
+            if os.getenv("deployment_environment") == "test":
+                from ..prompts.story.plan_write_cn import SYSTEM_PROMPT, USER_PROMPT, test_get_task_level
+                messages = await get_llm_messages(task, SYSTEM_PROMPT.format(**test_get_task_level(task.goal)), USER_PROMPT)
+            else:
+                from ..prompts.story.plan_write_cn import SYSTEM_PROMPT, USER_PROMPT, get_task_level
+                messages = await get_llm_messages(task, SYSTEM_PROMPT.format(**get_task_level(task.goal)), USER_PROMPT)
         else:
-            from ..prompts.story.plan_write_cn import SYSTEM_PROMPT, USER_PROMPT, get_task_level
-            messages = await get_llm_messages(task, SYSTEM_PROMPT.format(**get_task_level(task.goal)), USER_PROMPT)
+            raise ValueError(f"未知的任务类型: {task.task_type}")
+    elif task.category == "report":
+        if task.task_type == "design":
+            from ..prompts.report.plan_design_cn import SYSTEM_PROMPT, USER_PROMPT
+            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
+        elif task.task_type == "search":
+            from ..prompts.report.plan_search_cn import SYSTEM_PROMPT, USER_PROMPT
+            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
+        elif task.task_type == "write":
+            if not task.length:
+                raise ValueError("Task length must be set.")
+            from ..prompts.report.plan_write_cn import SYSTEM_PROMPT, USER_PROMPT
+            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
+        else:
+            raise ValueError(f"未知的任务类型: {task.task_type}")
+    elif task.category == "book":
+        if task.task_type == "design":
+            from ..prompts.book.plan_design_cn import SYSTEM_PROMPT, USER_PROMPT
+            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
+        elif task.task_type == "search":
+            from ..prompts.book.plan_search_cn import SYSTEM_PROMPT, USER_PROMPT
+            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
+        elif task.task_type == "write":
+            if not task.length:
+                raise ValueError("Task length must be set.")
+            from ..prompts.book.plan_write_cn import SYSTEM_PROMPT, USER_PROMPT
+            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
+        else:
+            raise ValueError(f"未知的任务类型: {task.task_type}")
     else:
-        raise ValueError(f"未知的任务类型: {task.task_type}")
+        raise ValueError(f"未知的 category: {task.category}")
     
     llm_params = get_llm_params(messages, temperature=0.1)
     llm_params['response_format'] = {"type": "json_object", "schema": PlanOutput.model_json_schema()}

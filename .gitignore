@@ -28,7 +28,7 @@ searxng/
 test_*.py
 *_test.py
 init.md
-
+*copy.py
 
 
 

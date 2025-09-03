@@ -11,8 +11,18 @@ async def design(task: Task) -> Task:
     if task.task_type != "design":
         raise ValueError("Task type must be 'design'.")
     
-    from ..prompts.story.design_cn import SYSTEM_PROMPT, USER_PROMPT
-    messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
+    if task.category == "story":
+        from ..prompts.story.design_cn import SYSTEM_PROMPT, USER_PROMPT
+        messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
+    elif task.category == "report":
+        from ..prompts.report.design_cn import SYSTEM_PROMPT, USER_PROMPT
+        messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
+    elif task.category == "book":
+        from ..prompts.book.design_cn import SYSTEM_PROMPT, USER_PROMPT
+        messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
+    else:
+        raise ValueError(f"未知的 category: {task.category}")
+
     llm_params = get_llm_params(messages, temperature=0.75)
     logger.info(f"{llm_params}")
 
