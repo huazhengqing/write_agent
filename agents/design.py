@@ -2,7 +2,7 @@ import litellm
 from loguru import logger
 from ..util.models import Task
 from ..util.llm import get_llm_params
-from ..memory import memory, get_llm_messages
+from ..memory import get_llm_messages
 
 
 async def design(task: Task) -> Task:

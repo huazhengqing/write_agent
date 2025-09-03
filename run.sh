@@ -15,13 +15,11 @@ source venv/bin/activate
 
 
 echo "🚀 正在后台启动 Prefect server..."
-# 在后台启动 prefect server 并捕获其进程ID (PID)
 prefect server start &
 PREFECT_PID=$!
 
 
 echo "⏳ 正在等待 Prefect server 响应... (PID: $PREFECT_PID)"
-# 使用 curl 循环检查健康检查端点, 直到服务可用
 while ! curl -s -f http://127.0.0.1:4200/api/health > /dev/null; do
     echo -n "."
     sleep 1
@@ -30,7 +28,7 @@ echo -e "\n✅ Prefect server 已就绪！UI 地址: http://127.0.0.1:4200"
 
 
 echo -e "\n▶️  正在运行主程序 (main.py)..."
-python main.py "tasks.json" >> run.log 2>&1
+python3 main.py "tasks.json" >> run.log 2>&1
 
 
 echo -e "\n🏁 主程序执行完毕。"

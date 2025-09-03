@@ -1,34 +1,25 @@
+nltk
+mem0
+httpx
+jieba
 loguru
 prefect
+keybert
+markdown
 pydantic
 diskcache
 langgraph
+langdetect
 playwright
+trafilatura
+stopwordsiso
+qdrant-client
 mem0ai[graph]
 python-dotenv
+beautifulsoup4
 litellm[caching]
 langchain-community
 sentence_transformers
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

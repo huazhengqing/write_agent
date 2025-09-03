@@ -2,10 +2,10 @@ import os
 import litellm
 from loguru import logger
 from typing import Optional, Literal, List
-from pydantic import BaseModel, Field, ValidationError
-from ..util.models import Task, TaskStatus
+from pydantic import BaseModel, Field
+from ..util.models import Task
 from ..util.llm import get_llm_params
-from ..memory import memory, get_llm_messages
+from ..memory import get_llm_messages
 
 
 class PlanOutput(BaseModel):

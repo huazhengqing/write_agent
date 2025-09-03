@@ -10,7 +10,7 @@ import diskcache as dc
 import os
 import hashlib
 import nltk
-from nltk.tokenize import word_tokenize, sent_tokenize
+from nltk.tokenize import sent_tokenize
 import multiprocessing
 import threading
 
