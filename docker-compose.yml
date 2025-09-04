@@ -1,14 +1,27 @@
 services:
+
+  prefect:
+    image: prefecthq/prefect:3-latest
+    container_name: prefect
+    command: prefect server start --host 0.0.0.0
+    ports:
+      - "4200:4200"
+    environment:
+      - PREFECT_HOME=/root/.prefect
+    volumes:
+      - prefect-data:/root/.prefect
+    restart: unless-stopped
+
   memgraph:
     image: memgraph/memgraph-mage:latest
     container_name: memgraph
+    command: ["--schema-info-enabled=True"]
     ports:
       - "7687:7687"
       - "7444:7444"
     environment:
       - MGCONSOLE=--username memgraph --password memgraph
       - MEMGRAPH=--query-modules-on-startup=node_similarity
-    command: ["--schema-info-enabled=True"]
     volumes:
       - memgraph-data:/var/lib/memgraph
     stop_grace_period: 60s
@@ -56,8 +69,8 @@ services:
         max-file: "1"
 
   searxng:
-    container_name: searxng
     image: docker.io/searxng/searxng:latest
+    container_name: searxng
     restart: unless-stopped
     networks:
       - searxng
@@ -78,6 +91,7 @@ networks:
   searxng:
 
 volumes:
+  prefect-data:
   memgraph-data:
   qdrant_storage:
   valkey-data2:

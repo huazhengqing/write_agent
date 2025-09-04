@@ -3,13 +3,15 @@ import os
 import json
 import hashlib
 import asyncio
+import re
+import collections
 from loguru import logger
 from diskcache import Cache
 from mem0 import AsyncMemory
 from typing import Dict, Any
 from datetime import datetime
 from util.models import Task
-from util.llm import get_llm_params, llm_acompletion
+from util.llm import LLM_PARAMS_fast, get_llm_params, llm_acompletion
 
 
 class MemoryService:
@@ -30,20 +32,7 @@ class MemoryService:
             },
             "llm": {
                 "provider": "litellm",
-                "config": {
-                    "model": 'openrouter/deepseek/deepseek-chat-v3-0324:free',
-                    "temperature": 0.0,
-                    "max_tokens": 8000,
-                    "caching": True,
-                    "max_completion_tokens": 8000,
-                    "timeout": 300,
-                    "num_retries": 30,
-                    "respect_retry_after": True,
-                    "fallbacks": [
-                        'openai/deepseek-ai/DeepSeek-V3',
-                        'openrouter/deepseek/deepseek-r1-0528-qwen3-8b', 
-                    ]
-                }
+                "config": LLM_PARAMS_fast
             },
             "embedder": {
                 "provider": "openai",
@@ -65,32 +54,22 @@ class MemoryService:
         }
         self.mem0_instances: Dict[str, AsyncMemory] = {}
 
-        cache_dir = os.path.join("output", ".cache")
-        os.makedirs(cache_dir, exist_ok=True)
-        self.text_file_cache = Cache(os.path.join(cache_dir, "text_file"), size_limit=int(128 * (1024**2)))
-        self.context_cache = Cache(os.path.join(cache_dir, "context"), size_limit=int(128 * (1024**2)))
+        self.text_file_cache = Cache(os.path.join(".cache", "text_file"), size_limit=int(128 * (1024**2)))
+        self.context_cache = Cache(os.path.join(".cache", "context"), size_limit=int(128 * (1024**2)))
  
-    def get_mem0(self, category: str) -> AsyncMemory:
+    async def get_mem0(self, category: str) -> AsyncMemory:
         if category in self.mem0_instances:
             return self.mem0_instances[category]
 
         config = self.mem0_config.copy()
-        if category == "story":
-            from prompts.story.mem_cn import custom_fact_extraction_prompt, custom_update_memory_prompt
-            config["custom_fact_extraction_prompt"] = custom_fact_extraction_prompt
-            config["custom_update_memory_prompt"] = custom_update_memory_prompt
-        elif category == "book":
-            from prompts.book.mem_cn import custom_fact_extraction_prompt, custom_update_memory_prompt
-            config["custom_fact_extraction_prompt"] = custom_fact_extraction_prompt
-            config["custom_update_memory_prompt"] = custom_update_memory_prompt
-        elif category == "report":
-            from prompts.report.mem_cn import custom_fact_extraction_prompt, custom_update_memory_prompt
-            config["custom_fact_extraction_prompt"] = custom_fact_extraction_prompt
-            config["custom_update_memory_prompt"] = custom_update_memory_prompt
-        else:
-            raise ValueError(f"不支持的任务类型: {category}")
+        try:
+            prompt_module = __import__(f"prompts.{category}.mem_cn", fromlist=["custom_fact_extraction_prompt", "custom_update_memory_prompt"])
+            config["custom_fact_extraction_prompt"] = prompt_module.custom_fact_extraction_prompt
+            config["custom_update_memory_prompt"] = prompt_module.custom_update_memory_prompt
+        except (ImportError, AttributeError) as e:
+            raise ValueError(f"不支持的任务类型 '{category}' 或其prompt模块不完整。") from e
 
-        instance = AsyncMemory.from_config(config_dict=config)
+        instance = await AsyncMemory.from_config(config_dict=config)
         self.mem0_instances[category] = instance
         return instance
 
@@ -99,7 +78,7 @@ class MemoryService:
 
 
     async def add(self, task: Task, task_type: str):
-        logger.info(f"{task} {task_type}")
+        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
 
         if not task.id:
             raise ValueError(f"任务信息中未找到任务ID {task.id} \n 任务信息: {task}")
@@ -152,22 +131,33 @@ class MemoryService:
             "dependency": json.dumps(task.dependency, ensure_ascii=False),
         }
         
-        logger.info(f"{content} \n {task.run_id} \n {mem_metadata}")
-        await self.get_mem0(task.category).add(
+        mem0_instance = await self.get_mem0(task.category)
+
+        content_for_log = content
+        try:
+            content_for_log = json.loads(content)
+        except (json.JSONDecodeError, TypeError):
+            pass
+        log_data = {
+            "task": task.model_dump(mode='json', exclude_none=True),
+            "content_to_add": content_for_log,
+            "mem_metadata": mem_metadata,
+        }
+        logger.info(f"向记忆中添加内容:\n{json.dumps(log_data, indent=2, ensure_ascii=False)}")
+        await mem0_instance.add(
             content,
             user_id=f"{task.run_id}",
             metadata=mem_metadata
         )
 
         self.context_cache.evict(tag=f"{task.run_id}")
+        logger.info(f"完成")
 
 
 ###############################################################################
 
 
     def text_file_append(self, file_path: str, content: str):
-        logger.info(f"{file_path} \n {content}")
-
         dir_path = os.path.dirname(file_path)
         os.makedirs(dir_path, exist_ok=True)
         with open(file_path, "a", encoding="utf-8") as f:
@@ -178,8 +168,6 @@ class MemoryService:
         self.text_file_cache.evict(tag=file_path)
 
     def text_file_read(self, file_path: str) -> str:
-        logger.info(f"{file_path}")
-
         if not os.path.exists(file_path):
             return ""
         
@@ -187,13 +175,11 @@ class MemoryService:
             return f.read()
 
     def get_text_file_path(self, task: Task) -> str:
-        logger.info(f"{task}")
         ret = os.path.join("output", task.category, f"{task.run_id}.txt")
-        logger.info(f"{ret}")
         return ret
     
     async def get_text_latest(self, task: Task, length: int = 3000) -> str:
-        logger.info(f"{task} {length}")
+        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal} {length}")
 
         file_path = self.get_text_file_path(task)
         key = f"get_text_latest:{file_path}:{length}"
@@ -222,7 +208,7 @@ class MemoryService:
         
         self.text_file_cache.set(key, result, tag=file_path)
 
-        logger.info(f"{result}")
+        logger.info(f"完成 {result}")
         return result
 
 
@@ -230,20 +216,7 @@ class MemoryService:
 
 
     async def get_context(self, task: Task) -> Dict[str, Any]:
-        """
-        返回字段详解:
-            - "task" (str): 当前任务对象的完整JSON表示。
-            - "dependent_design" (str): 与当前任务同层级的其他“设计”任务的成果汇总。
-            - "dependent_search" (str): 与当前任务同层级的其他“搜索”任务的结果汇总。
-            - "text_latest" (str): 最终产出文本（如文章）的最新一部分内容。
-            - "subtask_design" (str | None): (可选) 所有子任务产出的“设计”成果的汇总。
-            - "subtask_search" (str | None): (可选) 所有子任务产出的“搜索”结果的汇总。
-            - "upper_level_design" (str | None): (可选) 通过智能检索从所有“上级”任务中找到的相关“设计”信息。
-            - "upper_level_search" (str | None): (可选) 通过智能检索从所有“上级”任务中找到的相关“搜索”结果。
-            - "text_summary" (str | None): (可选) 对已生成的全部文本进行智能检索, 找到与当前任务最相关的部分。
-            - "task_list" (str | None): (可选) 从根任务到当前任务的完整任务链条, 展示其在整个计划中的位置。
-        """
-        logger.info(f"{task}")
+        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
 
         if not task.id:
             raise ValueError(f"{task}")
@@ -254,9 +227,25 @@ class MemoryService:
             return cached_context
 
         ret = {
-            "task": task.model_dump_json(indent=2, exclude_none=True), 
-            "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            "task": task.model_dump_json(
+                indent=2,
+                exclude_none=True,
+                include={'id', 'parent_id', 'task_type', 'goal', 'length', 'dependency'}
+            ),
+            "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
+            "dependent_design": "", 
+            "dependent_search": "", 
+            "text_latest": "", 
+            "subtask_design": "", 
+            "subtask_search": "", 
+            "upper_level_design": "", 
+            "upper_level_search": "", 
+            "text_summary": "", 
+            "task_list": "", 
         }
+        if not task.parent_id:
+            logger.info(f"{task} \n {ret}")
+            return ret
 
         # 并发获取初始依赖信息
         dependent_design_task = self.get_dependent(task, "design")
@@ -301,11 +290,11 @@ class MemoryService:
 
         self.context_cache.set(cache_key, ret, tag=f"{task.run_id}")
 
-        logger.info(f"{ret}")
+        logger.info(f"完成\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
         return ret
 
     async def get_dependent(self, task: Task, category: str) -> str:
-        logger.info(f"{task} {category}")
+        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal} {category}")
 
         if not task.parent_id:
             raise ValueError("parent_id不能为空")
@@ -314,22 +303,21 @@ class MemoryService:
             "category": category,
             "parent_id": task.parent_id
         }
-        all_memories = await self.get_mem0(task.category).get_all(
+        mem0_instance = await self.get_mem0(task.category)
+        all_memories = await mem0_instance.get_all(
             user_id=f"{task.run_id}", 
             filters=filters
             )
+
+        memories_list = all_memories.get('results', [])
+        content_list = [item.get("memory", "") for item in memories_list]
+        result = "\n\n".join(content_list)
         
-        if not all_memories:
-            result = ""
-        else:
-            content_list = [item.get("memory", "") for item in all_memories if item.get("memory")]
-            result = "\n\n".join(content_list)
-        
-        logger.info(f"{result}")
+        logger.info(f"完成 {result}")
         return result
     
-    async def get_by_parent_id(self, run_id: str, parent_id: str, data_category: str, main_category: str) -> str:
-        logger.info(f"{run_id} {parent_id} {data_category} {main_category}")
+    async def get_by_parent_id(self, run_id: str, parent_id: str, data_category: str, main_category: str) -> Dict[str, Any]:
+        logger.info(f"开始 {run_id} {parent_id} {data_category} {main_category}")
 
         if not parent_id:
             raise ValueError("parent_id不能为空")
@@ -338,67 +326,57 @@ class MemoryService:
             "category": data_category,
             "parent_id": parent_id
         }
-        all_memories = await self.get_mem0(main_category).get_all(
+        mem0_instance = await self.get_mem0(main_category)
+        all_memories = await mem0_instance.get_all(
             user_id=run_id, 
             filters=filters
             )
         
-        if not all_memories:
-            result = ""
-        else:
-            content_list = [item.get("memory", "") for item in all_memories if item.get("memory")]
-            result = "\n\n".join(content_list)
-
-        logger.info(f"{result}")
-        return result
+        logger.info(f"完成，获取到 {len(all_memories.get('results', []))} 条记忆")
+        return all_memories
     
     async def get_subtask_results(self, task: Task, category: str) -> str:
-        logger.info(f"{task} {category}")
-
-        result = await self.get_by_parent_id(task.run_id, task.id, category, task.category)
-
-        logger.info(f"{result}")
+        all_memories = await self.get_by_parent_id(task.run_id, task.id, category, task.category)
+        memories_list = all_memories.get('results', [])
+        content_list = [item.get("memory", "") for item in memories_list]
+        result = "\n\n".join(content_list)
+        logger.info(f"完成 {result}")
         return result
 
     async def get_query(self, task: Task, category: str, dependent_results:str, text_latest: str) -> list:
-        logger.info(f"{task} {category} \n {dependent_results} \n {text_latest}")
+        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal} {category} \n {dependent_results} \n {text_latest}")
 
-        if task.category == "story":
-            from prompts.story.mem_cn import SYSTEM_PROMPT_design, USER_PROMPT_design, SYSTEM_PROMPT_text, USER_PROMPT_text, SYSTEM_PROMPT_search, USER_PROMPT_search
+        try:
+            prompt_module = __import__(f"prompts.{task.category}.mem_cn", fromlist=[
+                "SYSTEM_PROMPT_design", "USER_PROMPT_design",
+                "SYSTEM_PROMPT_text", "USER_PROMPT_text",
+                "SYSTEM_PROMPT_search", "USER_PROMPT_search"
+            ])
             PROMPTS = {
-                "design": (SYSTEM_PROMPT_design, USER_PROMPT_design),
-                "text": (SYSTEM_PROMPT_text, USER_PROMPT_text),
-                "search": (SYSTEM_PROMPT_search, USER_PROMPT_search),
+                "design": (prompt_module.SYSTEM_PROMPT_design, prompt_module.USER_PROMPT_design),
+                "text": (prompt_module.SYSTEM_PROMPT_text, prompt_module.USER_PROMPT_text),
+                "search": (prompt_module.SYSTEM_PROMPT_search, prompt_module.USER_PROMPT_search),
             }
-        elif task.category == "book":
-            from prompts.book.mem_cn import SYSTEM_PROMPT_design, USER_PROMPT_design, SYSTEM_PROMPT_text, USER_PROMPT_text, SYSTEM_PROMPT_search, USER_PROMPT_search
-            PROMPTS = {
-                "design": (SYSTEM_PROMPT_design, USER_PROMPT_design),
-                "text": (SYSTEM_PROMPT_text, USER_PROMPT_text),
-                "search": (SYSTEM_PROMPT_search, USER_PROMPT_search),
-            }
-        elif task.category == "report":
-            from prompts.report.mem_cn import SYSTEM_PROMPT_design, USER_PROMPT_design, SYSTEM_PROMPT_text, USER_PROMPT_text, SYSTEM_PROMPT_search, USER_PROMPT_search
-            PROMPTS = {
-                "design": (SYSTEM_PROMPT_design, USER_PROMPT_design),
-                "text": (SYSTEM_PROMPT_text, USER_PROMPT_text),
-                "search": (SYSTEM_PROMPT_search, USER_PROMPT_search),
-            }
-        else:
-            raise ValueError(f"不支持的任务类型: {task.category}")
+        except (ImportError, AttributeError) as e:
+            raise ValueError(f"不支持的任务类型 '{task.category}' 或其prompt模块不完整。") from e
         
         if category not in PROMPTS:
             raise ValueError(f"不支持的查询生成类别: {category}")
 
         prompt_input = {
-            "task": task.model_dump_json(indent=2, exclude_none=True),
+            "task": task.model_dump_json(
+                indent=2,
+                exclude_none=True,
+                include={'task_type', 'goal', 'length'}
+            ),
             "dependent_results": dependent_results, 
             "text_latest": text_latest
         }
         system_prompt, user_prompt_template = PROMPTS[category]
+        safe_context = collections.defaultdict(str, prompt_input)
         messages = [
             {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt_template.format(**prompt_input)}
+            {"role": "user", "content": user_prompt_template.format_map(safe_context)}
         ]
 
         llm_params = get_llm_params(messages, temperature=0.1)
@@ -411,23 +389,20 @@ class MemoryService:
         keywords = queries_dict.get("keywords", [])
         result = keywords if isinstance(keywords, list) else []
 
-        logger.info(f"{result}")
+        logger.info(f"完成 {result}")
         return result
 
     async def _get_and_search_context(self, task: Task, category: str, dependent_results: str, text_latest: str) -> str:
-        logger.info(f"{task} {category} \n {dependent_results} \n {text_latest}")
         keywords = await self.get_query(task, category, dependent_results, text_latest)
         if not keywords:
             result = ""
         else:
             result = await self.search_upper_level_results(task, category, keywords)
-
-        logger.info(f"{result}")
         return result
 
 
     async def search_upper_level_results(self, task: Task, category: str, keywords: list) -> str:
-        logger.info(f"{task} {category} {keywords}")
+        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal} {category} {keywords}")
 
         filters = {
             "category": category
@@ -441,9 +416,10 @@ class MemoryService:
             logger.warning(f"{unique_queries}")
             return ""
 
-        # 并行执行所有关键词的搜索
+        mem0_instance = await self.get_mem0(task.category)
+        
         search_tasks = [
-            self.get_mem0(task.category).search(
+            mem0_instance.search(
                 query=q,
                 user_id=f"{task.run_id}",
                 limit=300,
@@ -453,7 +429,7 @@ class MemoryService:
         list_of_results = await asyncio.gather(*search_tasks)
 
         # 合并并基于ID去重结果
-        all_results = [item for sublist in list_of_results for item in sublist]
+        all_results = [item for sublist in list_of_results for item in sublist.get("results", [])]
         if not all_results:
             logger.warning(f"{all_results}")
             return ""
@@ -467,7 +443,7 @@ class MemoryService:
 
         ret = "\n\n".join(unique_content_list)
 
-        logger.info(f"{ret}")
+        logger.info(f"完成 {ret}")
         return ret
 
 
@@ -482,49 +458,68 @@ class MemoryService:
     - 获取所有父ID为 "1.3" 的任务信息。
     """
     async def get_task_list(self, task: Task) -> str:
-        logger.info(f"{task}")
-        id_parts = task.id.split('.')
+        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
 
-        # 1. 获取父任务链 (不包括当前任务)
+        id_parts = task.id.split('.')
         parent_chain_ids = [".".join(id_parts[:i+1]) for i in range(len(id_parts) - 1)]
         
+        mem0_instance = await self.get_mem0(task.category)
+
         parent_chain_summaries = []
         if parent_chain_ids:
-            filters = {
-                "category": "task", 
-                "task_id": {"in": parent_chain_ids}
-            }
-            results = await self.get_mem0(task.category).get_all(
-                user_id=f"{task.run_id}",
-                limit=100, 
-                filters=filters
-            )
-            if results:
-                # 按顺序构建父任务链
-                memory_map = {item.get("metadata", {}).get("task_id"): item.get("memory") for item in results}
-                for task_id in parent_chain_ids:
-                    memory_content = memory_map.get(task_id)
-                    if memory_content:
-                        parent_chain_summaries.append(memory_content)
-        
-        # 2. 获取当前层级的所有任务
-        current_level_tasks_str = await self.get_by_parent_id(task.run_id, task.parent_id, "task", task.category)
+            query_tasks = []
+            for p_id in parent_chain_ids:
+                filters = {"category": "task", "task_id": p_id}
+                query_tasks.append(
+                    mem0_instance.search(
+                        query=f"任务id: {p_id} 的目标",
+                        user_id=f"{task.run_id}",
+                        filters=filters,
+                        limit=1
+                    )
+                )
+            
+            results_list = await asyncio.gather(*query_tasks)
 
-        # 3. 组合结果
+            parent_chain_summaries = []
+            for result_set in results_list:
+                results = result_set.get("results", [])
+                if not results:
+                    continue
+                
+                fact_content = results[0].get("memory")
+                if not fact_content:
+                    continue
+
+                id_match = re.search(r"\[任务id: ([^,\]]+)", fact_content)
+                goal_match = re.search(r"任务目标: ([^,\]]+)", fact_content)
+                
+                if id_match and goal_match:
+                    summary = f"ID: {id_match.group(1).strip()}, 目标: {goal_match.group(1).strip()}"
+                    parent_chain_summaries.append(summary)
+                else:
+                    logger.warning(f"解析父任务Fact失败,将使用完整内容: {fact_content[:100]}...")
+                    parent_chain_summaries.append(fact_content)
+        
+        current_level_tasks_result = await self.get_by_parent_id(task.run_id, task.parent_id, "task", task.category)
+
         task_list_parts = []
         if parent_chain_summaries:
-            parent_chain_str = "\n\n".join(parent_chain_summaries)
+            parent_chain_str = "\n".join(parent_chain_summaries)
             task_list_parts.append(f"### 父任务链:\n{parent_chain_str}")
 
-        if current_level_tasks_str:
-            task_list_parts.append(f"### 当前层级所有任务:\n{current_level_tasks_str}")
+        if current_level_tasks_result:
+            memories = [item.get("memory", "") for item in current_level_tasks_result.get("results", []) if item.get("memory")]
+            if memories:
+                current_level_tasks_str = "\n\n".join(memories)
+                task_list_parts.append(f"### 当前层级所有任务:\n{current_level_tasks_str}")
 
         result = "\n\n".join(task_list_parts)
 
         if not result:
-            logger.warning(f"{result}")
+            logger.warning("生成的任务列表为空")
         
-        logger.info(f"{result}")
+        logger.info(f"完成\n{result}")
         return result
 
 
@@ -544,8 +539,11 @@ async def get_llm_messages(task: Task, SYSTEM_PROMPT: str, USER_PROMPT: str, con
     context = await memory.get_context(task)
     if context_dict:
         context.update(context_dict)
+    
+    safe_context = collections.defaultdict(str, context)
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": USER_PROMPT.format(**context)}
+        {"role": "user", "content": USER_PROMPT.format_map(safe_context)}
     ]
+
     return messages

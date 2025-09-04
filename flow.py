@@ -1,7 +1,10 @@
+import os
 from typing import Any, Dict
-from prefect import flow, task, get_run_logger
-from prefect.tasks import task_input_hash
-from prefect.context import TaskRunContext
+from prefect import flow, task
+from prefect.cache_policies import INPUTS
+from loguru import logger
+from diskcache import Cache
+from datetime import date
 from util.models import Task
 from memory import memory
 from agents.atom import atom
@@ -13,66 +16,62 @@ from agents.search import search
 from agents.search_aggregate import search_aggregate
 
 
-def generate_task_cache_key(context: TaskRunContext, parameters: Dict[str, Any]) -> str:
-    flow_run_name = context.flow_run.name
-    task_id = parameters['task'].id
-    return task_input_hash(context, {"flow_run": flow_run_name, "task_id": task_id})
+wordcount_cache = Cache(os.path.join(".cache", "wordcount"), size_limit=int(16 * (1024**2)))
+
+
+day_wordcount_limit = 10000
+
 
 
 @task(
-    name="判断任务原子性",
-    cache_key_fn=generate_task_cache_key,
-    retries=2, 
-    retry_delay_seconds=10 
+    persist_result=True, 
+    cache_policy=INPUTS,
+    retries=10, 
 )
 async def task_atom(task: Task) -> Task:
-    logger = get_run_logger()
-    logger.info(f"{task}")
-    updated_task = await atom(task)
-    return updated_task
+    logger.info(f"{task.run_id} {task.id} {task.task_type} {task.goal}")
+    return await atom(task)
 
 
 @task(
-    name="分解复杂任务",
-    cache_key_fn=generate_task_cache_key,
-    retries=2,
-    retry_delay_seconds=10
+    persist_result=True, 
+    cache_policy=INPUTS,
+    retries=10, 
 )
 async def task_plan(task: Task) -> Task:
-    logger = get_run_logger()
-    logger.info(f"{task}")
-    pland_task = await plan(task)
-    return pland_task
+    logger.info(f"{task.run_id} {task.id} {task.task_type} {task.goal}")
+    return await plan(task)
 
 
 @task(
-    name="执行原子动作",
-    cache_key_fn=generate_task_cache_key,
-    retries=2,
-    retry_delay_seconds=10
+    persist_result=True, 
+    cache_policy=INPUTS,
+    retries=10, 
 )
 async def task_execute(task: Task) -> Task:
-    logger = get_run_logger()
-    logger.info(f"{task}")
+    logger.info(f"{task.run_id} {task.id} {task.task_type} {task.goal}")
     if task.task_type == "design":
         return await design(task)
     elif task.task_type == "write":
-        return await write(task)
+        ret = await write(task)
+        with wordcount_cache.transact():
+            today_key = f"{task.run_id}:{date.today().isoformat()}"
+            count = wordcount_cache.get(today_key, 0)
+            wordcount_cache.set(today_key, count + len(ret.results["result"]))
+        return ret
     elif task.task_type == "search":
         return await search(task)
     else:
-        raise ValueError(f"未知的任务类型: {task.task_type}")
+        raise ValueError(f"{task}")
 
 
 @task(
-    name="整合子任务结果",
-    cache_key_fn=generate_task_cache_key,
-    retries=2,
-    retry_delay_seconds=10
+    persist_result=True, 
+    cache_policy=INPUTS,
+    retries=10, 
 )
 async def task_aggregate(task: Task) -> Task:
-    logger = get_run_logger()
-    logger.info(f"{task}")
+    logger.info(f"{task.run_id} {task.id} {task.task_type} {task.goal}")
     if task.task_type == "design":
         return await design_aggregate(task)
     elif task.task_type == "search":
@@ -80,10 +79,13 @@ async def task_aggregate(task: Task) -> Task:
     return task
 
 
-@task(name="存储结果到记忆库", cache_key_fn=generate_task_cache_key)
-async def store_memory(task: Task, operation_name: str):
-    logger = get_run_logger()
-    logger.info(f"{task} \n {operation_name}")
+@task(
+    persist_result=True, 
+    cache_policy=INPUTS,
+    retries=10,
+)
+async def task_store_memory(task: Task, operation_name: str):
+    logger.info(f"{task.run_id} {task.id} {task.task_type} {task.goal}")
     await memory.add(task, operation_name)
     return True
 
@@ -91,40 +93,40 @@ async def store_memory(task: Task, operation_name: str):
 ###############################################################################
 
 
-@flow(name="Agent Sequential Flow", log_prints=True, retries=0)
-async def agent_flow(current_task: Task, max_steps: int = 50, current_step: int = 0) -> int:
-    logger = get_run_logger()
-    if current_step >= max_steps:
-        logger.info(f"{current_step} >= {max_steps} \n {current_task}")
-        return current_step
+@flow
+async def flow_write(current_task: Task):
+    logger.info(f"{current_task.run_id} {current_task.id} {current_task.task_type} {current_task.goal}")
 
-    current_step += 1
-    logger.info(f"{current_step} \n {current_task}")
+    today_key = f"{current_task.run_id}:{date.today().isoformat()}"
+    day_wordcount = wordcount_cache.get(today_key, 0)
+    if day_wordcount > day_wordcount_limit:
+        logger.info(f"已完成当天任务 {current_task.run_id} {day_wordcount}")
+        return
 
     ret_atom = await task_atom(current_task)
-    await store_memory(ret_atom, "task_atom")
+    await task_store_memory(ret_atom, "task_atom")
 
     is_atom = ret_atom.results.get("atom_result") == "atom"
     if is_atom:
         ret_excute = await task_execute(ret_atom)
-        await store_memory(ret_excute, "task_execute")
+        await task_store_memory(ret_excute, "task_execute")
     else:
         ret_plan = await task_plan(ret_atom)
-        await store_memory(ret_plan, "task_plan")
+        await task_store_memory(ret_plan, "task_plan")
 
         if ret_plan.sub_tasks:
             for sub_task in ret_plan.sub_tasks:
-                if current_step >= max_steps:
-                    logger.info(f"{current_step} >= {max_steps} \n {sub_task}")
-                    break
-                current_step = await agent_flow(sub_task, max_steps, current_step)
+                today_key = f"{sub_task.run_id}:{date.today().isoformat()}"
+                day_wordcount = wordcount_cache.get(today_key, 0)
+                if day_wordcount > day_wordcount_limit:
+                    logger.info(f"已完成当天任务 {sub_task.run_id} {day_wordcount}")
+                    return
+                
+                await flow_write(sub_task)
 
             if ret_plan.task_type in ["design", "search"]:
                 ret_aggregate = await task_aggregate(ret_plan)
-                await store_memory(ret_aggregate, "task_aggregate")
+                await task_store_memory(ret_aggregate, "task_aggregate")
         else:
-            logger.error(f"{ret_plan}")
+            logger.error(f"规划失败 {ret_plan}")
             raise Exception(f"任务 '{ret_plan.id}' 规划失败, 没有子任务。")
-
-    return current_step
-

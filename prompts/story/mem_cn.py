@@ -1,3 +1,4 @@
+from datetime import datetime
 
 
 custom_fact_extraction_prompt = f"""

@@ -7,6 +7,17 @@
 
 分析、审查当前文件的代码, 指出可以优化的地方。
 
+
+
+
+
+任务涉及外部API调用，考虑添加适当的速率限制
+
+
+
+
+
+
 ## 翻译
 
 
@@ -14,64 +25,6 @@
 
 
 并提供diff。
-
-
-
-
-
-
-
-
-    if task.category == "story":
-        if os.getenv("deployment_environment") == "test":
-        if task.task_type == "design":
-            from ..prompts.story.atom_design_cn import SYSTEM_PROMPT, USER_PROMPT
-            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-        elif task.task_type == "search":
-            from ..prompts.story.atom_search_cn import SYSTEM_PROMPT, USER_PROMPT
-            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-        elif task.task_type == "write":
-            if not task.length:
-                raise ValueError("Task length must be set.")
-            from ..prompts.story.atom_write_cn import SYSTEM_PROMPT, USER_PROMPT
-            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-        else:
-            raise ValueError(f"未知的任务类型: {task.task_type}")
-    elif task.category == "report":
-        if task.task_type == "design":
-            from ..prompts.report.atom_design_cn import SYSTEM_PROMPT, USER_PROMPT
-            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-        elif task.task_type == "search":
-            from ..prompts.report.atom_search_cn import SYSTEM_PROMPT, USER_PROMPT
-            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-        elif task.task_type == "write":
-            if not task.length:
-                raise ValueError("Task length must be set.")
-            from ..prompts.report.atom_write_cn import SYSTEM_PROMPT, USER_PROMPT
-            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-        else:
-            raise ValueError(f"未知的任务类型: {task.task_type}")
-    elif task.category == "book":
-        if task.task_type == "design":
-            from ..prompts.book.atom_design_cn import SYSTEM_PROMPT, USER_PROMPT
-            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-        elif task.task_type == "search":
-            from ..prompts.book.atom_search_cn import SYSTEM_PROMPT, USER_PROMPT
-            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-        elif task.task_type == "write":
-            if not task.length:
-                raise ValueError("Task length must be set.")
-            from ..prompts.book.atom_write_cn import SYSTEM_PROMPT, USER_PROMPT
-            messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-        else:
-            raise ValueError(f"未知的任务类型: {task.task_type}")
-    else:
-        raise ValueError(f"未知的 category: {task.category}")
-
-
-
-
-
 
 
 

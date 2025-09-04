@@ -14,9 +14,9 @@ from sentence_transformers import SentenceTransformer, util
 from langchain_community.utilities import SearxSearchWrapper
 from langdetect import detect, LangDetectException
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
-from ..util.models import Task
-from ..util.llm import get_llm_params, llm_acompletion
-from ..memory import memory, get_llm_messages
+from util.models import Task
+from util.llm import get_llm_params, llm_acompletion
+from memory import memory, get_llm_messages
 
 
 ###############################################################################
@@ -73,10 +73,9 @@ class SearchAgentState(TypedDict):
 ###############################################################################
 
 
-cache_dir = os.path.join("output", ".cache")
-os.makedirs(cache_dir, exist_ok=True)
-SEARCH_CACHE = Cache(os.path.join(cache_dir, 'search_cache'), size_limit=int(128 * 1024 * 1024))
-SCRAPE_CACHE = Cache(os.path.join(cache_dir, 'scrape_cache'), size_limit=int(128 * 1024 * 1024))
+
+SEARCH_CACHE = Cache(os.path.join(".cache", 'search_cache'), size_limit=int(128 * 1024 * 1024))
+SCRAPE_CACHE = Cache(os.path.join(".cache", 'scrape_cache'), size_limit=int(128 * 1024 * 1024))
 
 
 search_tool = SearxSearchWrapper(searx_host=os.environ.get("SearXNG", "http://127.0.0.1:8080"))
@@ -314,14 +313,14 @@ async def planner_node(state: SearchAgentState) -> dict:
     logger.info(f"▶️ 1. 进入规划节点 (第 {turn} 轮)...")
 
     if task.category == "story":
-        from ..prompts.story.search_cn import SYSTEM_PROMPT, USER_PROMPT
-        messages = get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT, context_dict)
+        from prompts.story.search_cn import SYSTEM_PROMPT, USER_PROMPT
+        messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
     elif task.category == "report":
-        from ..prompts.report.search_cn import SYSTEM_PROMPT, USER_PROMPT
-        messages = get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT, context_dict)
+        from prompts.report.search_cn import SYSTEM_PROMPT, USER_PROMPT
+        messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
     elif task.category == "book":
-        from ..prompts.book.search_cn import SYSTEM_PROMPT, USER_PROMPT
-        messages = get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT, context_dict)
+        from prompts.book.search_cn import SYSTEM_PROMPT, USER_PROMPT
+        messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
     else:
         raise ValueError(f"未知的 category: {task.category}")
     
@@ -449,25 +448,25 @@ async def information_processor_node(state: SearchAgentState) -> dict:
 
     task = state['task']
     if task.category == "story":
-        from ..prompts.story.search_cn import PROMPT_INFORMATION_PROCESSOR
+        from prompts.story.search_cn import PROMPT_INFORMATION_PROCESSOR
         prompt = PROMPT_INFORMATION_PROCESSOR.format(
-            task_goal=state['task'].goal,
-            current_focus=state['current_focus'],
-            scraped_content_json=scraped_content_json
+            research_focus=state["current_focus"],
+            rolling_summary=state["rolling_summary"] or "",
+            content=scraped_content_json
         )
     elif task.category == "report":
-        from ..prompts.report.search_cn import PROMPT_INFORMATION_PROCESSOR
+        from prompts.report.search_cn import PROMPT_INFORMATION_PROCESSOR
         prompt = PROMPT_INFORMATION_PROCESSOR.format(
-            task_goal=state['task'].goal,
-            current_focus=state['current_focus'],
-            scraped_content_json=scraped_content_json
+            research_focus=state["current_focus"],
+            rolling_summary=state["rolling_summary"] or "",
+            content=scraped_content_json
         )
     elif task.category == "book":
-        from ..prompts.book.search_cn import PROMPT_INFORMATION_PROCESSOR
+        from prompts.book.search_cn import PROMPT_INFORMATION_PROCESSOR
         prompt = PROMPT_INFORMATION_PROCESSOR.format(
-            task_goal=state['task'].goal,
-            current_focus=state['current_focus'],
-            scraped_content_json=scraped_content_json
+            research_focus=state["current_focus"],
+            rolling_summary=state["rolling_summary"] or "",
+            content=scraped_content_json
         )
     else:
         raise ValueError(f"未知的 category: {task.category}")
@@ -523,28 +522,25 @@ async def rolling_summary_node(state: SearchAgentState) -> dict:
 
     task = state['task']
     if task.category == "story":
-        from ..prompts.story.search_cn import PROMPT_ROLLING_SUMMARY
+        from prompts.story.search_cn import PROMPT_ROLLING_SUMMARY
         prompt = PROMPT_ROLLING_SUMMARY.format(
-            task_goal=state['task'].goal,
-            current_focus=state['current_focus'],
+            research_focus=state["current_focus"],
             previous_summary=previous_summary,
-            new_info=new_info_str
+            new_information=new_info_str
         )
     elif task.category == "report":
-        from ..prompts.report.search_cn import PROMPT_ROLLING_SUMMARY
+        from prompts.report.search_cn import PROMPT_ROLLING_SUMMARY
         prompt = PROMPT_ROLLING_SUMMARY.format(
-            task_goal=state['task'].goal,
-            current_focus=state['current_focus'],
+            research_focus=state["current_focus"],
             previous_summary=previous_summary,
-            new_info=new_info_str
+            new_information=new_info_str
         )
     elif task.category == "book":
-        from ..prompts.book.search_cn import PROMPT_ROLLING_SUMMARY
+        from prompts.book.search_cn import PROMPT_ROLLING_SUMMARY
         prompt = PROMPT_ROLLING_SUMMARY.format(
-            task_goal=state['task'].goal,
-            current_focus=state['current_focus'],
+            research_focus=state["current_focus"],
             previous_summary=previous_summary,
-            new_info=new_info_str
+            new_information=new_info_str
         )
     else:
         raise ValueError(f"未知的 category: {task.category}")
@@ -578,15 +574,21 @@ async def synthesize_node(state: SearchAgentState) -> dict:
         'supplementary_summaries': supplementary_summaries, 
     }
 
+    information = f"""# 最终总结
+{context_dict['rolling_summary']}
+
+# 补充材料摘要
+{context_dict['supplementary_summaries']}"""
+
     if task.category == "story":
-        from ..prompts.story.search_cn import SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE
-        messages = get_llm_messages(task, SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE, context_dict)
+        from prompts.story.search_cn import SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE
+        messages = await get_llm_messages(task, SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE.format(information=information))
     elif task.category == "report":
-        from ..prompts.report.search_cn import SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE
-        messages = get_llm_messages(task, SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE, context_dict)
+        from prompts.report.search_cn import SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE
+        messages = await get_llm_messages(task, SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE.format(information=information))
     elif task.category == "book":
-        from ..prompts.book.search_cn import SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE
-        messages = get_llm_messages(task, SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE, context_dict)
+        from prompts.book.search_cn import SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE
+        messages = await get_llm_messages(task, SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE.format(information=information))
     else:
         raise ValueError(f"未知的 category: {task.category}")
 
@@ -681,7 +683,7 @@ async def search(task: Task) -> Task:
     3.  报告生成与结束 (Termination):
         -   `synthesize`: 汇集所有信息, 生成最终报告, 流程结束 (`END`)。
     """
-    logger.info(f"{task}")
+    logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
 
     if not task.id or not task.goal:
         raise ValueError("任务ID和目标不能为空。")
@@ -772,7 +774,7 @@ async def search(task: Task) -> Task:
         "reasoning": reasoning_str,
     }
 
-    logger.info(f"{updated_task}")
+    logger.info(f"完成\n{updated_task.model_dump_json(indent=2, exclude_none=True)}")
     return updated_task
 
 

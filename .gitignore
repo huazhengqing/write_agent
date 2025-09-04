@@ -1,10 +1,11 @@
 .kiro/
 .trae/
 .vscode/
+.codebuddy/
 .qoder/
 .git/
 .idea/
-.cache/
+.cache/*
 .mypy_cache/
 .pytest_cache/
 .mypy_cache/
@@ -27,6 +28,7 @@ searxng/
 *.pdf
 test_*.py
 *_test.py
+*debug*.py
 init.md
 *copy.py
 

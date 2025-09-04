@@ -17,10 +17,6 @@ mem0ai[graph]
 python-dotenv
 beautifulsoup4
 litellm[caching]
+langchain-memgraph
 langchain-community
 sentence_transformers
-
-
-
-
-
