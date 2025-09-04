@@ -17,6 +17,7 @@ models/
 venv/
 prefect/*
 bug/
+bak/story*
 logs/
 docs/*.pdf
 output/*

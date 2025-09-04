@@ -244,7 +244,7 @@ class MemoryService:
             "task_list": "", 
         }
         if not task.parent_id:
-            logger.info(f"{task} \n {ret}")
+            logger.info(f"完成\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
             return ret
 
         # 并发获取初始依赖信息
