@@ -41,21 +41,21 @@ def sanitize_filename(name: str) -> str:
     task_run_name="task_init: {task_info.name}",
 )
 async def task_init(task_info):
+    if not task_info:
+        raise ValueError("任务信息为空")
+
+    category = task_info.get('category') or 'error'
+    language = task_info.get('language') or 'error'
+    root_name = task_info["name"]
+    sanitized_category = sanitize_filename(category)
+    sanitized_name = sanitize_filename(root_name)
+    sanitized_language = sanitize_filename(language)
+    goal = task_info["goal"]
+    stable_unique_id = hashlib.sha256(goal.encode('utf-8')).hexdigest()[:16]
+    run_id = f"{sanitized_category}_{sanitized_name}_{sanitized_language}_{stable_unique_id}"
+
     ensure_task_logger(run_id)
     with logger.contextualize(run_id=run_id):
-        if not task_info:
-            raise ValueError("任务信息为空")
-
-        category = task_info.get('category') or 'error'
-        language = task_info.get('language') or 'error'
-        root_name = task_info["name"]
-        sanitized_category = sanitize_filename(category)
-        sanitized_name = sanitize_filename(root_name)
-        sanitized_language = sanitize_filename(language)
-        goal = task_info["goal"]
-        stable_unique_id = hashlib.sha256(goal.encode('utf-8')).hexdigest()[:16]
-        run_id = f"{sanitized_category}_{sanitized_name}_{sanitized_language}_{stable_unique_id}"
-    
         task_params = {
             "id": "1",
             "parent_id": "",
