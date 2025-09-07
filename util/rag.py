@@ -25,7 +25,8 @@ from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
 from llama_index.core import Document, StorageContext, VectorStoreIndex, KnowledgeGraphIndex
 from util.db import get_db
 from util.models import Task
-from util.llm import LLM_PARAMS_fast, LLM_PARAMS_reasoning, get_llm_params, llm_acompletion
+from util.llm import LLM_PARAMS_fast, LLM_PARAMS_reasoning, get_llm_messages, get_llm_params, llm_acompletion
+from util.prompt_loader import load_prompts
 
 
 """
@@ -291,11 +292,9 @@ class RAG:
         """
         logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
         
-        prompt_module = __import__(f"prompts.{task.category}.write_aggregate_cn", fromlist=["SYSTEM_PROMPT", "USER_PROMPT"])
-        SYSTEM_PROMPT = prompt_module.SYSTEM_PROMPT
-        USER_PROMPT = prompt_module.USER_PROMPT
+        SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "write_aggregate_cn", "SYSTEM_PROMPT", "USER_PROMPT")
 
-        context = {
+        context_dict_user = {
             "task": task.model_dump_json(
                 indent=2,
                 exclude_none=True,
@@ -303,14 +302,7 @@ class RAG:
             ),
             "subtask_write": task.results.get("result")
         }
-        
-        safe_context = collections.defaultdict(str, context)
-        user_prompt_content = USER_PROMPT.format_map(safe_context)
-
-        messages = [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_prompt_content}
-        ]
+        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context_dict_user)
 
         llm_params = get_llm_params(messages, temperature=0.2)
         
@@ -401,17 +393,16 @@ class RAG:
     async def get_context_base(self, task: Task) -> Dict[str, Any]:
         """
         获取任务所需的基础上下文信息。
-
+    
         这是一个核心的上下文聚合函数, 它会:
         1. 获取任务的直接依赖 (design, search) 和最新的正文。
-        2. 基于现有信息, 生成结构化的查询计划 (Inquiry Plan)。
-        3. 执行查询计划, 从RAG索引中检索更深层次的上下文 (上层设计, 历史情节等)。
-        4. 组装所有信息并返回。
+        2. 根据需要, 调用 `search_context` 检索更深层次的上下文 (上层设计, 历史情节等)。
+        3. 组装所有信息并返回。
         """
         logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
-
+    
         db = get_db(run_id=task.run_id, category=task.category)
-
+    
         ret = {
             "task": task.model_dump_json(
                 indent=2,
@@ -423,7 +414,7 @@ class RAG:
         if not task.parent_id:
             logger.info(f"完成\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
             return ret
-
+    
         dependent_design_task = self.get_dependent_design(db, task)
         dependent_search_task = self.get_dependent_search(db, task)
         text_latest_task = self.get_text_latest(task)
@@ -436,35 +427,24 @@ class RAG:
         ret["dependent_search"] = dependent_search
         ret["text_latest"] = text_latest
         
-        design_plan_task = self.get_query(task, "design", dependent_design, dependent_search, text_latest)
-        content_plan_task = self.get_query(task, "write", dependent_design, dependent_search, text_latest)
-        search_plan_task = self.get_query(task, "search", dependent_design, dependent_search, text_latest)
-
-        design_plan, content_plan, search_plan = await asyncio.gather(
-            design_plan_task, content_plan_task, search_plan_task
-        )
-
         context_tasks = {}
-        if design_plan and design_plan.get("information_needs"):
-            context_tasks["upper_design"] = self.search_context(task, design_plan, 'upper_design')
-        if search_plan and search_plan.get("information_needs"):
-            context_tasks["upper_search"] = self.search_context(task, search_plan, 'upper_search')
-        if content_plan and content_plan.get("information_needs"):
-            context_tasks["text_summary"] = self.search_context(task, content_plan, 'text_summary')
-        
-        if len(task.id.split(".")) >= 2:
+        current_level = len(task.id.split("."))
+        if current_level >= 2:
             context_tasks["task_list"] = self.get_context_task_list(db, task)
-
+    
+        if current_level >= 3:
+            context_tasks["upper_design"] = self.search_context(task, 'upper_design', dependent_design, dependent_search, text_latest)
+            context_tasks["upper_search"] = self.search_context(task, 'upper_search', dependent_design, dependent_search, text_latest)
+    
+        if await self.get_text_length(task) > 500:
+            context_tasks["text_summary"] = self.search_context(task, 'text_summary', dependent_design, dependent_search, text_latest)
+    
         if context_tasks:
             results = await asyncio.gather(*context_tasks.values())
             for i, key in enumerate(context_tasks.keys()):
                 result = results[i]
-                if isinstance(result, Exception):
-                    logger.error(f"获取上下文 '{key}' 失败: {result}")
-                    ret[key] = f"错误: 获取 {key} 上下文失败。"
-                else:
-                    ret[key] = result
-
+                ret[key] = result
+    
         logger.info(f"完成\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
         return ret
     
@@ -667,7 +647,7 @@ class RAG:
         logger.info(f"完成\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
         return ret
 
-    async def get_query(self, task: Task, category: str, dependent_design: str, dependent_search: str, text_latest: str) -> Dict[str, Any]:
+    async def get_query(self, task: Task, search_type: Literal['text_summary', 'upper_design', 'upper_search'], dependent_design: str, dependent_search: str, text_latest: str) -> Dict[str, Any]:
         """
         使用LLM生成一个结构化的“探询计划”(Inquiry Plan)。
 
@@ -675,7 +655,7 @@ class RAG:
 
         Args:
             task (Task): 当前任务。
-            category (str): 查询类别 ('design', 'write', 'search')。
+            search_type (Literal): 搜索类型, 决定了要使用的提示词和逻辑。
             dependent_design (str): 依赖的设计内容。
             dependent_search (str): 依赖的搜索内容。
             text_latest (str): 最新的正文。
@@ -683,26 +663,32 @@ class RAG:
         Returns:
             Dict[str, Any]: 解析后的探询计划字典。
         """
-        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal} {category} \n dependent_design: \n{dependent_design} \n dependent_search: \n{dependent_search} \n text_latest: \n{text_latest}")
+        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal} {search_type} \n dependent_design: \n{dependent_design} \n dependent_search: \n{dependent_search} \n text_latest: \n{text_latest}")
 
-        prompt_module = __import__(f"prompts.{task.category}.query_cn", fromlist=[
+        (
+            SYSTEM_PROMPT_design, USER_PROMPT_design,
+            SYSTEM_PROMPT_design_for_write,
+            SYSTEM_PROMPT_write, USER_PROMPT_write,
+            SYSTEM_PROMPT_search, USER_PROMPT_search,
+            InquiryPlan
+        ) = load_prompts(
+            task.category, "query_cn",
             "SYSTEM_PROMPT_design", "USER_PROMPT_design",
             "SYSTEM_PROMPT_design_for_write",
             "SYSTEM_PROMPT_write", "USER_PROMPT_write",
             "SYSTEM_PROMPT_search", "USER_PROMPT_search",
             "InquiryPlan"
-        ])
-        InquiryPlan = getattr(prompt_module, "InquiryPlan")
+        )
         PROMPTS = {
-            "design": (getattr(prompt_module, "SYSTEM_PROMPT_design", None), getattr(prompt_module, "USER_PROMPT_design", None)),
-            "write": (prompt_module.SYSTEM_PROMPT_write, prompt_module.USER_PROMPT_write),
-            "search": (prompt_module.SYSTEM_PROMPT_search, prompt_module.USER_PROMPT_search),
+            "upper_design": (SYSTEM_PROMPT_design, USER_PROMPT_design),
+            "upper_search": (SYSTEM_PROMPT_search, USER_PROMPT_search),
+            "text_summary": (SYSTEM_PROMPT_write, USER_PROMPT_write),
         }
         
-        if category not in PROMPTS:
-            raise ValueError(f"不支持的查询生成类别: {category}")
+        if search_type not in PROMPTS:
+            raise ValueError(f"不支持的查询生成类别: {search_type}")
 
-        prompt_input = {
+        context_dict_user = {
             "task": task.model_dump_json(
                 indent=2,
                 exclude_none=True,
@@ -712,17 +698,12 @@ class RAG:
             "dependent_search": dependent_search,
             "text_latest": text_latest
         }
-        system_prompt, user_prompt_template = PROMPTS[category]
+        SYSTEM_PROMPT, USER_PROMPT = PROMPTS[search_type]
 
-        # 核心修改：根据主任务类型选择不同的 design prompt
-        if task.task_type == 'write' and category == 'design':
-            system_prompt = prompt_module.SYSTEM_PROMPT_design_for_write
+        if task.task_type == 'write' and search_type == 'upper_design':
+            SYSTEM_PROMPT = SYSTEM_PROMPT_design_for_write
 
-        safe_context = collections.defaultdict(str, prompt_input)
-        messages = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt_template.format_map(safe_context)}
-        ]
+        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context_dict_user)
 
         llm_params = get_llm_params(messages, temperature=0.1)
         llm_params['response_format'] = {
@@ -731,31 +712,35 @@ class RAG:
         }
 
         message = await llm_acompletion(llm_params)
-        response_content = message.content
 
-        inquiry_plan_obj = InquiryPlan.model_validate_json(response_content)
+        inquiry_plan_obj = InquiryPlan.model_validate_json(message.content)
         inquiry_plan = inquiry_plan_obj.model_dump()
 
         logger.info(f"完成 \n{json.dumps(inquiry_plan, indent=2, ensure_ascii=False)}")
         return inquiry_plan
 
-    async def search_context(self, task: Task, inquiry_plan: Dict[str, Any], search_type: Literal['text_summary', 'upper_design', 'upper_search']) -> str:
+    async def search_context(self, task: Task, search_type: Literal['text_summary', 'upper_design', 'upper_search'], dependent_design: str, dependent_search: str, text_latest: str) -> str:
         """
-        根据探询计划, 执行RAG检索。
+        生成探询计划并执行RAG检索。
 
-        - 根据小说长度和探询计划的模式, 决定使用简单检索还是复杂的ReAct Agent。
+        - 首先调用LLM生成结构化的“探询计划”(Inquiry Plan)。
+        - 如果计划表明需要信息, 则根据小说长度和计划模式, 决定使用简单检索还是复杂的ReAct Agent。
         - 构建向量和图谱查询引擎, 并应用元数据过滤器。
         - 执行检索并返回整合后的结果。
 
         Args:
             task (Task): 当前任务。
-            inquiry_plan (Dict[str, Any]): 指导检索的探询计划。
             search_type (Literal): 搜索类型, 决定了过滤和整合逻辑。
+            dependent_design (str): 依赖的设计内容。
+            dependent_search (str): 依赖的搜索内容。
+            text_latest (str): 最新的正文。
         """
-        logger.info(f"开始 {task.run_id} {task.id} {search_type} \n{inquiry_plan}")
+        logger.info(f"开始 {task.run_id} {task.id} {search_type}")
+
+        inquiry_plan = await self.get_query(task, search_type, dependent_design, dependent_search, text_latest)
 
         if not inquiry_plan or not inquiry_plan.get("information_needs"):
-            logger.warning("收到的探询计划为空或无效, 跳过搜索。")
+            logger.warning("生成的探询计划为空或无效, 跳过搜索。")
             return ""
 
         config = self.get_search_config(task, inquiry_plan, search_type)
@@ -902,7 +887,7 @@ class RAG:
         Returns:
             str: 最终整合后的答案。
         """
-        logger.info(f"开始 简单模式 \n{json.dumps(config, indent=2, ensure_ascii=False)}")
+        logger.info(f"开始 简单模式 \n{json.dumps(config, indent=2, ensure_ascii=False)}\n{json.dumps(inquiry_plan, indent=2, ensure_ascii=False)}")
         
         all_questions = [q for need in inquiry_plan.get("information_needs", []) for q in need.get("questions", [])]
         if not all_questions:
@@ -965,7 +950,7 @@ class RAG:
             inquiry_plan (Dict[str, Any]): 探询计划。
             search_type (Literal): 搜索类型。
         """
-        logger.info(f"开始 {task.run_id} {task.id} {search_type} \n{inquiry_plan}")
+        logger.info(f"开始 {task.run_id} {task.id} {search_type} \n{json.dumps(inquiry_plan, indent=2, ensure_ascii=False)}")
 
         current_level = len(task.id.split("."))
         configs = {
@@ -981,13 +966,13 @@ class RAG:
                 'vector_tool_desc': "功能: 检索情节摘要、角色关系、事件发展。范围: 所有层级的历史摘要。",
                 'final_instruction': "任务: 整合情节摘要(向量)与正文细节(图谱)，提供写作上下文。重点: 角色关系、关键伏笔、情节呼应。",
                 'rules_text': """
-                    # 整合规则
-                    1.  冲突解决: 向量(摘要)与图谱(细节)冲突时, 以图谱为准。
-                    2.  排序依据:
-                        - 向量: 相关性。
-                        - 图谱: 章节顺序 (时间线)。
-                    3.  输出要求: 整合为连贯叙述, 禁止罗列。
-                """,
+# 整合规则
+1.  冲突解决: 向量(摘要)与图谱(细节)冲突时, 以图谱为准。
+2.  排序依据:
+    - 向量: 相关性。
+    - 图谱: 章节顺序 (时间线)。
+3.  输出要求: 整合为连贯叙述, 禁止罗列。
+""",
                 'vector_sort_by': 'narrative',
                 'kg_sort_by': 'narrative',
             },
@@ -1004,16 +989,16 @@ class RAG:
                 'vector_tool_desc': f"功能: 检索小说设定、摘要、概念。范围: 任务层级 < {current_level}。",
                 'final_instruction': "任务: 整合上层设计, 提供统一、无冲突的宏观设定和指导原则。",
                 'rules_text': """
-                    # 整合规则
-                    1.  时序优先: 结果按时间倒序。遇直接矛盾, 采纳最新版本。
-                    2.  矛盾 vs. 细化:
-                        - 矛盾: 无法共存的描述 (A是孤儿 vs A父母健在)。
-                        - 细化: 补充细节, 不推翻核心 (A会用剑 -> A擅长流风剑法)。细化应融合, 不是矛盾。
-                    3.  输出要求:
-                        - 融合非冲突信息。
-                        - 报告被忽略的冲突旧信息。
-                        - 禁止罗列, 聚焦问题。
-                """,
+# 整合规则
+1.  时序优先: 结果按时间倒序。遇直接矛盾, 采纳最新版本。
+2.  矛盾 vs. 细化:
+    - 矛盾: 无法共存的描述 (A是孤儿 vs A父母健在)。
+    - 细化: 补充细节, 不推翻核心 (A会用剑 -> A擅长流风剑法)。细化应融合, 不是矛盾。
+3.  输出要求:
+    - 融合非冲突信息。
+    - 报告被忽略的冲突旧信息。
+    - 禁止罗列, 聚焦问题。
+""",
                 'vector_sort_by': 'time',
                 'kg_sort_by': 'time',
             },
@@ -1030,15 +1015,15 @@ class RAG:
                 'vector_tool_desc': f"功能: 从外部研究资料库检索事实、概念、历史事件。范围: 任务层级 < {current_level}。",
                 'final_instruction': "任务: 整合外部研究资料, 提供准确、有深度、经过批判性评估的背景支持。",
                 'rules_text': """
-                    # 整合规则
-                    1.  评估: 批判性评估所有信息。
-                    2.  冲突处理:
-                        - 识别并报告矛盾。
-                        - 列出冲突来源和时间戳。
-                        - 无法解决时, 保留不确定性。
-                    3.  时效性: `created_at`是评估因素, 但非唯一标准。结果按相关性排序。
-                    4.  输出要求: 组织为连贯报告, 禁止罗列。
-                """,
+# 整合规则
+1.  评估: 批判性评估所有信息。
+2.  冲突处理:
+    - 识别并报告矛盾。
+    - 列出冲突来源和时间戳。
+    - 无法解决时, 保留不确定性。
+3.  时效性: `created_at`是评估因素, 但非唯一标准。结果按相关性排序。
+4.  输出要求: 组织为连贯报告, 禁止罗列。
+""",
                 'vector_sort_by': 'relevance',
                 'kg_sort_by': 'relevance',
             }
