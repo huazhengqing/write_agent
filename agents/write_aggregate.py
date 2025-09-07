@@ -1,31 +1,32 @@
-import collections
 from loguru import logger
+import collections
 from util.models import Task
 from util.llm import get_llm_messages, get_llm_params, llm_acompletion
 from util.rag import get_rag
 from util.prompt_loader import load_prompts
 
 
-async def write(task: Task) -> Task:
+async def write_aggregate(task: Task) -> Task:
     logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
 
     if not task.id or not task.goal:
-        raise ValueError(f"{task}")
+        raise ValueError("任务ID和目标不能为空。")
     if task.task_type != "write":
-        raise ValueError(f"{task}")
-    if not task.length:
-        raise ValueError(f"{task}")
+        raise ValueError("Task type must be 'write'.")
+    if not task.sub_tasks:
+        raise ValueError("Task must have sub tasks.")
+  
     VALID_CATEGORIES = {"story", "report", "book"}
     if task.category not in VALID_CATEGORIES:
-        raise ValueError(f"{task}")
+        raise ValueError(f"未知的 category: {task.category}")
 
-    SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "write_cn", "SYSTEM_PROMPT", "USER_PROMPT")
+    SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "write_aggregate_cn", "SYSTEM_PROMPT", "USER_PROMPT")
 
-    context = await get_rag().get_context_base(task)
+    context = await get_rag().get_context_aggregate_write(task)
     
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
 
-    llm_params = get_llm_params(messages, temperature=0.75)
+    llm_params = get_llm_params(messages, temperature=0.2)
     message = await llm_acompletion(llm_params)
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")
     content = message.content

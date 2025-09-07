@@ -51,13 +51,28 @@ LLM_PARAMS_fast= {
     ]
 }
 
-def get_llm_messages(SYSTEM_PROMPT: str, USER_PROMPT: str, context_dict: Dict[str, Any] = None) -> list[dict]:
-    context = context_dict or {}
-    safe_context = collections.defaultdict(str, context)
-    messages = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        {"role": "user", "content": USER_PROMPT.format_map(safe_context)}
-    ]
+def get_llm_messages(SYSTEM_PROMPT: str, USER_PROMPT: str, context_dict_system: Dict[str, Any] = None, context_dict_user: Dict[str, Any] = None) -> list[dict]:
+    if not SYSTEM_PROMPT and not USER_PROMPT:
+        raise ValueError("SYSTEM_PROMPT 和 USER_PROMPT 不能同时为空")
+
+    messages = []
+
+    system_content = SYSTEM_PROMPT
+    if context_dict_system:
+        safe_context_system = collections.defaultdict(str, context_dict_system)
+        system_content = SYSTEM_PROMPT.format_map(safe_context_system)
+    
+    if system_content and system_content.strip():
+        messages.append({"role": "system", "content": system_content})
+
+    user_content = USER_PROMPT
+    if context_dict_user:
+        safe_context_user = collections.defaultdict(str, context_dict_user)
+        user_content = USER_PROMPT.format_map(safe_context_user)
+
+    if user_content and user_content.strip():
+        messages.append({"role": "user", "content": user_content})
+
     return messages
 
 def get_llm_params(
@@ -88,25 +103,20 @@ def _format_message_content(content: str) -> str:
     return content
 
 async def llm_acompletion(llm_params):
-    messages = llm_params.get('messages', [])
+    params_to_log = llm_params.copy()
+    params_to_log.pop('messages', None)
+    logger.info(f"LLM 参数:\n{json.dumps(params_to_log, indent=2, ensure_ascii=False, default=str)}")
+
     system_prompt = ""
     user_prompt = ""
-    
+    messages = llm_params.get('messages', [])
     for message in messages:
         if message.get("role") == "system":
             system_prompt = message.get("content", "")
         elif message.get("role") == "user":
             user_prompt = message.get("content", "")
-    
-    logger.info("=" * 50)
-    logger.info("系统提示词:")
-    logger.info("-" * 30)
-    logger.info(f"\n{system_prompt}")
-    logger.info("-" * 30)
-    logger.info("用户提示词:")
-    logger.info("-" * 30)
-    logger.info(f"\n{user_prompt}")
-    logger.info("=" * 50)
+    logger.info(f"系统提示词:\n{system_prompt}")
+    logger.info(f"用户提示词:\n{user_prompt}")
 
     response = await litellm.acompletion(**llm_params)
 
@@ -114,26 +124,15 @@ async def llm_acompletion(llm_params):
         raise ValueError(f"{llm_params}")
     
     message = response.choices[0].message
-    
     content = message.content
     if not content:
         raise ValueError(f"{message}")
     
     reason = message.get("reasoning_content") or message.get("reasoning", "")
-    
-    logger.info("=" * 50)
-    logger.info("推理过程:")
-    logger.info("-" * 30)
     if reason:
-        logger.info(f"\n{reason}")
-    else:
-        logger.error("没有推理过程")
-    logger.info("-" * 30)
+        logger.info(f"推理过程:\n{reason}")
     
-    logger.info("返回内容:")
-    logger.info("-" * 30)
     formatted_content = _format_message_content(content)
-    logger.info(f"\n{formatted_content}")
-    logger.info("=" * 50)
+    logger.info(f"返回内容:\n{formatted_content}")
 
     return message

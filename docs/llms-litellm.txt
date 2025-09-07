@@ -10,7 +10,7 @@ pip install lunary
 ## /chat/completions
 
 ### 示例
-调用：
+调用: 
 ```python
 import litellm
 import openai
@@ -58,7 +58,7 @@ except openai.OpenAIError as e:
     # print(type(e))
     print(e)
 ```
-返回输出：
+返回输出: 
 ```python
 {
     "id": "chatcmpl-565d891b-a42e-4c39-8d14-82a1f5208885",
@@ -94,7 +94,7 @@ except openai.OpenAIError as e:
 ```
 
 ### 接口说明 litellm.completion()
-输入参数：
+输入参数: 
 ```python
 def completion(
     model: str,

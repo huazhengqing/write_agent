@@ -37,11 +37,9 @@ def sanitize_filename(name: str) -> str:
     return s[:100]
 
 
-@task(
-    task_run_name="task_init: {task_info.name}",
-)
+@task
 async def task_init(task_info):
-    if not task_info:
+    if not task_info or not task_info.get('category') or not task_info.get('language'):
         raise ValueError("任务信息为空")
 
     category = task_info.get('category') or 'error'

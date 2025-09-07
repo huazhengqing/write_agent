@@ -1,20 +1,21 @@
 import os
-from typing import Any, Dict
 from pathlib import Path
-from prefect import flow, task
-from prefect.cache_policies import INPUTS
 from loguru import logger
 from diskcache import Cache
+from typing import Any, Dict
+from prefect import flow, task
+from prefect.cache_policies import INPUTS
 from datetime import date
 from util.models import Task
-from memory import memory
+from util.rag import get_rag
 from agents.atom import atom
 from agents.design import design
-from agents.design_aggregate import design_aggregate
 from agents.plan import plan
 from agents.write import write
 from agents.search import search
+from agents.design_aggregate import design_aggregate
 from agents.search_aggregate import search_aggregate
+from agents.write_aggregate import write_aggregate
 
 
 day_wordcount_limit = 10000
@@ -40,43 +41,40 @@ def ensure_task_logger(run_id: str):
     )
     _SINK_IDS[run_id] = sink_id
 
-
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=10, 
+    retries=100, 
     task_run_name="atom: {task.id}",
 )
 async def task_atom(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        logger.info(f"{task.run_id} {task.id} {task.task_type} {task.goal}")
+        # logger.info(f"{task.run_id} {task.id} {task.task_type} {task.goal}")
         return await atom(task)
-
 
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=10, 
+    retries=100, 
     task_run_name="plan: {task.id}",
 )
 async def task_plan(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        logger.info(f"{task.run_id} {task.id} {task.task_type} {task.goal}")
+        # logger.info(f"{task.run_id} {task.id} {task.task_type} {task.goal}")
         return await plan(task)
-
 
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=10, 
+    retries=100, 
     task_run_name="execute: {task.id} - {task.task_type}",
 )
 async def task_execute(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        logger.info(f"{task.run_id} {task.id} {task.task_type} {task.goal}")
+        # logger.info(f"{task.run_id} {task.id} {task.task_type} {task.goal}")
         if task.task_type == "design":
             return await design(task)
         elif task.task_type == "write":
@@ -91,11 +89,10 @@ async def task_execute(task: Task) -> Task:
         else:
             raise ValueError(f"{task}")
 
-
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=10, 
+    retries=100, 
     task_run_name="aggregate: {task.id} - {task.task_type}",
 )
 async def task_aggregate(task: Task) -> Task:
@@ -106,20 +103,24 @@ async def task_aggregate(task: Task) -> Task:
             return await design_aggregate(task)
         elif task.task_type == "search":
             return await search_aggregate(task)
-        return task
-
+        elif task.task_type == "write":
+            return await write_aggregate(task)
+        else:
+            raise ValueError(f"{task}")
 
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=10,
-    task_run_name="store_memory: {task.id} - {operation_name}",
+    retries=100,
+    task_run_name="rag_store: {task.id} - {operation_name}",
 )
-async def task_store_memory(task: Task, operation_name: str):
+async def task_rag_store(task: Task, operation_name: str):
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        logger.info(f"{task.run_id} {task.id} {task.task_type} {task.goal}")
-        await memory.add(task, operation_name)
+        # logger.info(f"{task.run_id} {task.id} {task.task_type} {task.goal}")
+        if not task.id:
+            raise ValueError(f"任务信息中未找到任务ID {task.id} \n 任务信息: {task}")
+        await get_rag().add(task, operation_name)
         return True
 
 @flow(
@@ -136,15 +137,15 @@ async def flow_write(current_task: Task):
         return
 
     ret_atom = await task_atom(current_task)
-    await task_store_memory(ret_atom, "task_atom")
+    await task_rag_store(ret_atom, "task_atom")
 
     is_atom = ret_atom.results.get("atom_result") == "atom"
     if is_atom:
         ret_excute = await task_execute(ret_atom)
-        await task_store_memory(ret_excute, "task_execute")
+        await task_rag_store(ret_excute, "task_execute")
     else:
         ret_plan = await task_plan(ret_atom)
-        await task_store_memory(ret_plan, "task_plan")
+        await task_rag_store(ret_plan, "task_plan")
 
         if ret_plan.sub_tasks:
             for sub_task in ret_plan.sub_tasks:
@@ -156,9 +157,8 @@ async def flow_write(current_task: Task):
                 
                 await flow_write(sub_task)
 
-            if ret_plan.task_type in ["design", "search"]:
-                ret_aggregate = await task_aggregate(ret_plan)
-                await task_store_memory(ret_aggregate, "task_aggregate")
+            ret_aggregate = await task_aggregate(ret_plan)
+            await task_rag_store(ret_aggregate, "task_aggregate")
         else:
             logger.error(f"规划失败 {ret_plan}")
             raise Exception(f"任务 '{ret_plan.id}' 规划失败, 没有子任务。")

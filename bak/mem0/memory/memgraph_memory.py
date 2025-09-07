@@ -209,7 +209,7 @@ class MemoryGraph:
             messages=[
                 {
                     "role": "system",
-                    "content": f"你是一位智能助手，能够理解给定文本中的实体及其类型。从文本中提取所有实体。若给定文本为问题，切勿回答问题本身。",
+                    "content": f"你是一位智能助手, 能够理解给定文本中的实体及其类型。从文本中提取所有实体。若给定文本为问题, 切勿回答问题本身。",
                 },
                 {"role": "user", "content": data},
             ],
@@ -551,7 +551,7 @@ class MemoryGraph:
         将字符串清理为合法的 Cypher 标识符（用于标签、类型、属性名等）。
         - 将空格和无效字符（如 /）替换为下划线。
         - 允许字母数字字符（a-z, A-Z, 0-9）、下划线和中文字符。
-        - 确保标识符不以数字开头，如果是，则在前面加上'n'。
+        - 确保标识符不以数字开头, 如果是, 则在前面加上'n'。
         - 移除结果中可能存在的前导或尾随下划线。
         """
         import re
@@ -561,7 +561,7 @@ class MemoryGraph:
         # 保留单词字符(\w 包括 [a-zA-Z0-9_])和中日韩字符。将其他所有字符替换为下划线。
         cleaned_name = re.sub(r'[^\w\u4e00-\u9fff]', '_', name)
         
-        # 如果名称以数字开头，在其前面加上一个字符（例如 'n'）
+        # 如果名称以数字开头, 在其前面加上一个字符（例如 'n'）
         if cleaned_name and cleaned_name[0].isdigit():
             cleaned_name = 'n' + cleaned_name
             

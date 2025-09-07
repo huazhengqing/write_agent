@@ -10,7 +10,7 @@ LanguageType = Literal["cn", "en"]
 class Task(BaseModel):
     id: str = Field(..., description="任务的唯一标识符, 采用层级结构, 父任务id.子任务序号。如 '1', '1.1', '1.2.1'")
     parent_id: str = Field(..., description="父任务的ID")
-    task_type: TaskType = Field(..., description="任务类型：'write'写作, 'design'设计, 'search'搜索")
+    task_type: TaskType = Field(..., description="任务类型: 'write'写作, 'design'设计, 'search'搜索")
     goal: str = Field(..., description="任务需要达成的具体目标")
     length: Optional[str] = Field(None, description="预估产出字数 (仅 'write' 任务)")
     dependency: List[str] = Field(default_factory=list, description="执行前必须完成的同级任务ID列表")

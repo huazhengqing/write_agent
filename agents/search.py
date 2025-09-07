@@ -2,6 +2,7 @@ import os
 import json
 import httpx
 import asyncio
+import collections
 import functools
 from loguru import logger
 from diskcache import Cache
@@ -15,8 +16,9 @@ from langchain_community.utilities import SearxSearchWrapper
 from langdetect import detect, LangDetectException
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from util.models import Task
-from util.llm import get_llm_params, llm_acompletion
-from memory import memory, get_llm_messages
+from util.prompt_loader import load_prompts
+from util.llm import get_llm_messages, get_llm_params, llm_acompletion
+from util.rag import get_rag
 
 
 ###############################################################################
@@ -311,18 +313,12 @@ async def planner_node(state: SearchAgentState) -> dict:
 
     # 2. 确定当前的研究焦点
     logger.info(f"▶️ 1. 进入规划节点 (第 {turn} 轮)...")
+  
+    SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "search_cn", "SYSTEM_PROMPT", "USER_PROMPT")
 
-    if task.category == "story":
-        from prompts.story.search_cn import SYSTEM_PROMPT, USER_PROMPT
-        messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-    elif task.category == "report":
-        from prompts.report.search_cn import SYSTEM_PROMPT, USER_PROMPT
-        messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-    elif task.category == "book":
-        from prompts.book.search_cn import SYSTEM_PROMPT, USER_PROMPT
-        messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
-    else:
-        raise ValueError(f"未知的 category: {task.category}")
+    context = await get_rag().get_context_base(task)
+
+    messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
     
     plan = await get_structured_output_with_retry(messages, Plan)
     
@@ -415,7 +411,7 @@ async def scrape_node(state: SearchAgentState) -> dict:
         logger.info(f"✅ 成功抓取 {len(scraped_data)} 个页面。")
 
         # 3. 更新图状态, 用新抓取的内容覆盖旧的
-        # 注意：此处的推理历史记录已被简化, 其核心作用由 search_node 和 rolling_summary_node 承担, 
+        # 注意: 此处的推理历史记录已被简化, 其核心作用由 search_node 和 rolling_summary_node 承担, 
         # 以避免历史记录冗余。
         return {
             "latest_scraped_content": scraped_data,
@@ -447,30 +443,14 @@ async def information_processor_node(state: SearchAgentState) -> dict:
     )
 
     task = state['task']
-    if task.category == "story":
-        from prompts.story.search_cn import PROMPT_INFORMATION_PROCESSOR
-        prompt = PROMPT_INFORMATION_PROCESSOR.format(
-            research_focus=state["current_focus"],
-            rolling_summary=state["rolling_summary"] or "",
-            content=scraped_content_json
-        )
-    elif task.category == "report":
-        from prompts.report.search_cn import PROMPT_INFORMATION_PROCESSOR
-        prompt = PROMPT_INFORMATION_PROCESSOR.format(
-            research_focus=state["current_focus"],
-            rolling_summary=state["rolling_summary"] or "",
-            content=scraped_content_json
-        )
-    elif task.category == "book":
-        from prompts.book.search_cn import PROMPT_INFORMATION_PROCESSOR
-        prompt = PROMPT_INFORMATION_PROCESSOR.format(
-            research_focus=state["current_focus"],
-            rolling_summary=state["rolling_summary"] or "",
-            content=scraped_content_json
-        )
-    else:
-        raise ValueError(f"未知的 category: {task.category}")
     
+    PROMPT_INFORMATION_PROCESSOR = load_prompts(task.category, "search_cn", "PROMPT_INFORMATION_PROCESSOR")
+    prompt = PROMPT_INFORMATION_PROCESSOR.format(
+        research_focus=state["current_focus"],
+        rolling_summary=state["rolling_summary"] or "",
+        content=scraped_content_json
+    )
+
     # 调用 LLM
     messages = [{"role": "user", "content": prompt}]
     processed_results = await get_structured_output_with_retry(messages, ProcessedResults)
@@ -521,29 +501,13 @@ async def rolling_summary_node(state: SearchAgentState) -> dict:
         return {"previous_rolling_summary": previous_summary}
 
     task = state['task']
-    if task.category == "story":
-        from prompts.story.search_cn import PROMPT_ROLLING_SUMMARY
-        prompt = PROMPT_ROLLING_SUMMARY.format(
-            research_focus=state["current_focus"],
-            previous_summary=previous_summary,
-            new_information=new_info_str
-        )
-    elif task.category == "report":
-        from prompts.report.search_cn import PROMPT_ROLLING_SUMMARY
-        prompt = PROMPT_ROLLING_SUMMARY.format(
-            research_focus=state["current_focus"],
-            previous_summary=previous_summary,
-            new_information=new_info_str
-        )
-    elif task.category == "book":
-        from prompts.book.search_cn import PROMPT_ROLLING_SUMMARY
-        prompt = PROMPT_ROLLING_SUMMARY.format(
-            research_focus=state["current_focus"],
-            previous_summary=previous_summary,
-            new_information=new_info_str
-        )
-    else:
-        raise ValueError(f"未知的 category: {task.category}")
+    
+    PROMPT_ROLLING_SUMMARY = load_prompts(task.category, "search_cn", "PROMPT_ROLLING_SUMMARY")
+    prompt = PROMPT_ROLLING_SUMMARY.format(
+        research_focus=state["current_focus"],
+        previous_summary=previous_summary,
+        new_information=new_info_str
+    )
 
     llm_params = get_llm_params([{"role": "user", "content": prompt}])
 
@@ -573,24 +537,13 @@ async def synthesize_node(state: SearchAgentState) -> dict:
         'rolling_summary': state.get('rolling_summary') or "研究未能生成有效摘要。", 
         'supplementary_summaries': supplementary_summaries, 
     }
+    
+    SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "search_cn", "SYSTEM_PROMPT_SYNTHESIZE", "USER_PROMPT_SYNTHESIZE")
 
-    information = f"""# 最终总结
-{context_dict['rolling_summary']}
-
-# 补充材料摘要
-{context_dict['supplementary_summaries']}"""
-
-    if task.category == "story":
-        from prompts.story.search_cn import SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE
-        messages = await get_llm_messages(task, SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE.format(information=information))
-    elif task.category == "report":
-        from prompts.report.search_cn import SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE
-        messages = await get_llm_messages(task, SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE.format(information=information))
-    elif task.category == "book":
-        from prompts.book.search_cn import SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE
-        messages = await get_llm_messages(task, SYSTEM_PROMPT_SYNTHESIZE, USER_PROMPT_SYNTHESIZE.format(information=information))
-    else:
-        raise ValueError(f"未知的 category: {task.category}")
+    context = await get_rag().get_context_base(task)
+    context.update(context_dict)
+    
+    messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
 
     llm_params = get_llm_params(messages, temperature=0.4)
 
@@ -610,10 +563,10 @@ async def synthesize_node(state: SearchAgentState) -> dict:
 
 async def should_continue_search(state: SearchAgentState) -> str:
     """
-    条件路由函数：在规划后决定是继续研究循环还是结束。
+    条件路由函数: 在规划后决定是继续研究循环还是结束。
     - 如果 `plan.queries` 为空, 表示规划器认为信息足够, 结束循环。
     - 如果达到最大搜索轮次, 为防止无限循环, 强制结束。
-    - 新增: 如果研究停滞（新旧总结无显著差异）, 也结束循环。这通过两步实现：
+    - 新增: 如果研究停滞（新旧总结无显著差异）, 也结束循环。这通过两步实现: 
       1. 轻量级的Jaccard相似度检查, 快速过滤掉几乎相同的总结。
       2. 如果不够相似, 则通过LLM进行更深层次的语义判断。
     """
@@ -623,7 +576,7 @@ async def should_continue_search(state: SearchAgentState) -> str:
 
     # 只有在有两轮总结可比较时才进行
     if prev_summary and current_summary and state['turn_count'] > 1:
-        # 优化：在调用昂贵的LLM之前, 先进行高效的语义相似度检查。
+        # 优化: 在调用昂贵的LLM之前, 先进行高效的语义相似度检查。
         # 这比简单的词汇匹配（如Jaccard）更准确, 能更好地判断内容是否真的没有新意。
         similarity_threshold = 0.98
         
@@ -737,9 +690,9 @@ async def search(task: Task) -> Task:
     
     # 5. 初始化状态并运行图
     initial_state = SearchAgentState(
-        task=task,                              # 核心：传入的任务对象
-        embedding_model=embedding_model,        # 核心：根据任务语言加载的嵌入模型
-        current_focus=task.goal,                # 核心：当前研究循环的焦点, 初始为任务目标
+        task=task,                              # 核心: 传入的任务对象
+        embedding_model=embedding_model,        # 核心: 根据任务语言加载的嵌入模型
+        current_focus=task.goal,                # 核心: 当前研究循环的焦点, 初始为任务目标
         final_report=None,                      # 最终报告, 初始为空
         plan=Plan(thought="", queries=[]),      # 当前的行动计划, 初始为空
         urls_to_scrape=[],                      # 待抓取的URL列表

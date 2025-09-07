@@ -11,7 +11,7 @@ if ! command -v docker-compose &> /dev/null; then
 fi
 
 if [ ! -d "venv" ]; then
-    echo "❌ 错误：找不到 'venv' 目录。请先运行 ./start.sh 来创建环境。"
+    echo "❌ 错误: 找不到 'venv' 目录。请先运行 ./start.sh 来创建环境。"
     exit 1
 fi
 

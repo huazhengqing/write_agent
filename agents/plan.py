@@ -5,19 +5,23 @@ from loguru import logger
 from typing import Optional, Literal, List
 from pydantic import BaseModel, Field
 from util.models import Task
-from util.llm import get_llm_params, llm_acompletion
-from memory import get_llm_messages
+from util.llm import get_llm_messages, get_llm_params, llm_acompletion
+from util.rag import get_rag
 from util.prompt_loader import load_prompts
 
 
-class PlanOutput(BaseModel):
+class PlanNode(BaseModel):
     id: str = Field(..., description="任务的唯一字符串ID, 父任务id.子任务序号。例如 '1' 或 '1.3.2'。")
     task_type: Literal['design', 'write', 'search'] = Field(..., description="任务类型, 值必须是: 'design' 或 'write' 或 'search'。")
     goal: str = Field(..., description="任务的清晰具体目标。")
     dependency: List[str] = Field(default_factory=list, description="此任务所依赖的同层的 design/search 的 id 列表。")
     length: Optional[str] = Field(None, description="对于 'write' 类型的任务, 此任务的预估长度或字数。")
-    sub_tasks: List['PlanOutput'] = Field(default_factory=list, description="分解出的更深层次的子任务列表。")
+    sub_tasks: List['PlanNode'] = Field(default_factory=list, description="分解出的更深层次的子任务列表。")
 
+
+class PlanOutput(PlanNode):
+    reasoning: Optional[str] = Field(None, description="关于任务分解的推理过程。")
+    
 
 async def plan(task: Task) -> Task:
     logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
@@ -38,28 +42,31 @@ async def plan(task: Task) -> Task:
             raise ValueError("Task length must be set.")
 
     if task.category == "story" and task.task_type == "write":
-        module_path = "prompts.story.plan_write_cn"
-        module = importlib.import_module(module_path)
-        SYSTEM_PROMPT = module.SYSTEM_PROMPT
-        USER_PROMPT = module.USER_PROMPT
+        module_name = f"plan_{task.task_type}_cn"
+        SYSTEM_PROMPT, USER_PROMPT, get_task_level, test_get_task_level = load_prompts(task.category, module_name, "SYSTEM_PROMPT", "USER_PROMPT", "get_task_level", "test_get_task_level")
 
         if os.getenv("deployment_environment") == "test":
-            task_level_func = module.test_get_task_level
+            task_level_func = test_get_task_level
         else:
-            task_level_func = module.get_task_level
-        safe_context = collections.defaultdict(str, task_level_func(task.goal))
-        formatted_system_prompt = SYSTEM_PROMPT.format_map(safe_context)
+            task_level_func = get_task_level
+        context = await get_rag().get_context_base(task)
 
-        messages = await get_llm_messages(task, formatted_system_prompt, USER_PROMPT)
+        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, task_level_func(task.goal), context)
     else:
         module_name = f"plan_{task.task_type}_cn"
         SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, module_name, "SYSTEM_PROMPT", "USER_PROMPT")
-        messages = await get_llm_messages(task, SYSTEM_PROMPT, USER_PROMPT)
+
+        context = await get_rag().get_context_base(task)
+
+        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
 
     llm_params = get_llm_params(messages, temperature=0.1)
-    llm_params['response_format'] = {"type": "json_object", "schema": PlanOutput.model_json_schema()}
+    llm_params['response_format'] = {
+        "type": "json_object", 
+        "schema": PlanOutput.model_json_schema()
+    }
     message = await llm_acompletion(llm_params)
-    reason = message.get("reasoning_content") or message.get("reasoning", "")
+    reasoning = message.get("reasoning_content") or message.get("reasoning", "")
     content = message.content
     data = PlanOutput.model_validate_json(content)
 
@@ -67,7 +74,7 @@ async def plan(task: Task) -> Task:
     updated_task.sub_tasks = _convert_plan_to_tasks(data.sub_tasks, updated_task)
     updated_task.results = {
         "result": content,
-        "reasoning": reason,
+        "reasoning": "\n\n".join(filter(None, [reasoning, data.reasoning])),
     }
     
     logger.info(f"完成\n{updated_task.model_dump_json(indent=2, exclude_none=True)}")
@@ -75,7 +82,7 @@ async def plan(task: Task) -> Task:
 
 
 def _convert_plan_to_tasks(
-    sub_task_outputs: List[PlanOutput],
+    sub_task_outputs: List[PlanNode],
     parent_task: Task
 ) -> List[Task]:
     tasks = []

@@ -18,7 +18,7 @@ DNS_LIST=(
     "1.1.1.1"     # Cloudflare DNS（隐私优先, 国际稳定）
 )
 
-# 步骤1：配置 wsl.conf 禁用自动生成 resolv.conf
+# 步骤1: 配置 wsl.conf 禁用自动生成 resolv.conf
 echo -e "\n1️⃣  配置 wsl.conf 禁用自动DNS生成..."
 WSL_CONF="/etc/wsl.conf"
 # 检查文件是否存在, 不存在则创建
@@ -30,7 +30,7 @@ sudo sed -i '/^\[network\]/d' "$WSL_CONF"  # 删除旧的 [network] 段
 sudo sed -i '/^generateResolvConf/d' "$WSL_CONF"  # 删除旧的配置项
 echo -e "[network]\ngenerateResolvConf = false" | sudo tee -a "$WSL_CONF" > /dev/null
 
-# 步骤2：备份并重建 resolv.conf
+# 步骤2: 备份并重建 resolv.conf
 echo -e "\n2️⃣  备份并更新 resolv.conf..."
 RESOLV_CONF="/etc/resolv.conf"
 # 备份旧的 resolv.conf（避免覆盖）
@@ -45,16 +45,16 @@ for dns in "${DNS_LIST[@]}"; do
     echo "nameserver $dns" | sudo tee -a "$RESOLV_CONF" > /dev/null
 done
 
-# 步骤3：重启 WSL 网络服务（临时生效）
+# 步骤3: 重启 WSL 网络服务（临时生效）
 echo -e "\n3️⃣  重启网络服务..."
 sudo service network-manager restart 2>/dev/null  # 部分系统可能无此服务, 忽略错误
 
-# 步骤4：验证 DNS 配置
+# 步骤4: 验证 DNS 配置
 echo -e "\n4️⃣  验证 DNS 配置是否生效..."
-echo "当前 resolv.conf 内容："
+echo "当前 resolv.conf 内容: "
 cat "$RESOLV_CONF"
 
-echo -e "\n测试域名解析（hf-mirror.com）："
+echo -e "\n测试域名解析（hf-mirror.com）: "
 nslookup hf-mirror.com 2>/dev/null
 if [ $? -eq 0 ]; then
     echo -e "\n✅ DNS 更新成功！请在 Windows 中执行 'wsl --shutdown' 后重新打开 WSL 以完全生效"

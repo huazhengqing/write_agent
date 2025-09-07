@@ -4,6 +4,7 @@ import os
 import math
 import jieba
 import hashlib
+import torch
 import threading
 import stopwordsiso
 import multiprocessing
@@ -11,6 +12,7 @@ import diskcache as dc
 from typing import List
 from loguru import logger
 from keybert import KeyBERT
+from sentence_transformers import SentenceTransformer
 from markdown import markdown
 from collections import defaultdict
 
@@ -23,10 +25,10 @@ from collections import defaultdict
 - 使用 BAAI/bge-small-zh 模型进行中文语义理解
 
 # model
-中文：
+中文: 
 shibing624/text2vec-base-chinese（专为中文优化的通用模型）
 BAAI/bge-small-zh（中文语义理解能力强, 适合长文本）
-多语言：
+多语言: 
 paraphrase-multilingual-MiniLM-L12-v2（轻量, 支持 100 + 语言）
 xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多, 精度较高）
 """
@@ -62,16 +64,24 @@ class KeywordExtractorZh:
         if not self.model:
             with self._model_lock:
                 if not self.model:
-                    # self.model = KeyBERT(model="BAAI/bge-small-zh", nr_processes=os.cpu_count()//2)
-                    self.model = KeyBERT(model="./models/bge-small-zh", nr_processes=os.cpu_count()//2)
+                    # 构建本地模型的期望路径
+                    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+                    local_model_path = os.path.join(project_root, "models", "bge-small-zh")
+                    
+                    # 检查是否有可用的 GPU
+                    device = "cuda" if torch.cuda.is_available() else "cpu"
+                    logger.info(f"正在加载关键词提取模型: {local_model_path} 到设备: {device}")
+                    
+                    st_model = SentenceTransformer(local_model_path, device=device)
+                    self.model = KeyBERT(model=st_model)
 
     def extract_from_text(self, text: str, top_k: int = 30) -> List[str]:
         """
         从小说正文中提取关键词
         包含层级结构（全书、卷、幕、章、场景、节拍、段落）
-        KeyBERT 批处理：
-            - 输入：`docs` 参数传文本列表 `[text1, text2, ...]`
-            - 返回：嵌套列表, 每个子列表对应输入文本的关键词 `[(kw, score), ...]`
+        KeyBERT 批处理: 
+            - 输入: `docs` 参数传文本列表 `[text1, text2, ...]`
+            - 返回: 嵌套列表, 每个子列表对应输入文本的关键词 `[(kw, score), ...]`
         """
         if not text or not text.strip():
             return []
@@ -118,14 +128,14 @@ class KeywordExtractorZh:
             chunk_count = len(processed_chunks)
             weighted_keywords = {}
             for kw, score in all_keywords_with_scores.items():
-                # 频次因子：平衡出现频率和过度普遍性
+                # 频次因子: 平衡出现频率和过度普遍性
                 freq_ratio = keyword_chunk_count[kw] / chunk_count
                 if freq_ratio > 0.8:  # 过于频繁的词降权
                     freq_factor = 0.7 + 0.3 * (1 - freq_ratio)
                 else:
                     freq_factor = math.sqrt(freq_ratio) * 1.2  # 适度出现的词提权
                 
-                # 长度因子：偏好2-4字的关键词
+                # 长度因子: 偏好2-4字的关键词
                 length_factor = 1.0
                 kw_len = len(kw)
                 if 2 <= kw_len <= 4:
@@ -135,7 +145,7 @@ class KeywordExtractorZh:
                 elif kw_len > 6:
                     length_factor = 0.8
                 
-                # 语义多样性因子：避免过于相似的关键词
+                # 语义多样性因子: 避免过于相似的关键词
                 diversity_factor = 1.0
                 for existing_kw in weighted_keywords.keys():
                     # 简单的字符重叠检测
@@ -200,7 +210,7 @@ class KeywordExtractorZh:
                 if estimated_length > self.chunk_size:
                     if current_chunk.strip():
                         chunks.append(current_chunk.strip())
-                        # 智能重叠：保留关键上下文
+                        # 智能重叠: 保留关键上下文
                         overlap_text = self._get_overlap_context(current_chunk)
                         current_chunk = overlap_text + sentence
                     else:  # 处理超长单句
@@ -275,7 +285,3 @@ class KeywordExtractorZh:
 
 
 ###############################################################################
-
-
-
-
