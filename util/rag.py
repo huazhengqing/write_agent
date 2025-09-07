@@ -332,7 +332,7 @@ class RAG:
         text_latest_task = self.get_text_latest(task)
 
         dependent_design, dependent_search, text_latest = await asyncio.gather(
-            dependent_design_task, dependent_search_task, text_latest_task, return_exceptions=True
+            dependent_design_task, dependent_search_task, text_latest_task
         )
         
         ret["dependent_design"] = dependent_design
@@ -344,7 +344,7 @@ class RAG:
         search_plan_task = self.get_query(task, "search", dependent_design, dependent_search, text_latest)
 
         design_plan, content_plan, search_plan = await asyncio.gather(
-            design_plan_task, content_plan_task, search_plan_task, return_exceptions=True
+            design_plan_task, content_plan_task, search_plan_task
         )
 
         context_tasks = {}
@@ -359,8 +359,7 @@ class RAG:
             context_tasks["task_list"] = self.get_context_task_list(db, task)
 
         if context_tasks:
-            # 使用 return_exceptions=True 增强健壮性, 防止单个任务失败导致整体崩溃
-            results = await asyncio.gather(*context_tasks.values(), return_exceptions=True)
+            results = await asyncio.gather(*context_tasks.values())
             for i, key in enumerate(context_tasks.keys()):
                 result = results[i]
                 if isinstance(result, Exception):
