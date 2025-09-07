@@ -583,20 +583,19 @@ class RAG:
 
         storage_context = self._get_storage_context(task.run_id)
 
-        #
         # vector
-        #
+        vector_filters = MetadataFilters(
+            filters=[MetadataFilter(key=f['key'], value=f['value']) for f in config['vector_filters_list']]
+        )
         vector_index = VectorStoreIndex.from_vector_store(
             storage_context.vector_store, 
             embed_model=self.embed_model
         )
         vector_query_engine = vector_index.as_query_engine(
-            filters=config['vector_filters']
+            filters=vector_filters
         )
 
-        #
         # kg
-        #
         kg_query_gen_prompt_str = f"""
 # 角色
 你是一位精通 Cypher 的图数据库查询专家。
@@ -612,12 +611,12 @@ class RAG:
 ---
 
 # 核心规则 (必须严格遵守)
-1.  **强制过滤 (最重要!)**: 生成的查询 **必须** 包含一个 `WHERE` 子句, 以确保数据隔离。过滤条件为: `{config["kg_filters_str"]}`。
-    - **正确示例**: `MATCH (n) WHERE {config["kg_filters_str"]} AND n.property = 'value' RETURN n`
-    - **错误示例 (缺少强制过滤)**: `MATCH (n) WHERE n.property = 'value' RETURN n`
-2.  **Schema 遵从**: 只能使用图谱 Schema 中定义的节点标签和关系类型。严禁使用任何 Schema 之外的元素。
-3.  **单行输出**: 最终的 Cypher 查询必须是单行文本, 不含换行符。
-4.  **效率优先**: 在满足查询需求的前提下, 生成的查询应尽可能高效。
+1.  强制过滤 (最重要!): 生成的查询 必须 包含一个 `WHERE` 子句, 以确保数据隔离。过滤条件为: `{config["kg_filters_str"]}`。
+    - 正确示例: `MATCH (n) WHERE {config["kg_filters_str"]} AND n.property = 'value' RETURN n`
+    - 错误示例 (缺少强制过滤): `MATCH (n) WHERE n.property = 'value' RETURN n`
+2.  Schema 遵从: 只能使用图谱 Schema 中定义的节点标签和关系类型。严禁使用任何 Schema 之外的元素。
+3.  单行输出: 最终的 Cypher 查询必须是单行文本, 不含换行符。
+4.  效率优先: 在满足查询需求的前提下, 生成的查询应尽可能高效。
 
 # 行动
 现在, 请为上述用户问题生成 Cypher 查询语句。
@@ -692,12 +691,12 @@ class RAG:
         """
         执行一个简单的“检索-然后-综合”流程。
         之所以不直接使用 LlamaIndex 的 ResponseSynthesizer 或 RouterQueryEngine，原因如下：
-        1.  **复杂的、上下文感知的整合规则**: 我们的整合逻辑不仅仅是总结文本。它需要根据 `search_type` (如 'upper_design', 'text_summary') 应用不同的、非常具体的规则。
+        1.  复杂的、上下文感知的整合规则: 我们的整合逻辑不仅仅是总结文本。它需要根据 `search_type` (如 'upper_design', 'text_summary') 应用不同的、非常具体的规则。
             例如，对于 'upper_design'，规则是“当设计冲突时，采纳最新版本”；对于 'upper_search'，规则是“报告信息间的矛盾，保留不确定性”。
             这种动态的、基于规则的决策逻辑很难用标准的 ResponseSynthesizer 实现。
-        2.  **对异构数据源的显式控制**: 我们从向量库（语义相似）和知识图谱（结构化关系）获取信息。通过分别查询然后自定义整合，我们可以精确控制如何处理和呈现来自这两种不同来源的信息。
+        2.  对异构数据源的显式控制: 我们从向量库（语义相似）和知识图谱（结构化关系）获取信息。通过分别查询然后自定义整合，我们可以精确控制如何处理和呈现来自这两种不同来源的信息。
             例如，我们可以明确告诉最终的 LLM：“向量工具提供的是摘要，图谱工具提供的是细节，如果冲突，以细节为准。”
-        3.  **保留和利用元数据**: 我们的 `_format_response_with_sorting` 函数根据元数据（如创建时间、任务ID）对结果进行排序。这个排序后的、带有丰富元数据的结果被完整地提供给最终的 LLM，
+        3.  保留和利用元数据: 我们的 `_format_response_with_sorting` 函数根据元数据（如创建时间、任务ID）对结果进行排序。这个排序后的、带有丰富元数据的结果被完整地提供给最终的 LLM，
             这对于执行“采纳最新版本”等规则至关重要。
         
         总而言之，我们自己构建了一个“自定义的、基于规则的响应合成器”，通过一次额外的 LLM 调用来实现比通用组件更强大、更具控制力的整合能力。
@@ -734,10 +733,10 @@ class RAG:
 ---
 
 # 输出原则
-- **分析**: 严格遵循“探询计划与规则”中的“最终目标”和“执行规则”。
-- **整合**: 综合两个信息源, 注意各自侧重（语义 vs 事实）。
-- **应用**: 严格应用“执行规则”处理信息（如解决冲突、融合信息）。
-- **内容**:
+- 分析: 严格遵循“探询计划与规则”中的“最终目标”和“执行规则”。
+- 整合: 综合两个信息源, 注意各自侧重（语义 vs 事实）。
+- 应用: 严格应用“执行规则”处理信息（如解决冲突、融合信息）。
+- 内容:
     - 必须完全基于提供的信息源。
     - 必须是整合提炼后的答案, 禁止罗列。
     - 禁止任何关于你自身或任务过程的描述 (例如, “根据您的要求...”)。
@@ -754,6 +753,8 @@ class RAG:
         return final_message.content
 
     def get_search_config(self, task: Task, inquiry_plan: Dict[str, Any], search_type: Literal['text_summary', 'upper_design', 'upper_search']) -> Dict[str, Any]:
+        logger.info(f"开始 {task.run_id} {task.id} {search_type} \n{inquiry_plan}")
+
         current_level = len(task.id.split("."))
         configs = {
             'text_summary': {
@@ -764,16 +765,16 @@ class RAG:
                     f"n.run_id = '{task.run_id}'",
                     "n.content_type = 'text'"
                 ],
-                'vector_filters': MetadataFilters(filters=[MetadataFilter(key="content_type", value="write")]),
+                'vector_filters_list': [{'key': 'content_type', 'value': 'write'}],
                 'vector_tool_desc': "功能: 检索情节摘要、角色关系、事件发展。范围: 所有层级的历史摘要。",
                 'final_instruction': "任务: 整合情节摘要(向量)与正文细节(图谱)，提供写作上下文。重点: 角色关系、关键伏笔、情节呼应。",
                 'rules_text': """
                     # 整合规则
-                    1.  **冲突解决**: 向量(摘要)与图谱(细节)冲突时, 以图谱为准。
-                    2.  **排序依据**:
+                    1.  冲突解决: 向量(摘要)与图谱(细节)冲突时, 以图谱为准。
+                    2.  排序依据:
                         - 向量: 相关性。
                         - 图谱: 章节顺序 (时间线)。
-                    3.  **输出要求**: 整合为连贯叙述, 禁止罗列。
+                    3.  输出要求: 整合为连贯叙述, 禁止罗列。
                 """,
                 'vector_sort_by': 'narrative',
                 'kg_sort_by': 'narrative',
@@ -787,16 +788,16 @@ class RAG:
                     "n.content_type = 'design'",
                     f"n.hierarchy_level < {current_level}"
                 ],
-                'vector_filters': MetadataFilters(filters=[MetadataFilter(key="content_type", value="design")]),
+                'vector_filters_list': [{'key': 'content_type', 'value': 'design'}],
                 'vector_tool_desc': f"功能: 检索小说设定、摘要、概念。范围: 任务层级 < {current_level}。",
                 'final_instruction': "任务: 整合上层设计, 提供统一、无冲突的宏观设定和指导原则。",
                 'rules_text': """
                     # 整合规则
-                    1.  **时序优先**: 结果按时间倒序。遇直接矛盾, 采纳最新版本。
-                    2.  **矛盾 vs. 细化**:
+                    1.  时序优先: 结果按时间倒序。遇直接矛盾, 采纳最新版本。
+                    2.  矛盾 vs. 细化:
                         - 矛盾: 无法共存的描述 (A是孤儿 vs A父母健在)。
                         - 细化: 补充细节, 不推翻核心 (A会用剑 -> A擅长流风剑法)。细化应融合, 不是矛盾。
-                    3.  **输出要求**:
+                    3.  输出要求:
                         - 融合非冲突信息。
                         - 报告被忽略的冲突旧信息。
                         - 禁止罗列, 聚焦问题。
@@ -813,18 +814,18 @@ class RAG:
                     "n.content_type = 'search'",
                     f"n.hierarchy_level < {current_level}"
                 ],
-                'vector_filters': MetadataFilters(filters=[MetadataFilter(key="content_type", value="search")]),
+                'vector_filters_list': [{'key': 'content_type', 'value': 'search'}],
                 'vector_tool_desc': f"功能: 从外部研究资料库检索事实、概念、历史事件。范围: 任务层级 < {current_level}。",
                 'final_instruction': "任务: 整合外部研究资料, 提供准确、有深度、经过批判性评估的背景支持。",
                 'rules_text': """
                     # 整合规则
-                    1.  **评估**: 批判性评估所有信息。
-                    2.  **冲突处理**:
+                    1.  评估: 批判性评估所有信息。
+                    2.  冲突处理:
                         - 识别并报告矛盾。
                         - 列出冲突来源和时间戳。
                         - 无法解决时, 保留不确定性。
-                    3.  **时效性**: `created_at`是评估因素, 但非唯一标准。结果按相关性排序。
-                    4.  **输出要求**: 组织为连贯报告, 禁止罗列。
+                    3.  时效性: `created_at`是评估因素, 但非唯一标准。结果按相关性排序。
+                    4.  输出要求: 组织为连贯报告, 禁止罗列。
                 """,
                 'vector_sort_by': 'relevance',
                 'kg_sort_by': 'relevance',
@@ -836,9 +837,12 @@ class RAG:
         config["kg_tool_desc"] = f"功能: 探索实体、关系、路径。查询必须满足过滤条件: {config['kg_filters_str']}。"
         config["query_text"] = self._build_agent_query(inquiry_plan, config['final_instruction'], config['rules_text'])
 
+        logger.info(f"结束 \n{json.dumps(config, indent=2, ensure_ascii=False)}")
         return config
 
     def _build_agent_query(self, inquiry_plan: Dict[str, Any], final_instruction: str, rules_text: str) -> str:
+        logger.info(f"开始 \n{inquiry_plan}\n{final_instruction}\n{rules_text}")
+
         main_inquiry = inquiry_plan.get("main_inquiry", "请综合分析并回答以下问题。")
 
         # 1. 构建核心探询目标和具体信息需求部分
@@ -859,13 +863,15 @@ class RAG:
         instruction_block += f"## 最终目标\n{final_instruction}\n"
         instruction_block += f"\n## 执行规则\n"
         if has_priorities:
-            instruction_block += "- **优先级**: 你必须优先分析和回答标记为 `high` 优先级的信息需求。\n"
+            instruction_block += "- 优先级: 你必须优先分析和回答标记为 `high` 优先级的信息需求。\n"
 
         # 动态调整传入规则的标题层级, 使其适应新的结构
         adapted_rules_text = re.sub(r'^\s*#\s+', '### ', rules_text.lstrip(), count=1)
         instruction_block += adapted_rules_text
 
         query_text += instruction_block
+
+        logger.info(f"结束 \n{query_text}")
         return query_text
 
     def _create_time_aware_tool(self, query_engine: Any, name: str, description: str, sort_by: Literal['time', 'narrative', 'relevance'] = 'relevance') -> "FunctionTool":
@@ -932,6 +938,8 @@ class RAG:
         formatted_sources = "\n\n".join(source_details)
 
         final_output = f"综合回答:\n{str(response)}\n\n详细来源 ({sort_description}):\n{formatted_sources}"
+
+        logger.info(f"结束 \n{final_output}")
         return final_output
 
 
