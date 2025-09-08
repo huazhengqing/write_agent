@@ -8,7 +8,7 @@ from pathlib import Path
 from loguru import logger
 from prefect import flow, task
 from dotenv import load_dotenv
-from util.models import Task
+from utils.models import Task
 from flow import flow_write, ensure_task_logger
 
 
