@@ -207,11 +207,11 @@ async def task_store(task: Task, operation_name: str):
 )
 async def flow_write(current_task: Task):
     """
-    主工作流，用于递归处理写作任务。
+    主工作流, 用于递归处理写作任务。
 
-    该流程首先判断任务是否为“原子”任务（即不可再分）。
-    - 如果是原子任务，则直接执行（设计、搜索或写作）。
-    - 如果不是原子任务，则将其分解为子任务，对每个子任务递归调用本流程，
+    该流程首先判断任务是否为“原子”任务(即不可再分)。
+    - 如果是原子任务, 则直接执行(设计、搜索或写作)。
+    - 如果不是原子任务, 则将其分解为子任务, 对每个子任务递归调用本流程, 
       最后将所有子任务的结果聚合起来。
 
     Args:
@@ -227,7 +227,7 @@ async def flow_write(current_task: Task):
     today_key = f"{current_task.run_id}:{date.today().isoformat()}"
     day_wordcount = wordcount_cache.get(today_key, 0)
     if day_wordcount > day_wordcount_goal:
-        logger.info(f"已达到当日字数目标，完成任务: {current_task.run_id} ({day_wordcount}字)")
+        logger.info(f"已达到当日字数目标, 完成任务: {current_task.run_id} ({day_wordcount}字)")
         return
 
     # 步骤1: 判断任务是否为原子任务
@@ -237,10 +237,10 @@ async def flow_write(current_task: Task):
 
     is_atom = ret_atom.results.get("atom_result") == "atom"
     
-    # 步骤2: 根据是否为原子任务，选择不同执行路径
+    # 步骤2: 根据是否为原子任务, 选择不同执行路径
     if is_atom:
         # --- 原子任务执行路径 ---
-        logger.info(f"任务 '{current_task.id}' 是原子任务，直接执行。")
+        logger.info(f"任务 '{current_task.id}' 是原子任务, 直接执行。")
         
         if ret_atom.task_type == "design":
             # 执行设计任务
@@ -251,7 +251,7 @@ async def flow_write(current_task: Task):
             ret_excute = await task_execute_search(ret_atom)
             await task_store(ret_excute, "task_execute_search")
         elif ret_atom.task_type == "write":
-            # 执行完整的写作流程：设计反思 -> 写作 -> 写作反思 -> 总结
+            # 执行完整的写作流程: 设计反思 -> 写作 -> 写作反思 -> 总结
             if not ret_atom.length:
                 raise ValueError("写作任务没有长度要求")
             
@@ -271,11 +271,11 @@ async def flow_write(current_task: Task):
             ret_write_summary = await task_execute_summary(ret_write_reflection)
             await task_store(ret_write_summary, "task_execute_summary")
         else:
-            # 未知任务类型，抛出异常
+            # 未知任务类型, 抛出异常
             raise ValueError(f"未知的原子任务类型: {ret_atom.task_type}")
     else:
         # --- 任务分解与递归路径 ---
-        logger.info(f"任务 '{current_task.id}' 不是原子任务，进行规划和分解。")
+        logger.info(f"任务 '{current_task.id}' 不是原子任务, 进行规划和分解。")
 
         # 步骤 2.1: 规划子任务
         ret_plan = await task_plan(ret_atom)
@@ -287,20 +287,20 @@ async def flow_write(current_task: Task):
 
         if ret_plan_reflection.sub_tasks:
             # 步骤 2.3: 递归处理所有子任务
-            logger.info(f"任务 '{current_task.id}' 分解为 {len(ret_plan_reflection.sub_tasks)} 个子任务，开始递归处理。")
+            logger.info(f"任务 '{current_task.id}' 分解为 {len(ret_plan_reflection.sub_tasks)} 个子任务, 开始递归处理。")
             for sub_task in ret_plan_reflection.sub_tasks:
                 # 每次递归前都检查字数
                 today_key = f"{sub_task.run_id}:{date.today().isoformat()}"
                 day_wordcount = wordcount_cache.get(today_key, 0)
                 if day_wordcount > day_wordcount_goal:
-                    logger.info(f"已完成当日字数目标，暂停处理后续子任务: {sub_task.run_id}")
+                    logger.info(f"已完成当日字数目标, 暂停处理后续子任务: {sub_task.run_id}")
                     return
                 
                 # 递归调用自身来处理子任务
                 await flow_write(sub_task)
             
             # 步骤 2.4: 聚合子任务结果
-            logger.info(f"所有子任务处理完毕，开始聚合任务 '{current_task.id}' 的结果。")
+            logger.info(f"所有子任务处理完毕, 开始聚合任务 '{current_task.id}' 的结果。")
             if ret_plan_reflection.task_type == "design":
                 ret_aggregate = await task_aggregate_design(ret_plan_reflection)
                 await task_store(ret_aggregate, "task_aggregate_design")
@@ -313,6 +313,6 @@ async def flow_write(current_task: Task):
             else:
                 raise ValueError(f"未知的聚合任务类型: {ret_plan_reflection.task_type}")
         else:
-            # 如果规划后没有产生子任务，说明规划失败
-            logger.error(f"规划失败，任务 '{ret_plan_reflection.id}' 没有产生任何子任务。")
+            # 如果规划后没有产生子任务, 说明规划失败
+            logger.error(f"规划失败, 任务 '{ret_plan_reflection.id}' 没有产生任何子任务。")
             raise Exception(f"任务 '{ret_plan_reflection.id}' 规划失败, 没有子任务。")

@@ -24,11 +24,11 @@ import torch
 
 # model
 英文: 
-all-MiniLM-L6-v2（轻量高效, 适合大多数场景）
-all-mpnet-base-v2（精度更高, 但速度稍慢）
+all-MiniLM-L6-v2(轻量高效, 适合大多数场景)
+all-mpnet-base-v2(精度更高, 但速度稍慢)
 多语言: 
-paraphrase-multilingual-MiniLM-L12-v2（轻量, 支持 100 + 语言）
-xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多, 精度较高）
+paraphrase-multilingual-MiniLM-L12-v2(轻量, 支持 100 + 语言)
+xlm-r-bert-base-nli-stsb-mean-tokens(支持语言更多, 精度较高)
 """
 
 
@@ -80,7 +80,7 @@ class KeywordExtractorEn:
     def extract_from_text(self, text: str, top_k: int = 30) -> List[str]:
         """
         从小说正文中提取关键词
-        包含层级结构（全书、卷、幕、章、场景、节拍、段落）
+        包含层级结构(全书、卷、幕、章、场景、节拍、段落)
         KeyBERT 批处理: 
             - 输入: `docs` 参数传文本列表 `[text1, text2, ...]`
             - 返回: 嵌套列表, 每个子列表对应输入文本的关键词 `[(kw, score), ...]`
@@ -315,7 +315,7 @@ class KeywordExtractorEn:
                 prev_punct = True
             # 过滤停用词和过短单词
             elif w_lower not in self.base_stop_words and len(w) >= 2:
-                # 保留大写开头的单词（可能是专有名词）
+                # 保留大写开头的单词(可能是专有名词)
                 if w[0].isupper() or w_lower not in ['the', 'and', 'for', 'are', 'but', 'not', 'you', 'all', 'can', 'had', 'has', 'was', 'one', 'our', 'out', 'day', 'get', 'use', 'man', 'new', 'now', 'way', 'may', 'say']:
                     filtered.append(w_lower if not w[0].isupper() else w)
                 prev_punct = False

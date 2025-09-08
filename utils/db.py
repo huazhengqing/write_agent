@@ -178,7 +178,7 @@ class DB:
     例如, 对于任务ID "1.3.5", 此函数将:
     - 获取父任务链 "1" 和 "1.3" 的信息。
     - 获取所有父ID为 "1.3" 的任务信息。
-    返回的格式：
+    返回的格式: 
     1. goal length
     1.3 goal length
     1.3.1 goal  length
@@ -186,7 +186,7 @@ class DB:
     1.3.3 goal  length
     1.3.4 goal  length
     1.3.5 goal  length
-    如果 没有 length ，就不显示 
+    如果 没有 length , 就不显示 
     """
     def get_context_task_list(self, task: Task) -> str:
         """
@@ -245,7 +245,7 @@ class DB:
         if not task.parent_id:
             return ""
 
-        # 不能有 task_type = 'design'，因为 write 任务会有 design_reflection
+        # 不能有 task_type = 'design', 因为 write 任务会有 design_reflection
         self.cursor.execute(
             "SELECT id, design, design_reflection FROM t_tasks WHERE parent_id = ?",
             (task.parent_id,)
@@ -364,16 +364,16 @@ class DB:
 
         # 按 task id 进行自然排序
         def natural_sort_key(row):
-            """为任务ID提供健壮的自然排序键，处理空或格式错误的ID。"""
+            """为任务ID提供健壮的自然排序键, 处理空或格式错误的ID。"""
             try:
-                # 过滤掉拆分后可能产生的空字符串（如 '1.'），并转换为整数列表
+                # 过滤掉拆分后可能产生的空字符串(如 '1.'), 并转换为整数列表
                 return [int(p) for p in row[0].split('.') if p]
             except (AttributeError, ValueError):
-                # 如果ID为None、空字符串或格式错误，返回[]。
-                # 在降序排序中，这会使无效ID排在最后。
+                # 如果ID为None、空字符串或格式错误, 返回[]。
+                # 在降序排序中, 这会使无效ID排在最后。
                 return []
 
-        # 按任务ID倒序排列，从最新到最旧
+        # 按任务ID倒序排列, 从最新到最旧
         sorted_rows = sorted(rows, key=natural_sort_key, reverse=True)
 
         # 累积内容直到达到指定长度
@@ -387,7 +387,7 @@ class DB:
                 if total_length >= length:
                     break
         
-        # 因为我们是倒序添加的（最新在前），所以需要反转列表以恢复正确的章节顺序
+        # 因为我们是倒序添加的(最新在前), 所以需要反转列表以恢复正确的章节顺序
         return "\n\n".join(reversed(content_parts))
 
     def close(self):

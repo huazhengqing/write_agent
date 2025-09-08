@@ -132,7 +132,6 @@ USER_PROMPT = """
 {text_summary}
 </text_summary>
 
-
 ## 整体规划
 
 ### 任务树:

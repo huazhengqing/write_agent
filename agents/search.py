@@ -30,7 +30,7 @@ from utils.rag import get_rag
 MAX_SEARCH_TURNS = 3
 # 并发抓取网页的最大数量, 以控制资源使用和避免对目标服务器造成过大压力。
 MAX_SCRAPE_CONCURRENCY = 5
-# 单个网络请求（如抓取网页）的超时时间（秒）。
+# 单个网络请求(如抓取网页)的超时时间(秒)。
 REQUEST_TIMEOUT = 30
 # httpx 抓取时认为内容有效的最小长度, 用于判断是否需要降级到 Playwright
 MIN_CONTENT_LENGTH_FOR_HTTPX = 100
@@ -45,7 +45,7 @@ class Plan(BaseModel):
 
 class ProcessedContent(BaseModel):
     url: str = Field(description="内容的原始URL。")
-    relevance_score: float = Field(description="内容与研究焦点的相关性得分（0.0到1.0）, 分数越高越相关。")
+    relevance_score: float = Field(description="内容与研究焦点的相关性得分(0.0到1.0), 分数越高越相关。")
     summary: str = Field(description="提取或生成的核心内容摘要, 应去除噪音并突出关键信息。")
     is_relevant: bool = Field(description="内容是否与研究焦点直接相关。")
 
@@ -63,7 +63,7 @@ class SearchAgentState(TypedDict):
     final_report: Optional[str]         # 最终生成的研究报告, 在 synthesize_node 中填充。
     embedding_model: Any                # 根据任务语言选择的句子嵌入模型。
     # --- 研究循环状态 (简单路径和复杂路径的子任务循环共用) ---
-    plan: Plan                          # 当前的行动计划（思考+查询）, 由 planner_node 生成。
+    plan: Plan                          # 当前的行动计划(思考+查询), 由 planner_node 生成。
     urls_to_scrape: Optional[List[str]] # 从 search_node 返回的待抓取URL列表。
     latest_scraped_content: List[dict]  # 从最新一次 scrape_node 运行中抓取的原始内容。
     latest_processed_content: List[dict] # 从最新一次 information_processor_node 运行中处理过的内容。
@@ -128,7 +128,7 @@ async def scrape_webpages(urls: List[str]) -> List[dict]:
     """
     使用混合策略并发抓取网页内容。
     1.  首先尝试使用 `httpx` 进行快速、轻量级的抓取。
-    2.  如果 `httpx` 抓取失败（如网络错误）或提取的内容过短（通常意味着页面需要JS渲染）, 
+    2.  如果 `httpx` 抓取失败(如网络错误)或提取的内容过短(通常意味着页面需要JS渲染), 
         则自动降级到使用 `Playwright` 进行深度抓取, 它可以执行JavaScript。
     这种策略旨在兼顾速度和抓取成功率。
     """
@@ -294,7 +294,7 @@ async def get_structured_output_with_retry(messages: List[dict], response_model:
 async def planner_node(state: SearchAgentState) -> dict:
     """
     规划节点, 是研究循环的核心。
-    它聚合了最关键的上下文信息（任务描述、滚动总结、最近的历史记录等）, 
+    它聚合了最关键的上下文信息(任务描述、滚动总结、最近的历史记录等), 
     然后调用 LLM 遵循“分析-策略-行动”的框架, 生成下一步的思考和搜索查询。
     如果 LLM 认为当前焦点的信息已足够, 它将返回一个空的查询列表, 从而触发研究循环的终止。
     """
@@ -514,9 +514,9 @@ async def rolling_summary_node(state: SearchAgentState) -> dict:
         try:
             message = await llm_acompletion(llm_params)
             summary = message.content
-            if not summary or len(summary.strip()) < 20: # 简单验证：内容不能为空或过短
+            if not summary or len(summary.strip()) < 20: # 简单验证: 内容不能为空或过短
                 raise ValueError("生成的滚动总结为空或过短。")
-            break  # 验证成功，跳出循环
+            break  # 验证成功, 跳出循环
         except Exception as e:
             logger.warning(f"响应内容验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
@@ -527,7 +527,7 @@ async def rolling_summary_node(state: SearchAgentState) -> dict:
                 except Exception as cache_e:
                     logger.error(f"删除缓存条目失败: {cache_e}")
             else:
-                logger.error("LLM 响应在多次重试后仍然无效，任务失败。")
+                logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
                 raise
 
     logger.info(f"🔄 生成滚动总结: {summary[:200]}...")
@@ -568,9 +568,9 @@ async def synthesize_node(state: SearchAgentState) -> dict:
         try:
             message = await llm_acompletion(llm_params)
             final_report = message.content
-            if not final_report or len(final_report.strip()) < 20: # 简单验证：内容不能为空或过短
+            if not final_report or len(final_report.strip()) < 20: # 简单验证: 内容不能为空或过短
                 raise ValueError("生成的最终报告为空或过短。")
-            break  # 验证成功，跳出循环
+            break  # 验证成功, 跳出循环
         except Exception as e:
             logger.warning(f"响应内容验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
@@ -581,7 +581,7 @@ async def synthesize_node(state: SearchAgentState) -> dict:
                 except Exception as cache_e:
                     logger.error(f"删除缓存条目失败: {cache_e}")
             else:
-                logger.error("LLM 响应在多次重试后仍然无效，任务失败。")
+                logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
                 raise
 
     logger.info("✅ 报告生成完毕。")
@@ -600,7 +600,7 @@ async def should_continue_search(state: SearchAgentState) -> str:
     条件路由函数: 在规划后决定是继续研究循环还是结束。
     - 如果 `plan.queries` 为空, 表示规划器认为信息足够, 结束循环。
     - 如果达到最大搜索轮次, 为防止无限循环, 强制结束。
-    - 新增: 如果研究停滞（新旧总结无显著差异）, 也结束循环。这通过两步实现: 
+    - 新增: 如果研究停滞(新旧总结无显著差异), 也结束循环。这通过两步实现: 
       1. 轻量级的Jaccard相似度检查, 快速过滤掉几乎相同的总结。
       2. 如果不够相似, 则通过LLM进行更深层次的语义判断。
     """
@@ -611,7 +611,7 @@ async def should_continue_search(state: SearchAgentState) -> str:
     # 只有在有两轮总结可比较时才进行
     if prev_summary and current_summary and state['turn_count'] > 1:
         # 优化: 在调用昂贵的LLM之前, 先进行高效的语义相似度检查。
-        # 这比简单的词汇匹配（如Jaccard）更准确, 能更好地判断内容是否真的没有新意。
+        # 这比简单的词汇匹配(如Jaccard)更准确, 能更好地判断内容是否真的没有新意。
         similarity_threshold = 0.98
         
         embedding_model = state['embedding_model']
@@ -657,7 +657,7 @@ async def should_continue_search(state: SearchAgentState) -> str:
                     is_stagnant = False # 默认为不-停滞, 避免因检测失败而卡住
 
         if is_stagnant:
-            logger.info("⏹️ 研究停滞（LLM判断）, 新一轮未发现显著信息, 结束当前任务研究。")
+            logger.info("⏹️ 研究停滞(LLM判断), 新一轮未发现显著信息, 结束当前任务研究。")
             return "end_task"
 
     # 条件1: 规划器认为信息已足够, 主动停止。

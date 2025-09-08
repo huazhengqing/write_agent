@@ -26,11 +26,11 @@ from collections import defaultdict
 
 # model
 中文: 
-shibing624/text2vec-base-chinese（专为中文优化的通用模型）
-BAAI/bge-small-zh（中文语义理解能力强, 适合长文本）
+shibing624/text2vec-base-chinese(专为中文优化的通用模型)
+BAAI/bge-small-zh(中文语义理解能力强, 适合长文本)
 多语言: 
-paraphrase-multilingual-MiniLM-L12-v2（轻量, 支持 100 + 语言）
-xlm-r-bert-base-nli-stsb-mean-tokens（支持语言更多, 精度较高）
+paraphrase-multilingual-MiniLM-L12-v2(轻量, 支持 100 + 语言)
+xlm-r-bert-base-nli-stsb-mean-tokens(支持语言更多, 精度较高)
 """
 
 
@@ -78,7 +78,7 @@ class KeywordExtractorZh:
     def extract_from_text(self, text: str, top_k: int = 30) -> List[str]:
         """
         从小说正文中提取关键词
-        包含层级结构（全书、卷、幕、章、场景、节拍、段落）
+        包含层级结构(全书、卷、幕、章、场景、节拍、段落)
         KeyBERT 批处理: 
             - 输入: `docs` 参数传文本列表 `[text1, text2, ...]`
             - 返回: 嵌套列表, 每个子列表对应输入文本的关键词 `[(kw, score), ...]`
@@ -198,7 +198,7 @@ class KeywordExtractorZh:
                 continue
                 
             # 对每个段落进行句子分割
-            sentences = re.split(r'([。！？；;!?])', paragraph)
+            sentences = re.split(r'([。！?；;!?])', paragraph)
             
             # 合并句子时保留分隔符
             for i in range(0, len(sentences)-1, 2):
@@ -235,7 +235,7 @@ class KeywordExtractorZh:
         
         # 尝试从末尾找到完整句子
         overlap_start = len(text) - self.chunk_overlap
-        sentence_markers = ['。', '！', '？', '；', ';', '!', '?']
+        sentence_markers = ['。', '！', '?', '；', ';', '!', '?']
         
         # 向前查找句子边界
         for i in range(overlap_start, len(text)):
@@ -251,7 +251,7 @@ class KeywordExtractorZh:
         chunk = re.sub(r'[\u3000-\u303F\uff00-\uffef\u2018-\u201f]', ' ', chunk)
         # 保留基本标点符号的语义信息
         chunk = re.sub(r'[, ,]', ' COMMA ', chunk)
-        chunk = re.sub(r'[。！？]', ' PERIOD ', chunk)
+        chunk = re.sub(r'[。！?]', ' PERIOD ', chunk)
         
         # 使用jieba分词
         words = jieba.lcut(chunk, cut_all=False)
@@ -265,7 +265,7 @@ class KeywordExtractorZh:
             # 保留标点符号标记用于语义理解
             if w in ['COMMA', 'PERIOD']:
                 filtered.append(w)
-            # 过滤停用词和单字符（除非是重要单字）
+            # 过滤停用词和单字符(除非是重要单字)
             elif w not in self.base_stop_words and (len(w) > 1 or w in ['我', '你', '他', '她', '它']):
                 filtered.append(w)
         

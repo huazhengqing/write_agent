@@ -62,8 +62,8 @@ class SearchAgentENPrompt(PromptTemplate):
 
 # 输出规则
 1. 级联搜索处理: 
-- 当后续搜索依赖于先前结果时（例如需要特定参数/数据）, 必须分轮次执行
-- 独立的搜索维度可以在同一轮次中并行（最多4个）
+- 当后续搜索依赖于先前结果时(例如需要特定参数/数据), 必须分轮次执行
+- 独立的搜索维度可以在同一轮次中并行(最多4个)
 2. 搜索词优化: 
 - 失败的搜索应尝试: 同义词替换、长尾词扩展、添加限定词、转换语言风格
 3. 终止条件: 
@@ -88,6 +88,6 @@ class SearchAgentENPrompt(PromptTemplate):
 上一轮, 搜索引擎返回了: 
 {to_run_tool_result}
 
-请根据要求完成本轮（第 {to_run_turn} 轮）
+请根据要求完成本轮(第 {to_run_turn} 轮)
 """.strip()
         super().__init__(system_message, content_template)

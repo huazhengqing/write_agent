@@ -21,9 +21,9 @@ async def summary_aggregate(task: Task) -> Task:
         try:
             message = await llm_acompletion(llm_params)
             content = message.content
-            if not content or len(content.strip()) < 20: # 简单验证：内容不能为空或过短
+            if not content or len(content.strip()) < 20: # 简单验证: 内容不能为空或过短
                 raise ValueError("生成的内容为空或过短。")
-            break  # 验证成功，跳出循环
+            break  # 验证成功, 跳出循环
         except Exception as e:
             logger.warning(f"响应内容验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
@@ -34,7 +34,7 @@ async def summary_aggregate(task: Task) -> Task:
                 except Exception as cache_e:
                     logger.error(f"删除缓存条目失败: {cache_e}")
             else:
-                logger.error("LLM 响应在多次重试后仍然无效，任务失败。")
+                logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
                 raise
 
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")

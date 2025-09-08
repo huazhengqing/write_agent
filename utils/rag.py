@@ -348,7 +348,7 @@ class RAG:
             if first_newline_after_start != -1:
                 result = full_content[first_newline_after_start + 1:]
             else:
-                # 2. 如果后面没有换行符（说明我们在最后一段）, 则尝试在截取点之前找到最后一个换行符
+                # 2. 如果后面没有换行符(说明我们在最后一段), 则尝试在截取点之前找到最后一个换行符
                 last_newline_before_start = full_content.rfind('\n', 0, start_pos)
                 if last_newline_before_start != -1:
                     result = full_content[last_newline_before_start + 1:]
@@ -473,7 +473,7 @@ class RAG:
                 message = await llm_acompletion(llm_params)
                 content = message.content
                 inquiry_plan_obj = InquiryPlan.model_validate_json(content)
-                break  # 验证成功，跳出循环
+                break  # 验证成功, 跳出循环
             except Exception as e:
                 logger.warning(f"探询计划生成或验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
@@ -722,8 +722,8 @@ class RAG:
 
 # 输出原则
 - 分析: 严格遵循“探询计划与规则”中的“最终目标”和“执行规则”。
-- 整合: 综合两个信息源, 注意各自侧重（语义 vs 事实）。
-- 应用: 严格应用“执行规则”处理信息（如解决冲突、融合信息）。
+- 整合: 综合两个信息源, 注意各自侧重(语义 vs 事实)。
+- 应用: 严格应用“执行规则”处理信息(如解决冲突、融合信息)。
 - 内容:
     - 必须完全基于提供的信息源。
     - 必须是整合提炼后的答案, 禁止罗列。
@@ -732,7 +732,7 @@ class RAG:
 
         # 5. 准备调用 LLM 进行信息合成
         synthesis_messages = [
-            {"role": "system", "content": "角色：信息整合分析师。任务：遵循用户指令，整合并提炼向量检索和知识图谱的信息。输出：一个逻辑连贯、事实准确、完全基于所提供材料的最终回答。"},
+            {"role": "system", "content": "角色: 信息整合分析师。任务: 遵循用户指令, 整合并提炼向量检索和知识图谱的信息。输出: 一个逻辑连贯、事实准确、完全基于所提供材料的最终回答。"},
             {"role": "user", "content": synthesis_user_prompt}
         ]
         llm_params = get_llm_params(synthesis_messages, temperature=self.agent_llm.temperature)
@@ -778,7 +778,7 @@ class RAG:
                 ],
                 'vector_filters_list': [{'key': 'content_type', 'value': 'summary'}],
                 'vector_tool_desc': "功能: 检索情节摘要、角色关系、事件发展。范围: 所有层级的历史摘要。",
-                'final_instruction': "任务: 整合情节摘要(向量)与正文细节(图谱)，提供写作上下文。重点: 角色关系、关键伏笔、情节呼应。",
+                'final_instruction': "任务: 整合情节摘要(向量)与正文细节(图谱), 提供写作上下文。重点: 角色关系、关键伏笔、情节呼应。",
                 'rules_text': """
 # 整合规则
 1.  冲突解决: 向量(摘要)与图谱(细节)冲突时, 以图谱为准。
@@ -925,7 +925,7 @@ class RAG:
             sort_by (Literal): 排序策略: 'time' (时间倒序), 'narrative' (章节顺序), 'relevance' (相关性)。
         """
         if not response.source_nodes:
-            return f"未找到相关来源信息，但综合回答是：\n{str(response)}"
+            return f"未找到相关来源信息, 但综合回答是: \n{str(response)}"
 
         # 默认使用 LlamaIndex 返回的顺序 (通常是按相关性)
         sorted_nodes = response.source_nodes

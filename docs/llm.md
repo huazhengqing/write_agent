@@ -3,7 +3,7 @@
 ## reasoning LLM
 
 ### 免费
-| 模型名称（Model Name）               | 创建时间（Created） | 上下文长度（Context） | 输入令牌费用（Input Tokens） | 输出令牌费用（Output Tokens） |
+| 模型名称(Model Name)               | 创建时间(Created) | 上下文长度(Context) | 输入令牌费用(Input Tokens) | 输出令牌费用(Output Tokens) |
 |--------------------------------------|---------------------|-----------------------|------------------------------|-------------------------------|
 | openai/gpt-oss-20b:free              | Aug 5, 2025         | 131,072               | $0/M                         | $0/M                          |
 | z-ai/glm-4.5-air:free                | Jul 25, 2025        | 131,072               | $0/M                         | $0/M                          |
@@ -18,7 +18,7 @@
 | deepseek/deepseek-r1:free            | Jan 20, 2025        | 163,840               | $0/M                         | $0/M                          |
 
 ### 价格表
-| 模型名称（Model Name）               | 创建日期（Created Date） | 上下文长度（Context Length） | 输入令牌价格（Input Tokens Price） | 输出令牌价格（Output Tokens Price） | 输入图片价格（Input Images Price） |
+| 模型名称(Model Name)               | 创建日期(Created Date) | 上下文长度(Context Length) | 输入令牌价格(Input Tokens Price) | 输出令牌价格(Output Tokens Price) | 输入图片价格(Input Images Price) |
 |--------------------------------------|--------------------------|------------------------------|------------------------------------|-------------------------------------|------------------------------------|
 | deepseek/deepseek-r1-0528-qwen3-8b   | May 29, 2025             | 32,000                       | $0.01/M                            | $0.02/M                             | -                                  |
 | qwen/qwen3-32b                       | Apr 28, 2025             | 40,960                       | $0.018/M                           | $0.072/M                            | -                                  |
@@ -58,7 +58,7 @@
 ## 非推理 LLM
 
 ### 免费
-| 模型名称（Model Name） | 创建日期（Created Date） | 上下文长度（Context Length） | 输入 tokens 成本（Input Cost） | 输出 tokens 成本（Output Cost） |
+| 模型名称(Model Name) | 创建日期(Created Date) | 上下文长度(Context Length) | 输入 tokens 成本(Input Cost) | 输出 tokens 成本(Output Cost) |
 |-------------------------|---------------------------|-------------------------------|--------------------------------|---------------------------------|
 | qwen/qwen3-coder:free    | Jul 23, 2025              | 262,144                       | $0/M                           | $0/M                            |
 | moonshotai/kimi-k2:free  | Jul 11, 2025              | 32,768                        | $0/M                           | $0/M                            |
@@ -69,7 +69,7 @@
 | mistralai/mistral-nemo:free | Jul 19, 2024            | 131,072                       | $0/M                           | $0/M                            |
 
 ### 价格表
-| 模型名称（Model Name）               | 创建日期（Created Date） | 上下文长度（Context Length） | 输入令牌价格（Input Tokens Price） | 输出令牌价格（Output Tokens Price） | 输入图片价格（Input Images Price） | 输入音频价格（Input Audio Price） |
+| 模型名称(Model Name)               | 创建日期(Created Date) | 上下文长度(Context Length) | 输入令牌价格(Input Tokens Price) | 输出令牌价格(Output Tokens Price) | 输入图片价格(Input Images Price) | 输入音频价格(Input Audio Price) |
 |--------------------------------------|---------------------------|-------------------------------|-----------------------------------|------------------------------------|------------------------------------|------------------------------------|
 | meta-llama/llama-3.2-3b-instruct     | Sep 25, 2024              | 20,000                        | $0.003/M                          | $0.006/M                           | -                                  | -                                  |
 | liquid/lfm-7b                        | Jan 25, 2025              | 32,768                        | $0.01/M                           | $0.01/M                            | -                                  | -                                  |

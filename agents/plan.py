@@ -54,7 +54,7 @@ async def plan(task: Task) -> Task:
             message = await llm_acompletion(llm_params)
             content = message.content
             data = PlanOutput.model_validate_json(content)
-            break  # 验证成功，跳出循环
+            break  # 验证成功, 跳出循环
         except Exception as e:
             logger.warning(f"响应内容验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
@@ -66,7 +66,7 @@ async def plan(task: Task) -> Task:
                 except Exception as cache_e:
                     logger.error(f"删除缓存条目失败: {cache_e}")
             else:
-                logger.error("LLM 响应在多次重试后仍然无效，任务失败。")
+                logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
                 raise
 
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")
