@@ -102,12 +102,12 @@ Attention!! Your design outcome should maintain **logical consistency** and **co
 - **Refinement**:  
   - Enhance the clarity, depth, and emotional resonance of the combined design.  
   - Fill in gaps or elaborate on areas that lack sufficient detail or development.  
-  - Ensure the story’s tone, pacing, and style remain consistent throughout.  
+  - Ensure the story's tone, pacing, and style remain consistent throughout.  
 
 - **Innovation and Impact**:  
   - Verify that the overall story design maintains originality and avoids clichés.  
   - Deepen universal or profound themes, ensuring they resonate with readers.  
-  - Introduce subtle improvements or creative enhancements that elevate the story’s overall impact.  
+  - Introduce subtle improvements or creative enhancements that elevate the story's overall impact.  
 
   
 # Design Hints
