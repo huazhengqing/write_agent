@@ -17,7 +17,7 @@ async def plan_reflection(task: Task) -> Task:
 
     updated_task = task.model_copy(deep=True)
     if os.getenv("deployment_environment") == "test":
-        updated_task.results["plan_reflection"] = ""
+        updated_task.results["plan_reflection"] = task.results["plan"]
         updated_task.results["plan_reflection_reasoning"] = ""
     else:
         if task.category == "story" and task.task_type == "write":

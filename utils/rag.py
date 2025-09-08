@@ -116,15 +116,15 @@ class RAG:
             self.caches['task_list'].evict(tag=task.run_id)
             self.caches['upper_design'].evict(tag=task.run_id)
             self.caches['upper_search'].evict(tag=task.run_id)
-            await asyncio.to_thread(db.add_result, task)
+            await asyncio.to_thread(db.add_sub_tasks, task)
         # 处理设计任务的执行结果
         elif task_type == "task_execute_design":
             await asyncio.to_thread(db.add_result, task)
-            await self.store(task, "design", task.results.get("result"))
+            await self.store(task, "design", task.results.get("design"))
         # 处理搜索任务的执行结果
         elif task_type == "task_execute_search":
             await asyncio.to_thread(db.add_result, task)
-            await self.store(task, "search", task.results.get("result"))
+            await self.store(task, "search", task.results.get("search"))
         # 处理对设计结果的反思
         elif task_type == "task_execute_design_reflection":
             await asyncio.to_thread(db.add_result, task)
@@ -138,12 +138,12 @@ class RAG:
             # 正文内容已变更, 清除相关缓存
             self.caches['text_latest'].evict(tag=task.run_id)
             self.caches['text_length'].evict(tag=task.run_id)
-            result_reflection = task.results.get("result_reflection")
+            write_reflection = task.results.get("write_reflection")
             await asyncio.to_thread(db.add_result, task)
             # 将最终内容追加到主文本文件
-            await asyncio.to_thread(self.text_file_append, self.get_text_file_path(task), result_reflection)
+            await asyncio.to_thread(self.text_file_append, self.get_text_file_path(task), write_reflection)
             # 将最终内容存入 RAG 索引
-            await self.store(task, "write", result_reflection)
+            await self.store(task, "write", write_reflection)
         # 处理为正文生成的摘要
         elif task_type == "task_execute_summary":
             # 摘要内容已变更, 清除缓存
@@ -153,11 +153,11 @@ class RAG:
         # 处理对子任务设计的聚合
         elif task_type == "task_aggregate_design":
             await asyncio.to_thread(db.add_result, task)
-            await self.store(task, "design", task.results.get("result"))
+            await self.store(task, "design", task.results.get("design"))
         # 处理对子任务搜索结果的聚合
         elif task_type == "task_aggregate_search":
             await asyncio.to_thread(db.add_result, task)
-            await self.store(task, "search", task.results.get("result"))
+            await self.store(task, "search", task.results.get("search"))
         # 处理对子任务摘要的聚合
         elif task_type == "task_aggregate_summary":
             self.caches['text_summary'].evict(tag=task.run_id)

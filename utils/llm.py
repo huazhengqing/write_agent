@@ -1,5 +1,6 @@
 import copy
 import litellm
+import re
 import collections
 import json
 from loguru import logger
@@ -102,6 +103,26 @@ def _format_message_content(content: str) -> str:
         return _format_json_content(content)
     return content
 
+def _clean_markdown_fences(content: str) -> str:
+    """如果内容被Markdown代码块包裹, 则移除它们。"""
+    if not content:
+        return ""
+    
+    text = content.strip()
+    
+    # 检查是否以 ``` 开头
+    if not text.startswith("```"):
+        return text
+
+    # 移除开头的 ```lang\n
+    text = re.sub(r"^```[^\n]*\n?", "", text, count=1)
+    
+    # 检查是否以 ``` 结尾
+    if text.endswith("```"):
+        text = text[:-3]
+        
+    return text.strip()
+
 async def llm_acompletion(llm_params):
     params_to_log = llm_params.copy()
     params_to_log.pop('messages', None)
@@ -128,6 +149,13 @@ async def llm_acompletion(llm_params):
     if not content:
         raise ValueError(f"{message}")
     
+    # 如果响应格式不是json_object, 则清理Markdown代码块
+    response_format = llm_params.get('response_format', {})
+    if response_format.get('type') != 'json_object':
+        cleaned_content = _clean_markdown_fences(content)
+        message.content = cleaned_content
+        content = cleaned_content # 更新 content 以便日志记录
+
     reason = message.get("reasoning_content") or message.get("reasoning", "")
     if reason:
         logger.info(f"推理过程:\n{reason}")

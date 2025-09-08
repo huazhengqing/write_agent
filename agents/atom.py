@@ -18,7 +18,7 @@ class AtomOutput(BaseModel):
 
 
 async def atom(task: Task) -> Task:
-    logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
+    # logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
     
     if os.getenv("deployment_environment") == "test":
         if task.task_type in ["design", "search"]:
@@ -73,5 +73,5 @@ async def atom(task: Task) -> Task:
         updated_task.goal = data.goal_update
         updated_task.results["goal_update"] = data.goal_update
     
-    logger.info(f"完成\n{updated_task.model_dump_json(indent=2, exclude_none=True)}")
+    # logger.info(f"完成\n{updated_task.model_dump_json(indent=2, exclude_none=True)}")
     return updated_task
