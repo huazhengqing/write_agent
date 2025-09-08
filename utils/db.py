@@ -37,8 +37,8 @@ Table: t_tasks
 - write_reflection_reasoning: TEXT - 正文的反思的推理过程
 - summary: TEXT - 正文摘要
 - summary_reasoning: TEXT - 正文摘要的推理过程
-- result: TEXT - 备用字段，不在上面的结果中
-- reasoning: TEXT - 备用字段，不在上面的结果中
+- atom: TEXT - 判断原子任务的结果
+- atom_reasoning: TEXT - 判断原子任务的推理过程
 - created_at: TIMESTAMP - 记录创建/更新时的时间戳。
 """
 
@@ -79,8 +79,8 @@ class DB:
             write_reflection_reasoning TEXT,
             summary TEXT,
             summary_reasoning TEXT,
-            result TEXT,
-            reasoning TEXT,
+            atom TEXT,
+            atom_reasoning TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """)
@@ -138,8 +138,8 @@ class DB:
             "write_reflection_reasoning": task.results.get("write_reflection_reasoning"),
             "summary": task.results.get("summary"),
             "summary_reasoning": task.results.get("summary_reasoning"),
-            "result": task.results.get("result"),
-            "reasoning": task.results.get("reasoning"),
+            "atom": task.results.get("atom"),
+            "atom_reasoning": task.results.get("atom_reasoning"),
         }
         
         # 过滤掉None值和空字符串

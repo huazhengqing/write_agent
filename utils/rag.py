@@ -312,9 +312,7 @@ class RAG:
         cached_result = self.caches['dependent_search'].get(cache_key)
         if cached_result is not None:
             return cached_result
-        
         result = await asyncio.to_thread(db.get_dependent_search, task)
-
         self.caches['dependent_search'].set(cache_key, result, tag=task.run_id)
         return result
 
@@ -323,9 +321,7 @@ class RAG:
         cached_result = self.caches['task_list'].get(cache_key)
         if cached_result is not None:
             return cached_result
-        
         result = await asyncio.to_thread(db.get_context_task_list, task)
-
         self.caches['task_list'].set(cache_key, result, tag=task.run_id)
         return result
 
@@ -359,7 +355,6 @@ class RAG:
                     result = full_content[-length:]
 
         self.caches['text_latest'].set(key, result, tag=task.run_id)
-
         logger.info(f"完成 {result}")
         return result
 
@@ -615,7 +610,6 @@ class RAG:
 
         cache.set(cache_key, result, tag=task.run_id)
         logger.info(f"结果已存入缓存: {cache_key}")
-
         logger.info(f"完成 \n{result}")
         return result
 

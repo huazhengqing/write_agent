@@ -27,8 +27,8 @@ async def atom(task: Task) -> Task:
             test_output = getattr(module, "test_output")
             data = AtomOutput.model_validate_json(test_output)
             updated_task = task.model_copy(deep=True)
-            updated_task.results["result"] = test_output
-            updated_task.results["reasoning"] = ""
+            updated_task.results["atom"] = test_output
+            updated_task.results["atom_reasoning"] = ""
             updated_task.results["atom_result"] = data.atom_result
             return updated_task
 
@@ -66,8 +66,8 @@ async def atom(task: Task) -> Task:
 
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")
     updated_task = task.model_copy(deep=True)
-    updated_task.results["result"] = content
-    updated_task.results["reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
+    updated_task.results["atom"] = content
+    updated_task.results["atom_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
     updated_task.results["atom_result"] = data.atom_result
     if data.goal_update and len(data.goal_update.strip()) > 10 and data.goal_update != task.goal:
         updated_task.goal = data.goal_update
