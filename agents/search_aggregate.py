@@ -9,17 +9,6 @@ from util.prompt_loader import load_prompts
 async def search_aggregate(task: Task) -> Task:
     logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
 
-    if not task.id or not task.goal:
-        raise ValueError("任务ID和目标不能为空。")
-    if task.task_type != "search":
-        raise ValueError("Task type must be 'search'.")
-    if not task.sub_tasks:
-        raise ValueError("Task must have sub tasks for aggregation.")
-
-    VALID_CATEGORIES = {"story", "report", "book"}
-    if task.category not in VALID_CATEGORIES:
-        raise ValueError(f"未知的 category: {task.category}")
-
     SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "search_aggregate_cn", "SYSTEM_PROMPT", "USER_PROMPT")
 
     context = await get_rag().get_context_aggregate_search(task)
@@ -32,10 +21,8 @@ async def search_aggregate(task: Task) -> Task:
     content = message.content
     
     updated_task = task.model_copy(deep=True)
-    updated_task.results = {
-        "result": content,
-        "reasoning": reasoning,
-    }
+    updated_task.results["result"] = content
+    updated_task.results["reasoning"] = reasoning
 
     logger.info(f"完成\n{updated_task.model_dump_json(indent=2, exclude_none=True)}")
     return updated_task

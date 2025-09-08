@@ -6,23 +6,12 @@ from util.rag import get_rag
 from util.prompt_loader import load_prompts
 
 
-async def write_aggregate(task: Task) -> Task:
+async def summary_aggregate(task: Task) -> Task:
     logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
 
-    if not task.id or not task.goal:
-        raise ValueError("任务ID和目标不能为空。")
-    if task.task_type != "write":
-        raise ValueError("Task type must be 'write'.")
-    if not task.sub_tasks:
-        raise ValueError("Task must have sub tasks.")
-  
-    VALID_CATEGORIES = {"story", "report", "book"}
-    if task.category not in VALID_CATEGORIES:
-        raise ValueError(f"未知的 category: {task.category}")
+    SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "summary_aggregate_cn", "SYSTEM_PROMPT", "USER_PROMPT")
 
-    SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "write_aggregate_cn", "SYSTEM_PROMPT", "USER_PROMPT")
-
-    context = await get_rag().get_context_aggregate_write(task)
+    context = await get_rag().get_context_aggregate_summary(task)
     
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
 
@@ -32,10 +21,8 @@ async def write_aggregate(task: Task) -> Task:
     content = message.content
     
     updated_task = task.model_copy(deep=True)
-    updated_task.results = {
-        "result": content,
-        "reasoning": reasoning,
-    }
+    updated_task.results["summary"] = content
+    updated_task.results["summary_reasoning"] = reasoning
 
     logger.info(f"完成\n{updated_task.model_dump_json(indent=2, exclude_none=True)}")
     return updated_task

@@ -23,7 +23,11 @@ Table: t_tasks
 - dependency: TEXT - JSON 格式的、执行前必须完成的同级任务ID列表。
 - reasoning: TEXT - 任务结果背后的推理过程。
 - result: TEXT - 来自 llm 的完整结果
-- text: TEXT - 'write' 任务写的文章
+- design_reflection_reasoning: TEXT -  设计结果的反思原因。
+- design_reflection: TEXT - 设计结果的反思结果
+- reasoning_reflection: TEXT - 任务结果再反思背后的推理过程。
+- result_reflection: TEXT - 来自 llm 的再反思完整结果
+- summary: TEXT - 正文的摘要
 - created_at: TIMESTAMP - 记录创建/更新时的时间戳。
 """
 
@@ -50,7 +54,11 @@ class DB:
             dependency TEXT,
             reasoning TEXT,
             result TEXT,
-            text TEXT,
+            design_reflection_reasoning TEXT,
+            design_reflection TEXT,
+            reasoning_reflection TEXT,
+            result_reflection TEXT,
+            summary TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """)
@@ -91,28 +99,45 @@ class DB:
                 tasks_to_process.extend(current_task.sub_tasks)
 
     def add_result(self, task: Task):
-        reasoning = task.results.get("reasoning")
-        result = task.results.get("result")
+        update_fields = {
+            "reasoning": task.results.get("reasoning"),
+            "result": task.results.get("result"),
+            "design_reflection_reasoning": task.results.get("design_reflection_reasoning"),
+            "design_reflection": task.results.get("design_reflection"),
+            "reasoning_reflection": task.results.get("reasoning_reflection"),
+            "result_reflection": task.results.get("result_reflection"),
+            "summary": task.results.get("summary"),
+        }
+        
+        # 过滤掉None值和空字符串
+        fields_to_update = {k: v for k, v in update_fields.items() if v}
+        
+        if not fields_to_update:
+            return
+
+        set_clause = ", ".join([f"{key} = ?" for key in fields_to_update.keys()])
+        values = list(fields_to_update.values())
+        values.append(task.id)
+
         self.cursor.execute(
-            """
+            f"""
             UPDATE t_tasks 
-            SET reasoning = ?, result = ?
+            SET {set_clause}
             WHERE id = ?
             """,
-            (reasoning, result, task.id)
+            tuple(values)
         )
         self.conn.commit()
 
     def add_text(self, task: Task):
-        result = task.results.get("result")
-        text = task.results.get("text")
+        result = task.results.get("result") # 在rag.py中, 这是摘要
         self.cursor.execute(
             """
             UPDATE t_tasks 
-            SET result = ?, text = ?
+            SET result = ?, summary = ?
             WHERE id = ?
             """,
-            (result, text, task.id)
+            (result, result, task.id)
         )
         self.conn.commit()
 
@@ -130,7 +155,11 @@ class DB:
         results = {
             "reasoning": task_data.get('reasoning'),
             "result": task_data.get('result'),
-            "text": task_data.get('text'),
+            "design_reflection_reasoning": task_data.get('design_reflection_reasoning'),
+            "design_reflection": task_data.get('design_reflection'),
+            "reasoning_reflection": task_data.get('reasoning_reflection'),
+            "result_reflection": task_data.get('result_reflection'),
+            "summary": task_data.get('summary'),
         }
 
         task_params = task_data.copy()
@@ -167,7 +196,11 @@ class DB:
             results = {
                 "reasoning": task_data.get('reasoning'),
                 "result": task_data.get('result'),
-                "text": task_data.get('text'),
+                "design_reflection_reasoning": task_data.get('design_reflection_reasoning'),
+                "design_reflection": task_data.get('design_reflection'),
+                "reasoning_reflection": task_data.get('reasoning_reflection'),
+                "result_reflection": task_data.get('result_reflection'),
+                "summary": task_data.get('summary'),
             }
 
             task_params = task_data.copy()
@@ -219,7 +252,11 @@ class DB:
             results = {
                 "reasoning": task_data.get('reasoning'),
                 "result": task_data.get('result'),
-                "text": task_data.get('text'),
+                "design_reflection_reasoning": task_data.get('design_reflection_reasoning'),
+                "design_reflection": task_data.get('design_reflection'),
+                "reasoning_reflection": task_data.get('reasoning_reflection'),
+                "result_reflection": task_data.get('result_reflection'),
+                "summary": task_data.get('summary'),
             }
 
             task_params = task_data.copy()
@@ -311,10 +348,16 @@ class DB:
         return "\n\n".join(content_list)
 
     def get_subtask_results(self, parent_id: str, task_type: str) -> str:
-        self.cursor.execute(
-            "SELECT result FROM t_tasks WHERE parent_id = ? AND task_type = ?",
-            (parent_id, task_type)
-        )
+        if task_type == "summary":
+            self.cursor.execute(
+                "SELECT summary FROM t_tasks WHERE parent_id = ? AND task_type = ?",
+                (parent_id, "write")
+            )
+        else:
+            self.cursor.execute(
+                "SELECT result FROM t_tasks WHERE parent_id = ? AND task_type = ?",
+                (parent_id, task_type)
+            )
         rows = self.cursor.fetchall()
 
         if not rows:

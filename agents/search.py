@@ -637,11 +637,6 @@ async def search(task: Task) -> Task:
         -   `synthesize`: 汇集所有信息, 生成最终报告, 流程结束 (`END`)。
     """
     logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
-
-    if not task.id or not task.goal:
-        raise ValueError("任务ID和目标不能为空。")
-    if task.task_type != "search":
-        raise ValueError("Task type must be 'search'.")
     
     # 根据任务目标检测语言, 并加载相应的嵌入模型
     try:
@@ -722,10 +717,8 @@ async def search(task: Task) -> Task:
 
     # 7. 更新任务对象并返回结果
     updated_task = task.model_copy(deep=True)
-    updated_task.results = {
-        "result": final_state['final_report'],
-        "reasoning": reasoning_str,
-    }
+    updated_task.results["result"] = final_state['final_report']
+    updated_task.results["reasoning"] = reasoning_str
 
     logger.info(f"完成\n{updated_task.model_dump_json(indent=2, exclude_none=True)}")
     return updated_task

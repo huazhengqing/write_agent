@@ -26,21 +26,6 @@ class PlanOutput(PlanNode):
 async def plan(task: Task) -> Task:
     logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
 
-    if not task.id or not task.goal:
-        raise ValueError("任务ID和目标不能为空。")
-    
-    VALID_CATEGORIES = {"story", "report", "book"}
-    if task.category not in VALID_CATEGORIES:
-        raise ValueError(f"未知的 category: {task.category}")
-
-    VALID_TASK_TYPES = {"design", "search", "write"}
-    if task.task_type not in VALID_TASK_TYPES:
-        raise ValueError(f"未知的任务类型: {task.task_type}")
-
-    if task.task_type == "write":
-        if not task.length:
-            raise ValueError("Task length must be set.")
-
     if task.category == "story" and task.task_type == "write":
         module_name = f"plan_{task.task_type}_cn"
         SYSTEM_PROMPT, USER_PROMPT, get_task_level, test_get_task_level = load_prompts(task.category, module_name, "SYSTEM_PROMPT", "USER_PROMPT", "get_task_level", "test_get_task_level")
@@ -71,17 +56,15 @@ async def plan(task: Task) -> Task:
     data = PlanOutput.model_validate_json(content)
 
     updated_task = task.model_copy(deep=True)
-    updated_task.sub_tasks = _convert_plan_to_tasks(data.sub_tasks, updated_task)
-    updated_task.results = {
-        "result": content,
-        "reasoning": "\n\n".join(filter(None, [reasoning, data.reasoning])),
-    }
+    updated_task.sub_tasks = convert_plan_to_tasks(data.sub_tasks, updated_task)
+    updated_task.results["result"] = content
+    updated_task.results["reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
     
     logger.info(f"完成\n{updated_task.model_dump_json(indent=2, exclude_none=True)}")
     return updated_task
 
 
-def _convert_plan_to_tasks(
+def convert_plan_to_tasks(
     sub_task_outputs: List[PlanNode],
     parent_task: Task
 ) -> List[Task]:
@@ -103,6 +86,6 @@ def _convert_plan_to_tasks(
             **inherited_props
         )
         if plan_item.sub_tasks:
-            new_task.sub_tasks = _convert_plan_to_tasks(plan_item.sub_tasks, new_task)
+            new_task.sub_tasks = convert_plan_to_tasks(plan_item.sub_tasks, new_task)
         tasks.append(new_task)
     return tasks

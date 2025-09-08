@@ -55,15 +55,6 @@ from util.prompt_loader import load_prompts
 
 class RAG:
     def __init__(self):
-        """
-        初始化RAG系统。
-
-        - 配置嵌入模型 (远程或本地)。
-        - 初始化 Qdrant (向量数据库) 和 Memgraph (图数据库) 的客户端。
-        - 设置用于推理和抽取的LLM。
-        - 加载知识图谱抽取的提示词模板。
-        - 创建用于缓存各类检索结果的磁盘缓存实例。
-        """
         embed_model = os.getenv("embed_model")
         embed_BASE_URL = os.getenv("embed_BASE_URL")
         embed_API_KEY = os.getenv("embed_API_KEY")
@@ -122,15 +113,6 @@ class RAG:
         }
  
     def _get_storage_context(self, run_id: str) -> StorageContext:
-        """
-        为指定的运行ID获取存储上下文。
-
-        Args:
-            run_id (str): 唯一的运行ID。
-
-        Returns:
-            StorageContext: 包含向量存储和图存储的LlamaIndex存储上下文。
-        """
         vector_store = QdrantVectorStore(
             client=self.qdrant_client,
             collection_name=f"write_vectors_{run_id}"
@@ -140,127 +122,57 @@ class RAG:
             graph_store=self.graph_store
         )
 
-
 ###############################################################################
 
     async def add(self, task: Task, task_type: str):
-        """
-        向RAG系统中添加数据的总入口。
-
-        根据 `task_type` 将任务路由到不同的处理函数, 并负责缓存失效。
-
-        Args:
-            task (Task): 当前任务对象。
-            task_type (str): 任务处理的阶段类型 (如 'task_atom', 'task_plan', 'task_execute')。
-        """
+        db = get_db(run_id=task.run_id, category=task.category)
         if task_type == "task_atom":
-            return await self.add_task_atom(task)
-        
-        if task_type == "task_plan":
+            if task.id == "1" or task.results.get("goal_update"):
+                await asyncio.to_thread(db.add_task, task)
+                self.caches['task_list'].evict(tag=task.run_id)
+        elif task_type == "task_plan":
+            await asyncio.to_thread(db.add_sub_tasks, task)
+        elif task_type == "task_plan_reflection":
             self.caches['task_list'].evict(tag=task.run_id)
             self.caches['upper_design'].evict(tag=task.run_id)
             self.caches['upper_search'].evict(tag=task.run_id)
-            return await self.add_task_plan(task)
-
-        task_result = task.results.get("result")
-        if not task_result:
-            logger.error(f"task_result为空, 无法添加记忆")
-            return
-        
-        if task_type == "task_execute":
-            if task.task_type == "write":
-                self.caches['text_latest'].evict(tag=task.run_id)
-                self.caches['text_length'].evict(tag=task.run_id)
-                self.caches['text_summary'].evict(tag=task.run_id)
-                return await self.add_task_execute_write(task)
-            elif task.task_type == "design":
-                return await self.add_result(task)
-            elif task.task_type == "search":
-                return await self.add_result(task)
-            else:
-                raise ValueError(f"不支持的任务类型: {task.task_type}")
-        elif task_type == "task_aggregate":
-            if task.task_type == "design":
-                return await self.add_result(task)
-            elif task.task_type == "search":
-                return await self.add_result(task)
-            elif task.task_type == "write":
-                self.caches['text_summary'].evict(tag=task.run_id)
-                return await self.add_result(task)
-            else:
-                raise ValueError(f"不支持的任务类型: {task.task_type}")
+            await asyncio.to_thread(db.add_result, task)
+        elif task_type == "task_execute_design":
+            await asyncio.to_thread(db.add_result, task)
+            await self.store(task, "design", task.results.get("result"))
+        elif task_type == "task_execute_search":
+            await asyncio.to_thread(db.add_result, task)
+            await self.store(task, "search", task.results.get("result"))
+        elif task_type == "task_execute_design_reflection":
+            await asyncio.to_thread(db.add_result, task)
+            await self.store(task, "design", task.results.get("design_reflection"))
+        elif task_type == "task_execute_write":
+            await asyncio.to_thread(db.add_result, task)
+        elif task_type == "task_execute_write_reflection":
+            self.caches['text_latest'].evict(tag=task.run_id)
+            self.caches['text_length'].evict(tag=task.run_id)
+            result_reflection = task.results.get("result_reflection")
+            await asyncio.to_thread(db.add_result, task)
+            await asyncio.to_thread(self.text_file_append, self.get_text_file_path(task), result_reflection)
+            await self.store(task, "text", result_reflection)
+        elif task_type == "task_execute_summary":
+            self.caches['text_summary'].evict(tag=task.run_id)
+            await asyncio.to_thread(db.add_result, task)
+            await self.store(task, "summary", task.results.get("summary"))
+        elif task_type == "task_aggregate_design":
+            await asyncio.to_thread(db.add_result, task)
+            await self.store(task, "design", task.results.get("result"))
+        elif task_type == "task_aggregate_search":
+            await asyncio.to_thread(db.add_result, task)
+            await self.store(task, "search", task.results.get("result"))
+        elif task_type == "task_aggregate_summary":
+            self.caches['text_summary'].evict(tag=task.run_id)
+            await asyncio.to_thread(db.add_result, task)
+            await self.store(task, "summary", task.results.get("summary"))
         else:
-            raise ValueError(f"不支持的类型 {task_type}")
-
-    async def add_task_atom(self, task: Task):
-        """
-        处理原子任务, 通常是更新任务定义本身。
-
-        Args:
-            task (Task): 当前任务对象。
-        """
-        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
-
-        if task.id == "1" or task.results.get("goal_update"):
-            db = get_db(run_id=task.run_id, category=task.category)
-            await asyncio.to_thread(db.add_task, task)
-
-            self.caches['task_list'].evict(tag=task.run_id)
-
-        logger.info(f"完成")
-
-    async def add_task_plan(self, task: Task):
-        """
-        处理任务规划, 将子任务批量存入数据库。
-
-        Args:
-            task (Task): 包含子任务列表的父任务对象。
-        """
-        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
-
-        db = get_db(run_id=task.run_id, category=task.category)
-        await asyncio.to_thread(db.add_sub_tasks, task)
-
-        logger.info(f"完成")
-
-    async def add_task_execute_write(self, task: Task):
-        """
-        处理写作任务的执行结果。
-
-        - 将正文追加到文件。
-        - 生成并存储摘要。
-        - 将正文和摘要分别存入向量和图谱索引。
-        """
-        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
-
-        task_result = task.results.get("result")
-        if not task_result:
-            logger.error(f"task_result为空, 无法添加记忆")
-            return
-
-        await asyncio.to_thread(self.text_file_append, self.get_text_file_path(task), task_result)
-
-        summary = await self.summary_text(task)
-
-        task.results["text"] = task.results["result"]
-        task.results["result"] = summary
-
-        db = get_db(run_id=task.run_id, category=task.category)
-        await asyncio.to_thread(db.add_text, task)
-
-        await self.store(task, task.results["text"], content_type='text')
-        await self.store(task, summary, content_type='write')
-
-        logger.info(f"完成")
+            raise ValueError("不支持的任务类型")
 
     def text_file_append(self, file_path: str, content: str):
-        """
-        工具函数: 将内容追加到指定文件。
-
-        Args:
-            file_path (str): 目标文件路径。
-            content (str): 要追加的内容。
-        """
         dir_path = os.path.dirname(file_path)
         os.makedirs(dir_path, exist_ok=True)
         with open(file_path, "a", encoding="utf-8") as f:
@@ -269,81 +181,13 @@ class RAG:
             os.fsync(f.fileno())
 
     def get_text_file_path(self, task: Task) -> str:
-        """
-        工具函数: 获取当前运行的文本输出文件路径。
-
-        Args:
-            task (Task): 任务对象。
-
-        Returns:
-            str: 文本文件的完整路径。
-        """
         return os.path.join("output", task.category, f"{task.run_id}.txt")
-    
-    async def summary_text(self, task: Task):
-        """
-        使用LLM为写作任务的结果生成摘要。
 
-        Args:
-            task (Task): 已完成的写作任务。
-
-        Returns:
-            str: 生成的摘要文本。
-        """
-        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
-        
-        SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "write_aggregate_cn", "SYSTEM_PROMPT", "USER_PROMPT")
-
-        context_dict_user = {
-            "task": task.model_dump_json(
-                indent=2,
-                exclude_none=True,
-                include={'goal'}
-            ),
-            "subtask_write": task.results.get("result")
-        }
-        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context_dict_user)
-
-        llm_params = get_llm_params(messages, temperature=0.2)
-        
-        message = await llm_acompletion(llm_params)
-
-        logger.info(f"结束")
-        return message.content
-
-
-    async def add_result(self, task: Task):
-        """
-        通用函数, 用于处理任务结果。
-
-        - 将结果存入数据库。
-        - 将结果存入RAG索引。
-        """
-        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
-
-        task_result = task.results.get("result")
-        if not task_result:
-            logger.error(f"task_result为空, 无法添加记忆")
-            return
-
-        db = get_db(run_id=task.run_id, category=task.category)
-        await asyncio.to_thread(db.add_result, task)
-        
-        await self.store(task, task_result, content_type=task.task_type)
-
-        logger.info(f"完成")
-
-    async def store(self, task: Task, content: str, content_type: Literal['design', 'search', 'write', 'text']):
+    async def store(self, task: Task, content_type: Literal['design', 'search', 'text', 'summary'], content: str):
         """
         将内容存储到LlamaIndex的向量和/或图谱索引中。
-
-        - 'design', 'search', 'write' 类型内容存入向量索引。
+        - 'design', 'search', 'summary' 类型内容存入向量索引。
         - 'design', 'search', 'text' 类型内容存入图谱索引。
-
-        Args:
-            task (Task): 任务对象, 用于元数据。
-            content (str): 要存储的文本内容。
-            content_type (Literal): 内容类型, 决定存储方式。
         """
         logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal} {content_type}")
 
@@ -361,7 +205,7 @@ class RAG:
         }
         doc = Document(id_=task.id, text=content, metadata=doc_metadata)
 
-        if content_type in ['design', 'search', 'write']:
+        if content_type in ['design', 'search', 'summary']:
             await asyncio.to_thread(
                 VectorStoreIndex.from_documents, 
                 [doc], 
@@ -401,8 +245,6 @@ class RAG:
         """
         logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
     
-        db = get_db(run_id=task.run_id, category=task.category)
-    
         ret = {
             "task": task.model_dump_json(
                 indent=2,
@@ -415,14 +257,13 @@ class RAG:
             logger.info(f"完成\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
             return ret
     
+        db = get_db(run_id=task.run_id, category=task.category)
         dependent_design_task = self.get_dependent_design(db, task)
         dependent_search_task = self.get_dependent_search(db, task)
         text_latest_task = self.get_text_latest(task)
-
         dependent_design, dependent_search, text_latest = await asyncio.gather(
             dependent_design_task, dependent_search_task, text_latest_task
         )
-        
         ret["dependent_design"] = dependent_design
         ret["dependent_search"] = dependent_search
         ret["text_latest"] = text_latest
@@ -436,7 +277,7 @@ class RAG:
             context_tasks["upper_design"] = self.search_context(task, 'upper_design', dependent_design, dependent_search, text_latest)
             context_tasks["upper_search"] = self.search_context(task, 'upper_search', dependent_design, dependent_search, text_latest)
     
-        if await self.get_text_length(task) > 500:
+        if len(text_latest) > 500:
             context_tasks["text_summary"] = self.search_context(task, 'text_summary', dependent_design, dependent_search, text_latest)
     
         if context_tasks:
@@ -625,7 +466,7 @@ class RAG:
         logger.info(f"完成\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
         return ret
 
-    async def get_context_aggregate_write(self, task: Task) -> Dict[str, Any]:
+    async def get_context_aggregate_summary(self, task: Task) -> Dict[str, Any]:
         """
         为 "write" 类型的聚合任务 (通常是生成摘要) 获取上下文。
         """
@@ -642,7 +483,7 @@ class RAG:
         if task.sub_tasks:
             if task.task_type == "write":
                 db = get_db(run_id=task.run_id, category=task.category)
-                ret["subtask_write"] = await asyncio.to_thread(db.get_subtask_results, task.id, "write")
+                ret["subtask_summary"] = await asyncio.to_thread(db.get_subtask_results, task.id, "summary")
 
         logger.info(f"完成\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
         return ret
@@ -748,11 +589,11 @@ class RAG:
         key_data = {
             "run_id": task.run_id,
             "inquiry_plan": inquiry_plan,
-            "search_type": config['kg_content_type'],
+            "search_type": search_type,
             "task_level": len(task.id.split(".")),
         }
         cache_key = hashlib.sha256(json.dumps(key_data, sort_keys=True).encode('utf-8')).hexdigest()
-        cache = self.caches[config['cache_name']]
+        cache = self.caches[search_type]
         cached_result = cache.get(cache_key)
         if cached_result is not None:
             return cached_result
@@ -955,14 +796,12 @@ class RAG:
         current_level = len(task.id.split("."))
         configs = {
             'text_summary': {
-                'cache_name': 'text_summary',
-                'kg_content_type': 'text',
                 'kg_filters_list': [
                     "n.status = 'active'",
                     f"n.run_id = '{task.run_id}'",
                     "n.content_type = 'text'"
                 ],
-                'vector_filters_list': [{'key': 'content_type', 'value': 'write'}],
+                'vector_filters_list': [{'key': 'content_type', 'value': 'summary'}],
                 'vector_tool_desc': "功能: 检索情节摘要、角色关系、事件发展。范围: 所有层级的历史摘要。",
                 'final_instruction': "任务: 整合情节摘要(向量)与正文细节(图谱)，提供写作上下文。重点: 角色关系、关键伏笔、情节呼应。",
                 'rules_text': """
@@ -977,8 +816,6 @@ class RAG:
                 'kg_sort_by': 'narrative',
             },
             'upper_design': {
-                'cache_name': 'upper_design',
-                'kg_content_type': 'design',
                 'kg_filters_list': [
                     "n.status = 'active'",
                     f"n.run_id = '{task.run_id}'",
@@ -1003,8 +840,6 @@ class RAG:
                 'kg_sort_by': 'time',
             },
             'upper_search': {
-                'cache_name': 'upper_search',
-                'kg_content_type': 'search',
                 'kg_filters_list': [
                     "n.status = 'active'",
                     f"n.run_id = '{task.run_id}'",
