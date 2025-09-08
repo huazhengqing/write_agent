@@ -14,6 +14,7 @@ from utils.prompt_loader import load_prompts
 class PlanNode(BaseModel):
     id: str = Field(..., description="任务的唯一字符串ID, 父任务id.子任务序号。例如 '1' 或 '1.3.2'。")
     task_type: Literal['design', 'write', 'search'] = Field(..., description="任务类型, 值必须是: 'design' 或 'write' 或 'search'。")
+    hierarchical_position: Optional[str] = Field(None, description="任务在书/故事结构中的层级和位置。例如: '全书', '第1卷', '第2幕', '第3章'。")
     goal: str = Field(..., description="任务的清晰具体目标。")
     dependency: List[str] = Field(default_factory=list, description="此任务所依赖的同层的 design/search 的 id 列表。")
     length: Optional[str] = Field(None, description="对于 'write' 类型的任务, 此任务的预估长度或字数。")
@@ -29,13 +30,12 @@ async def plan(task: Task) -> Task:
 
     if task.category == "story" and task.task_type == "write":
         SYSTEM_PROMPT, USER_PROMPT, get_task_level, test_get_task_level = load_prompts(task.category, f"plan_{task.task_type}_cn", "SYSTEM_PROMPT", "USER_PROMPT", "get_task_level", "test_get_task_level")
-
         if os.getenv("deployment_environment") == "test":
             task_level_func = test_get_task_level
         else:
             task_level_func = get_task_level
         context = await get_rag().get_context_base(task)
-        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, task_level_func(task.goal), context)
+        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, task_level_func(task.hierarchical_position), context)
     else:
         SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, f"plan_{task.task_type}_cn", "SYSTEM_PROMPT", "USER_PROMPT")
         context = await get_rag().get_context_base(task)
@@ -97,6 +97,7 @@ def convert_plan_to_tasks(
             task_type=plan_item.task_type,
             goal=plan_item.goal,
             dependency=plan_item.dependency,
+            hierarchical_position=plan_item.hierarchical_position,
             length=plan_item.length,
             **inherited_props
         )

@@ -58,6 +58,7 @@ async def task_init(task_info):
             "id": "1",
             "parent_id": "",
             "task_type": "write",
+            "hierarchical_position": "全书",
             "goal": goal,
             "length": task_info.get("length", "根据任务要求确定"),
             "category": category,

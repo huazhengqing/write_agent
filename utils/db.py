@@ -16,8 +16,9 @@ Table: t_tasks
 
 字段:
 - id: TEXT (PRIMARY KEY) - 唯一的层级任务ID。父任务id.子任务序号。(例如, '1', '1.1', '1.2.1')。
-- parent_id: TEXT - 父任务的ID。
+- parent_id: TEXT - 父任务的ID (已索引, 用于快速查找子任务)。
 - task_type: TEXT - 任务类型 ('write', 'design', 'search')。
+- hierarchical_position: TEXT - 任务的层级和位置。例如: '全书', '第1卷', '第2幕', '第3章'。
 - goal: TEXT - 任务的具体目标。
 - length: TEXT - 预估产出字数 (用于 'write' 任务)。
 - dependency: TEXT - JSON 格式的、执行前必须完成的同级任务ID列表。
@@ -60,6 +61,7 @@ class DB:
             id TEXT PRIMARY KEY,
             parent_id TEXT,
             task_type TEXT,
+            hierarchical_position TEXT,
             goal TEXT,
             length TEXT,
             dependency TEXT,
@@ -84,6 +86,9 @@ class DB:
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """)
+        self.cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_parent_id ON t_tasks (parent_id)
+        """)
         self.conn.commit()
 
     def add_task(self, task: Task):
@@ -91,11 +96,12 @@ class DB:
         self.cursor.execute(
             """
             INSERT INTO t_tasks 
-            (id, parent_id, task_type, goal, length, dependency) 
+            (id, parent_id, task_type, hierarchical_position, goal, length, dependency) 
             VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 parent_id = excluded.parent_id,
                 task_type = excluded.task_type,
+                hierarchical_position = excluded.hierarchical_position,
                 goal = excluded.goal,
                 length = excluded.length,
                 dependency = excluded.dependency
@@ -104,6 +110,7 @@ class DB:
                 task.id, 
                 task.parent_id, 
                 task.task_type, 
+                task.hierarchical_position, 
                 task.goal, 
                 task.length, 
                 dependency
@@ -185,7 +192,7 @@ class DB:
         """
         高效获取任务上下文列表 (父任务链 + 兄弟任务), 仅查询必要的字段。
         """
-        all_task_data = {}  # 使用字典存储 (id -> (goal, length)) 以处理重叠和更新
+        all_task_data = {}  # 使用字典存储
 
         # 1. 获取父任务链的 ID
         id_parts = task.id.split('.')
@@ -194,26 +201,25 @@ class DB:
             
             # 为 SQL IN 子句创建占位符
             placeholders = ','.join(['?'] * len(parent_chain_ids))
-            query = f"SELECT id, goal, length FROM t_tasks WHERE id IN ({placeholders})"
+            query = f"SELECT id, hierarchical_position, goal, length FROM t_tasks WHERE id IN ({placeholders})"
             
             self.cursor.execute(query, parent_chain_ids)
             rows = self.cursor.fetchall()
             for row in rows:
-                # row[0]=id, row[1]=goal, row[2]=length
-                all_task_data[row[0]] = (row[1], row[2])
+                all_task_data[row[0]] = (row[1], row[2], row[3])
 
         # 2. 获取兄弟任务 (与当前任务同属一个父任务)
         if task.parent_id:
             self.cursor.execute(
-                "SELECT id, goal, length FROM t_tasks WHERE parent_id = ?",
+                "SELECT id, hierarchical_position, goal, length FROM t_tasks WHERE parent_id = ?",
                 (task.parent_id,)
             )
             rows = self.cursor.fetchall()
             for row in rows:
-                all_task_data[row[0]] = (row[1], row[2])
+                all_task_data[row[0]] = (row[1], row[2], row[3])
         
         # 3. 确保当前任务也被包含 (使用最新的内存中信息)
-        all_task_data[task.id] = (task.goal, task.length)
+        all_task_data[task.id] = (task.hierarchical_position, task.goal, task.length)
 
         # 4. 按ID进行自然排序
         def natural_sort_key(task_id_str: str):
@@ -224,8 +230,11 @@ class DB:
         # 5. 格式化为指定的字符串输出
         output_lines = []
         for task_id in sorted_ids:
-            goal, length = all_task_data[task_id]
-            line = f"{task_id} {goal}"
+            hierarchical_position, goal, length = all_task_data[task_id]
+            line = f"{task_id}"
+            if hierarchical_position:
+                line += f" {hierarchical_position}"
+            line += f" {goal}"
             if length:
                 line += f" {length}"
             output_lines.append(line)

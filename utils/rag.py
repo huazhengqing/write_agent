@@ -243,6 +243,7 @@ class RAG:
                 kg_extraction_prompt=kg_prompt, # 使用定制化Prompt指导LLM提取
                 llm=self.extraction_llm,        # 使用为提取任务优化的轻量级LLM
                 include_embeddings=True,        # 将图谱节点与向量嵌入关联, 支持混合搜索
+                embed_model=self.embed_model,   # 显式传递配置的 embedding model
             )
             
         logger.info(f"完成存储: {task.run_id} {task.id} {content_type}")
@@ -256,7 +257,7 @@ class RAG:
             "task": task.model_dump_json(
                 indent=2,
                 exclude_none=True,
-                include={'id', 'parent_id', 'task_type', 'goal', 'length', 'dependency'}
+                include={'id', 'parent_id', 'task_type', 'hierarchical_position', 'goal', 'length', 'dependency'}
             ),
             "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
         }
@@ -410,7 +411,7 @@ class RAG:
             "task": task.model_dump_json(
                 indent=2,
                 exclude_none=True,
-                include={'id', 'goal', 'length'}
+                include={'id', 'hierarchical_position', 'goal', 'length'}
             ),
         }
 
@@ -449,7 +450,7 @@ class RAG:
             "task": task.model_dump_json(
                 indent=2,
                 exclude_none=True,
-                include={'task_type', 'goal', 'length'}
+                include={'task_type', 'hierarchical_position', 'goal', 'length'}
             ),
             "dependent_design": dependent_design,
             "dependent_search": dependent_search,
@@ -579,7 +580,8 @@ class RAG:
             [], 
             storage_context=storage_context, 
             llm=self.agent_llm, 
-            include_embeddings=True
+            include_embeddings=True,
+            embed_model=self.embed_model
         )
         kg_query_engine = kg_index.as_query_engine(
             include_text=False,

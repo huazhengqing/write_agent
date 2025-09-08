@@ -73,7 +73,8 @@ AI 规划专家, 专精于将复杂的写作任务分解为结构化的执行计
     - `reasoning`: 关于任务分解的详细思考过程。仅在最外层对象中提供。
     - `id`: 父任务ID.子任务序号。
     - `task_type`: design | search | write。
-    - `goal`: 任务目标。精确、简洁关键词驱动。格式为: `[层级] | [标题]: 根据[前置任务标题] ...`。层级为: 全书、第x卷、第x幕、第x章、场景x、节拍x、段落x。
+    - `hierarchical_position`: 任务在书/故事结构中的层级和位置。例如: '全书', '第1卷', '第2幕', '第3章'。
+    - `goal`: 任务目标。精确、简洁关键词驱动。格式为: `[标题]: 根据[前置任务标题] ...`。
     - `dependency`: 同层级的前置任务ID列表。
     - `length`: 字数要求。仅 write 任务中提供。
     - `sub_tasks`: 子任务列表。
@@ -84,28 +85,32 @@ AI 规划专家, 专精于将复杂的写作任务分解为结构化的执行计
     "reasoning": "关于任务分解的详细思考过程。",
     "id": "1",
     "task_type": "write",
-    "goal": "父任务的原始目标",
+    "hierarchical_position": "全书",
+    "goal": "写一部关于xxx的100万字科幻小说",
     "dependency": [],
     "length": "1000000字",
     "sub_tasks": [
         {{
             "id": "1.1",
             "task_type": "design",
-            "goal": "全书 | 市场定位: ...",
+            "hierarchical_position": "全书",
+            "goal": "市场定位: ...",
             "dependency": [],
             "sub_tasks": []
         }},
         {{
             "id": "1.2",
             "task_type": "design",
-            "goal": "全书 | 核心概念: ...",
+            "hierarchical_position": "全书",
+            "goal": "核心概念: ...",
             "dependency": ["1.1"],
             "sub_tasks": []
         }},
         {{
             "id": "1.3",
             "task_type": "write",
-            "goal": "全书 | 写作: 根据[全书级所有设计], ...",
+            "hierarchical_position": "全书",
+            "goal": "写作: 根据[全书级所有设计], ...",
             "dependency": ["1.1", "1.2"],
             "length": "1000000字",
             "sub_tasks": []
@@ -276,7 +281,7 @@ task_level_paragraph = """
 4. 动态与反馈: 根据[段落功能与信息], 确定段落结尾, 明确与下一个行动建立因果链, 或者制造钩子和悬念, 确保读者正反馈与动力链。(必需) 
 """
 
-def get_task_level(goal: str) -> Dict[str, Any]:
+def get_task_level(hierarchical_position: str) -> Dict[str, Any]:
 	ret = {
 		"task_level": task_level_book
     }
@@ -290,9 +295,8 @@ def get_task_level(goal: str) -> Dict[str, Any]:
 		"全书": task_level_book,
 		"顶层": task_level_book,
 	}
-	search_part = goal.split('|')[0]
 	for keyword, task_level in level_map.items():
-		if keyword in search_part:
+		if keyword in hierarchical_position:
 			ret["task_level"] = task_level
 			break
 	return ret
@@ -362,7 +366,7 @@ test_task_level_paragraph = """
 - 动态与反馈: 根据[段落功能与信息], 确定段落结尾, 明确与下一个行动建立因果链, 或者制造钩子和悬念, 确保读者正反馈与动力链。(必需) 
 """
 
-def test_get_task_level(goal: str) -> Dict[str, Any]:
+def test_get_task_level(hierarchical_position: str) -> Dict[str, Any]:
 	ret = {
 		"task_level": test_task_level_book
     }
@@ -376,9 +380,8 @@ def test_get_task_level(goal: str) -> Dict[str, Any]:
 		"全书": test_task_level_book,
 		"顶层": task_level_book,
 	}
-	search_part = goal.split('|')[0]
 	for keyword, task_level in level_map.items():
-		if keyword in search_part:
+		if keyword in hierarchical_position:
 			ret["task_level"] = task_level
 			break
 	return ret

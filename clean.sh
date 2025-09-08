@@ -14,8 +14,8 @@ rm -rf prompts/story/__pycache__
 rm -rf utils/__pycache__
 
 
-docker-compose stop
 docker-compose down -v
-
+docker-compose down -v
+docker-compose down -v
 
 

@@ -49,7 +49,7 @@ def ensure_task_logger(run_id: str):
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=100,
+    retries=1,
     task_run_name="atom: {task.run_id} - {task.id}",
 )
 async def task_atom(task: Task) -> Task:
@@ -60,7 +60,7 @@ async def task_atom(task: Task) -> Task:
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=100,
+    retries=1,
     task_run_name="plan: {task.run_id} - {task.id}",
 )
 async def task_plan(task: Task) -> Task:
@@ -71,7 +71,7 @@ async def task_plan(task: Task) -> Task:
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=100,
+    retries=1,
     task_run_name="plan_reflection: {task.run_id} - {task.id}",
 )
 async def task_plan_reflection(task: Task) -> Task:
@@ -82,7 +82,7 @@ async def task_plan_reflection(task: Task) -> Task:
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=100,
+    retries=1,
     task_run_name="execute_design: {task.run_id} - {task.id}",
 )
 async def task_execute_design(task: Task) -> Task:
@@ -93,7 +93,7 @@ async def task_execute_design(task: Task) -> Task:
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=100,
+    retries=1,
     task_run_name="execute_design_reflection: {task.run_id} - {task.id}",
 )
 async def task_execute_design_reflection(task: Task) -> Task:
@@ -104,7 +104,7 @@ async def task_execute_design_reflection(task: Task) -> Task:
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=100,
+    retries=1,
     task_run_name="execute_search: {task.run_id} - {task.id}",
 )
 async def task_execute_search(task: Task) -> Task:
@@ -115,7 +115,7 @@ async def task_execute_search(task: Task) -> Task:
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=100,
+    retries=1,
     task_run_name="execute_write: {task.run_id} - {task.id}",
 )
 async def task_execute_write(task: Task) -> Task:
@@ -127,7 +127,7 @@ async def task_execute_write(task: Task) -> Task:
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=100,
+    retries=1,
     task_run_name="execute_write_reflection: {task.run_id} - {task.id}",
 )
 async def task_execute_write_reflection(task: Task) -> Task:
@@ -143,7 +143,7 @@ async def task_execute_write_reflection(task: Task) -> Task:
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=100,
+    retries=1,
     task_run_name="execute_write_summary: {task.run_id} - {task.id}",
 )
 async def task_execute_summary(task: Task) -> Task:
@@ -155,7 +155,7 @@ async def task_execute_summary(task: Task) -> Task:
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=100,
+    retries=1,
     task_run_name="aggregate_design: {task.run_id} - {task.id}",
 )
 async def task_aggregate_design(task: Task) -> Task:
@@ -166,7 +166,7 @@ async def task_aggregate_design(task: Task) -> Task:
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=100,
+    retries=1,
     task_run_name="aggregate_search: {task.run_id} - {task.id}",
 )
 async def task_aggregate_search(task: Task) -> Task:
@@ -177,7 +177,7 @@ async def task_aggregate_search(task: Task) -> Task:
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=100,
+    retries=1,
     task_run_name="aggregate_summary: {task.run_id} - {task.id}",
 )
 async def task_aggregate_summary(task: Task) -> Task:
@@ -188,7 +188,7 @@ async def task_aggregate_summary(task: Task) -> Task:
 @task(
     persist_result=True, 
     cache_policy=INPUTS,
-    retries=100,
+    retries=1,
     task_run_name="store: {task.run_id} - {task.id} - {operation_name}",
 )
 async def task_store(task: Task, operation_name: str):
