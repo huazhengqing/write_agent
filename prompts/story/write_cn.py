@@ -105,7 +105,6 @@ USER_PROMPT = """
 ### 搜索结果:
 {dependent_search}
 
-
 ## 小说当前状态
 
 ### 最新章节(续写起点): 
@@ -119,19 +118,17 @@ USER_PROMPT = """
 {text_summary}
 </text_summary>
 
+## 整体规划
 
-## 整体规划参考
-
-### 已存在的任务树:
+### 任务树:
 {task_list}
 
 ### 上层设计成果:
 - 世界观、主线、风格
-<upper_level_design>
-{upper_level_design}
-</upper_level_design>
+<upper_design>
+{upper_design}
+</upper_design>
 
-### 上层搜索成果:
-{upper_level_search}
+### 上层信息收集成果:
+{upper_search}
 """
-

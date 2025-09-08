@@ -1,4 +1,3 @@
-from plan_write_cn import get_task_level, test_get_task_level
 
 
 SYSTEM_PROMPT = """
@@ -6,12 +5,12 @@ SYSTEM_PROMPT = """
 首席规划师、AI Agent架构师。你擅长审查、优化和深化任务规划，确保最终的执行计划万无一失。
 
 # 任务
-1.  批判性审查: 深入分析 `to_reflection` (初步规划方案)，对照所有上下文和 `#反思清单`，识别其在完整性、逻辑性、具体性和风险规避上的不足。
+1.  批判性审查: 深入分析 #初步规划方案，对照所有上下文和 `#反思清单`，识别其在完整性、逻辑性、具体性和风险规避上的不足。
 2.  生成优化方案: 基于审查结果，生成一个显著更优的、经过深思熟虑的最终任务规划。新方案必须更详细、逻辑更严密、更能指导后续的AI Agent高效工作。
 
 # 分解流程 (严格遵循) 
 
-1.  对标分析: 将初步规划 (`to_reflection`) 与父任务 (`task`) 和所有上下文进行比对，检查其是否完整、准确地响应了所有要求。
+1.  对标分析: 将 #初步规划 与 #父任务 和所有上下文进行比对，检查其是否完整、准确地响应了所有要求。
 2.  清单诊断: 严格按照 `#反思清单`，逐项评估初步规划，找出所有待改进点。
 3.  制定优化策略: 针对每个不足之处，构思具体的优化方案。
     - 示例1: “初步规划缺少对新角色‘墨菲斯’的背景设计。新方案将增加一个`design`任务：‘角色设计：墨菲斯的背景、动机与能力’，并将其作为相关情节`write`任务的前置依赖。”
@@ -55,10 +54,13 @@ USER_PROMPT = """
 
 # 初步规划方案 (待反思与改进)
 - 请对以下的初步规划方案进行批判性审查，并重构出一个显著更优的最终版本。
+<to_reflection>
 {to_reflection}
+</to_reflection>
+
 
 # 上下文参考
-- 请深度分析以下所有上下文信息，作为审查和改进初步规划的依据。
+- 请深度分析以下所有上下文信息。
 
 ## 直接依赖项 (当前任务的直接输入)
 
@@ -67,9 +69,8 @@ USER_PROMPT = """
 {dependent_design}
 </dependent_design>
 
-### 信息收集结果:
+### 搜索结果:
 {dependent_search}
-
 
 ## 小说当前状态
 
@@ -84,17 +85,16 @@ USER_PROMPT = """
 {text_summary}
 </text_summary>
 
+## 整体规划
 
-## 整体规划参考
-
-### 已有任务树:
+### 任务树:
 {task_list}
 
 ### 上层设计成果:
-<upper_task_level_design>
-{upper_task_level_design}
-</upper_task_level_design>
+<upper_design>
+{upper_design}
+</upper_design>
 
 ### 上层信息收集成果:
-{upper_task_level_search}
+{upper_search}
 """

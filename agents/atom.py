@@ -5,6 +5,7 @@ import collections
 from loguru import logger
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
+from litellm.caching.cache_key_generator import get_cache_key
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_acompletion
 from utils.rag import get_rag
@@ -54,7 +55,6 @@ async def atom(task: Task) -> Task:
             if attempt < max_retries - 1:
                 try:
                     # 尝试删除错误的缓存条目
-                    from litellm.caching.cache_key_generator import get_cache_key
                     cache_key = get_cache_key(**llm_params)
                     litellm.cache.delete(cache_key)
                     logger.info(f"已删除错误的缓存条目: {cache_key}。正在重试...")

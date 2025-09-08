@@ -141,7 +141,7 @@ USER_PROMPT = """
 </text_summary>
 
 
-## 整体规划参考
+## 整体规划
 
 ### 已有任务树:
 {task_list}

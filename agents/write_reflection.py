@@ -1,6 +1,7 @@
 import collections
 import os
 import litellm
+from litellm.caching.cache_key_generator import get_cache_key
 from loguru import logger
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_acompletion
@@ -34,7 +35,6 @@ async def write_reflection(task: Task) -> Task:
                 logger.warning(f"响应内容验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
                     try:
-                        from litellm.caching.cache_key_generator import get_cache_key
                         cache_key = get_cache_key(**llm_params)
                         litellm.cache.delete(cache_key)
                         logger.info(f"已删除错误的缓存条目: {cache_key}。正在重试...")

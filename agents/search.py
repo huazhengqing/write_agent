@@ -12,6 +12,7 @@ from trafilatura import extract
 from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, END
 from typing import List, TypedDict, Optional, Any
+from litellm.caching.cache_key_generator import get_cache_key
 from sentence_transformers import SentenceTransformer, util
 from langchain_community.utilities import SearxSearchWrapper
 from langdetect import detect, LangDetectException
@@ -281,7 +282,6 @@ async def get_structured_output_with_retry(messages: List[dict], response_model:
             logger.warning(f"调用LLM或解析输出失败 (尝试 {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
                 try:
-                    from litellm.caching.cache_key_generator import get_cache_key
                     cache_key = get_cache_key(**llm_params)
                     litellm.cache.delete(cache_key)
                     logger.info(f"已删除错误的结构化输出缓存: {cache_key}。正在重试...")
@@ -521,7 +521,6 @@ async def rolling_summary_node(state: SearchAgentState) -> dict:
             logger.warning(f"响应内容验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
                 try:
-                    from litellm.caching.cache_key_generator import get_cache_key
                     cache_key = get_cache_key(**llm_params)
                     litellm.cache.delete(cache_key)
                     logger.info(f"已删除错误的缓存条目: {cache_key}。正在重试...")
@@ -576,7 +575,6 @@ async def synthesize_node(state: SearchAgentState) -> dict:
             logger.warning(f"响应内容验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
                 try:
-                    from litellm.caching.cache_key_generator import get_cache_key
                     cache_key = get_cache_key(**llm_params)
                     litellm.cache.delete(cache_key)
                     logger.info(f"已删除错误的缓存条目: {cache_key}。正在重试...")
@@ -649,7 +647,6 @@ async def should_continue_search(state: SearchAgentState) -> str:
                 logger.warning(f"停滞检测LLM调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
                 if attempt < max_retries - 1:
                     try:
-                        from litellm.caching.cache_key_generator import get_cache_key
                         cache_key = get_cache_key(**llm_params)
                         litellm.cache.delete(cache_key)
                         logger.info(f"已删除错误的停滞检测缓存: {cache_key}。正在重试...")

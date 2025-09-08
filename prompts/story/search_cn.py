@@ -71,7 +71,6 @@ USER_PROMPT = """
 - 小说当前状态: 用于确保你的研究方向与故事的最新进展和已有设定保持一致, 避免冲突。
 - 整体规划参考: 用于理解任务的宏观目标, 确保研究服务于更高层级的设计。
 
-
 ## 直接依赖项 (当前任务的直接输入)
 
 ### 设计结果:
@@ -81,7 +80,6 @@ USER_PROMPT = """
 
 ### 搜索结果:
 {dependent_search}
-
 
 ## 小说当前状态
 
@@ -96,19 +94,18 @@ USER_PROMPT = """
 {text_summary}
 </text_summary>
 
+## 整体规划
 
-## 整体规划参考
-
-### 已存在的任务树:
+### 任务树:
 {task_list}
 
 ### 上层设计成果:
-<upper_level_design>
-{upper_level_design}
-</upper_level_design>
+<upper_design>
+{upper_design}
+</upper_design>
 
-### 上层搜索成果:
-{upper_level_search}
+### 上层信息收集成果:
+{upper_search}
 """
 
 
@@ -198,7 +195,6 @@ USER_PROMPT_SYNTHESIZE = """
 ### 搜索结果:
 {dependent_search}
 
-
 ## 小说当前状态
 
 ### 最新章节(续写起点): 
@@ -212,19 +208,18 @@ USER_PROMPT_SYNTHESIZE = """
 {text_summary}
 </text_summary>
 
+## 整体规划
 
-## 整体规划参考
-
-### 已存在的任务树:
+### 任务树:
 {task_list}
 
 ### 上层设计成果:
-<upper_level_design>
-{upper_level_design}
-</upper_level_design>
+<upper_design>
+{upper_design}
+</upper_design>
 
-### 上层搜索成果:
-{upper_level_search}
+### 上层信息收集成果:
+{upper_search}
 """
 
 

@@ -59,7 +59,6 @@ AI 规划专家, 专精于将复杂的写作任务分解为结构化的执行计
     - 解析 `结构规划` 定义的下一层级单元 (如卷、幕、章)。
     - 为每个单元创建 `write` 子任务, 精确映射 `goal` 和 `length`。
 
-
 # 设计任务清单
 - 最小集原则: 清单是规划最小集, 需基于上下文扩展。
 - 逐项处理: 必须为清单每项创建独立 `design` 任务。任务的 `goal` 必须完整复制清单中的描述, 禁止合并、遗漏、删减、概括。
@@ -122,12 +121,11 @@ AI 规划专家, 专精于将复杂的写作任务分解为结构化的执行计
 
 USER_PROMPT = """
 # 请你分解以下写作任务 (严格遵循原则与流程)
-- 包含字数要求
 {task}
 
 
 # 上下文参考
-- 请深度分析以下所有上下文信息, 确保子任务与小说设定和情节紧密相关。
+- 请深度分析以下所有上下文信息。
 
 ## 直接依赖项 (当前任务的直接输入)
 
@@ -136,9 +134,8 @@ USER_PROMPT = """
 {dependent_design}
 </dependent_design>
 
-### 信息收集结果:
+### 搜索结果:
 {dependent_search}
-
 
 ## 小说当前状态
 
@@ -153,19 +150,18 @@ USER_PROMPT = """
 {text_summary}
 </text_summary>
 
+## 整体规划
 
-## 整体规划参考
-
-### 已有任务树:
+### 任务树:
 {task_list}
 
 ### 上层设计成果:
-<upper_task_level_design>
-{upper_task_level_design}
-</upper_task_level_design>
+<upper_design>
+{upper_design}
+</upper_design>
 
 ### 上层信息收集成果:
-{upper_task_level_search}
+{upper_search}
 """
 
 

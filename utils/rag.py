@@ -12,6 +12,7 @@ from datetime import datetime
 from qdrant_client import QdrantClient
 from pydantic import BaseModel, Field
 from typing import Dict, Any, List, Literal, Optional
+from litellm.caching.cache_key_generator import get_cache_key
 from llama_index.llms.litellm import LiteLLM
 from llama_index.core.agent import ReActAgent
 from llama_index.core.tools import FunctionTool
@@ -478,7 +479,6 @@ class RAG:
                 if attempt < max_retries - 1:
                     try:
                         # 尝试删除错误的缓存条目
-                        from litellm.caching.cache_key_generator import get_cache_key
                         cache_key = get_cache_key(**llm_params)
                         litellm.cache.delete(cache_key)
                         logger.info(f"已删除错误的探询计划缓存: {cache_key}。正在重试...")
@@ -752,7 +752,6 @@ class RAG:
                 if attempt < max_retries - 1:
                     try:
                         # 如果 LLM 调用失败, 尝试删除可能存在的错误缓存, 以便重试时能重新生成
-                        from litellm.caching.cache_key_generator import get_cache_key
                         cache_key = get_cache_key(**llm_params)
                         litellm.cache.delete(cache_key)
                         logger.info(f"已删除错误的合成缓存: {cache_key}。正在重试...")
