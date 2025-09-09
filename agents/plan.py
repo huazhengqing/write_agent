@@ -1,8 +1,4 @@
 import os
-import importlib
-import litellm
-import collections
-from loguru import logger
 from typing import Optional, Literal, List
 from pydantic import BaseModel, Field
 from utils.models import Task
@@ -26,8 +22,6 @@ class PlanOutput(PlanNode):
     
 
 async def plan(task: Task) -> Task:
-    logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
-
     if task.category == "story" and task.task_type == "write":
         SYSTEM_PROMPT, USER_PROMPT, get_task_level, test_get_task_level = load_prompts(task.category, f"plan_{task.task_type}_cn", "SYSTEM_PROMPT", "USER_PROMPT", "get_task_level", "test_get_task_level")
         if os.getenv("deployment_environment") == "test":
@@ -53,8 +47,6 @@ async def plan(task: Task) -> Task:
     updated_task.sub_tasks = convert_plan_to_tasks(data.sub_tasks, updated_task)
     updated_task.results["plan"] = content
     updated_task.results["plan_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
-    
-    logger.info(f"完成\n{updated_task.model_dump_json(indent=2, exclude_none=True)}")
     return updated_task
 
 def convert_plan_to_tasks(

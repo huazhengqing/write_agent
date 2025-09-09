@@ -6,20 +6,6 @@ from typing import Any, Dict
 from prefect import flow, task
 from prefect.cache_policies import INPUTS
 from utils.models import Task
-from utils.rag import get_rag
-from utils.db import get_db
-from agents.atom import atom
-from agents.plan import plan
-from agents.plan_reflection import plan_reflection
-from agents.design import design
-from agents.design_reflection import design_reflection
-from agents.design_aggregate import design_aggregate
-from agents.search import search
-from agents.search_aggregate import search_aggregate
-from agents.write import write
-from agents.write_reflection import write_reflection
-from agents.summary import summary
-from agents.summary_aggregate import summary_aggregate
 
 
 day_wordcount_goal = 10000
@@ -53,6 +39,7 @@ def ensure_task_logger(run_id: str):
 async def task_atom(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
+        from agents.atom import atom
         return await atom(task)
 
 @task(
@@ -64,6 +51,7 @@ async def task_atom(task: Task) -> Task:
 async def task_plan(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
+        from agents.plan import plan
         return await plan(task)
 
 @task(
@@ -75,6 +63,7 @@ async def task_plan(task: Task) -> Task:
 async def task_plan_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
+        from agents.plan_reflection import plan_reflection
         return await plan_reflection(task)
 
 @task(
@@ -86,6 +75,7 @@ async def task_plan_reflection(task: Task) -> Task:
 async def task_execute_design(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
+        from agents.design import design
         return await design(task)
 
 @task(
@@ -97,6 +87,7 @@ async def task_execute_design(task: Task) -> Task:
 async def task_execute_design_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
+        from agents.design_reflection import design_reflection
         return await design_reflection(task)
 
 @task(
@@ -108,6 +99,7 @@ async def task_execute_design_reflection(task: Task) -> Task:
 async def task_execute_search(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
+        from agents.search import search
         return await search(task)
 
 @task(
@@ -119,6 +111,7 @@ async def task_execute_search(task: Task) -> Task:
 async def task_execute_write(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
+        from agents.write import write
         ret = await write(task)
         return ret
 
@@ -131,6 +124,7 @@ async def task_execute_write(task: Task) -> Task:
 async def task_execute_write_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
+        from agents.write_reflection import write_reflection
         ret = await write_reflection(task)
         return ret
 
@@ -143,6 +137,7 @@ async def task_execute_write_reflection(task: Task) -> Task:
 async def task_execute_summary(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
+        from agents.summary import summary
         ret = await summary(task)
         return ret
 
@@ -155,6 +150,7 @@ async def task_execute_summary(task: Task) -> Task:
 async def task_aggregate_design(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
+        from agents.design_aggregate import design_aggregate
         return await design_aggregate(task)
 
 @task(
@@ -166,6 +162,7 @@ async def task_aggregate_design(task: Task) -> Task:
 async def task_aggregate_search(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
+        from agents.search_aggregate import search_aggregate
         return await search_aggregate(task)
 
 @task(
@@ -177,6 +174,7 @@ async def task_aggregate_search(task: Task) -> Task:
 async def task_aggregate_summary(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
+        from agents.summary_aggregate import summary_aggregate
         return await summary_aggregate(task)
 
 @task(
@@ -192,6 +190,7 @@ async def task_store(task: Task, operation_name: str):
             raise ValueError(f"任务信息中未找到任务ID {task.id} \n 任务信息: {task}")
         if task.task_type not in ["design", "search", "write"]:
             raise ValueError(f"未知的任务类型: {task.task_type}")
+        from utils.rag import get_rag
         await get_rag().add(task, operation_name)
         return True
 
@@ -218,6 +217,7 @@ async def flow_write(current_task: Task):
         raise ValueError("任务ID和目标不能为空。")
 
     # 检查是否完成最近24小时的字数目标
+    from utils.db import get_db
     db = get_db(run_id=current_task.run_id, category=current_task.category)
     word_count_24h = await asyncio.to_thread(db.get_word_count_last_24h)
     if word_count_24h >= day_wordcount_goal:

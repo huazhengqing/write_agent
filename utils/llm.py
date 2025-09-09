@@ -1,11 +1,10 @@
 import copy
-import litellm
 import re
 import collections
 import json
 import hashlib
+import threading
 from loguru import logger
-from litellm.caching.caching import Cache
 from typing import List, Dict, Any, Optional, Type, Callable
 from pydantic import BaseModel, ValidationError
 
@@ -17,12 +16,6 @@ LLM_TEMPERATURES = {
     "synthesis": 0.4,
     "classification": 0.0,
 }
-
-# litellm.input_callback = ["lunary"]
-# litellm.success_callback = ["lunary"]
-# litellm.failure_callback = ["lunary"]
-
-litellm.enable_json_schema_validation=True
 
 LLM_PARAMS_reasoning = {
     'model': 'openrouter/deepseek/deepseek-r1-0528:free',
@@ -80,7 +73,31 @@ def custom_get_cache_key(**kwargs):
     key_string = json.dumps(key_data, sort_keys=True)
     return hashlib.sha256(key_string.encode('utf-8')).hexdigest()
 
-litellm.cache = Cache(type='disk', get_cache_key=custom_get_cache_key)
+
+_litellm_setup_lock = threading.Lock()
+_litellm_initialized = False
+
+def _setup_litellm():
+    """
+    延迟初始化 litellm 库。
+    此函数是线程安全的, 确保 litellm 的配置只执行一次。
+    """
+    global _litellm_initialized
+    if _litellm_initialized:
+        return
+
+    with _litellm_setup_lock:
+        if _litellm_initialized:
+            return
+
+        import litellm
+        from litellm.caching.caching import Cache
+        
+        logger.info("正在延迟加载和配置 litellm...")
+        litellm.enable_json_schema_validation=True
+        litellm.cache = Cache(type='disk', get_cache_key=custom_get_cache_key)
+        _litellm_initialized = True
+        logger.info("litellm 加载和配置完成。")
 
 def get_llm_messages(SYSTEM_PROMPT: str, USER_PROMPT: str, context_dict_system: Dict[str, Any] = None, context_dict_user: Dict[str, Any] = None) -> list[dict]:
     if not SYSTEM_PROMPT and not USER_PROMPT:
@@ -179,6 +196,9 @@ PROMPT_SELF_CORRECTION = """
 
 
 async def llm_acompletion(llm_params: Dict[str, Any], response_model: Optional[Type[BaseModel]] = None, validator: Optional[Callable[[Any], None]] = None):
+    _setup_litellm()
+    import litellm
+
     params_to_log = llm_params.copy()
     params_to_log.pop('messages', None)
     logger.info(f"LLM 参数:\n{json.dumps(params_to_log, indent=2, ensure_ascii=False, default=str)}")

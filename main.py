@@ -3,6 +3,7 @@ import sys
 import json
 import asyncio
 import hashlib
+import logging
 import argparse
 from pathlib import Path
 from loguru import logger
@@ -20,12 +21,33 @@ log_dir.mkdir(exist_ok=True)
 
 def setup_global_logger():
     logger.remove()
+
+    # 截获并重定向 Python 内置的 logging 日志到 Loguru
+    class InterceptHandler(logging.Handler):
+        def emit(self, record: logging.LogRecord):
+            try:
+                # 尝试获取对应的 Loguru 级别
+                level = logger.level(record.levelname).name
+            except ValueError:
+                level = record.levelno
+
+            # 找到调用栈的正确深度
+            frame, depth = logging.currentframe(), 2
+            while frame and frame.f_code.co_filename == logging.__file__:
+                frame = frame.f_back
+                depth += 1
+
+            logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+
+    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+    logging.getLogger("llama_index").setLevel(logging.DEBUG)
+
     logger.add(
         log_dir / "main.log",
         filter=lambda record: not record["extra"].get("run_id"), 
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         rotation="00:00",
-        level="INFO",
+        level="DEBUG", # 将日志级别设为 DEBUG, 以确保能看到 llama_index 的详细日志
         enqueue=True,
         backtrace=True,
         diagnose=True,

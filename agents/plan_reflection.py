@@ -1,20 +1,12 @@
 import os
-import importlib
-import litellm
-import collections
-from loguru import logger
-from typing import Optional, Literal, List
-from pydantic import BaseModel, Field
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
 from utils.rag import get_rag
 from utils.prompt_loader import load_prompts
-from agents.plan import PlanNode, PlanOutput, convert_plan_to_tasks
+from agents.plan import PlanOutput, convert_plan_to_tasks
 
 
 async def plan_reflection(task: Task) -> Task:
-    # logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
-
     updated_task = task.model_copy(deep=True)
     if os.getenv("deployment_environment") == "test":
         updated_task.results["plan_reflection"] = task.results["plan"]
@@ -36,6 +28,4 @@ async def plan_reflection(task: Task) -> Task:
         updated_task.sub_tasks = convert_plan_to_tasks(data.sub_tasks, updated_task)
         updated_task.results["plan_reflection"] = content
         updated_task.results["plan_reflection_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
-    
-    logger.info(f"完成\n{updated_task.model_dump_json(indent=2, exclude_none=True)}")
     return updated_task

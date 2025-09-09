@@ -1,72 +1,34 @@
 #coding: utf8
 import os
-import re
 import json
 import torch
 import hashlib
 import asyncio
-import collections
 from loguru import logger
 from diskcache import Cache
 from datetime import datetime
-from qdrant_client import QdrantClient
-from pydantic import BaseModel, Field
-from typing import Dict, Any, List, Literal, Optional, Callable
+from typing import Dict, Any, List, Literal, Optional, Callable, Union, TYPE_CHECKING
 from llama_index.llms.litellm import LiteLLM
-from llama_index.core.agent import ReActAgent
-from llama_index.core.tools import FunctionTool
-from llama_index.core.prompts import PromptTemplate
 from llama_index.embeddings.litellm import LiteLLMEmbedding
-from llama_index.core.base.response.schema import Response
-from llama_index.vector_stores.qdrant import QdrantVectorStore
-from llama_index.graph_stores.memgraph import MemgraphGraphStore
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
-from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
-from llama_index.core import Document, StorageContext, VectorStoreIndex, KnowledgeGraphIndex
 from utils.db import get_db
 from utils.models import Task
 from utils.llm import LLM_PARAMS_fast, LLM_PARAMS_reasoning, get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
-from utils.prompt_loader import load_prompts
 
 
 class RAG:
     def __init__(self):
-        embed_model = os.getenv("embed_model")
-        embed_BASE_URL = os.getenv("embed_BASE_URL")
-        embed_API_KEY = os.getenv("embed_API_KEY")
-        embed_dimensions = int(os.getenv("embed_dims", "1024"))
-        if embed_model and embed_BASE_URL and embed_API_KEY:
-            self.embed_model = LiteLLMEmbedding(
-                model_name = embed_model,
-                api_base = embed_BASE_URL,
-                api_key = embed_API_KEY, 
-                kwargs = {
-                    "dimensions" : embed_dimensions
-                }
-            )
-            self.embed_model.get_text_embedding("test")
-        else:
-            model_identifier = os.getenv("local_embed_model", "BAAI/bge-m3")
-            model_folder_name = model_identifier.split('/')[-1]
-            project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-            local_model_path = os.path.join(project_root, "models", model_folder_name)
-            device = "cuda" if torch.cuda.is_available() else "cpu"
-            if os.path.isdir(local_model_path):
-                self.embed_model = HuggingFaceEmbedding(model_name=local_model_path, device=device)
+        self._embed_model: Optional[Union[LiteLLMEmbedding, HuggingFaceEmbedding]] = None
+        self._qdrant_client: Optional[QdrantClient] = None
+        self._graph_store: Optional[MemgraphGraphStore] = None
+        self._agent_llm: Optional[LiteLLM] = None
+        self._extraction_llm: Optional[LiteLLM] = None
 
-        self.qdrant_client = QdrantClient(
-            host=os.getenv("qdrant_host", "localhost"),
-            port=int(os.getenv("qdrant_port", "6333")),
-        )
-
-        self.graph_store = MemgraphGraphStore(
-            url=os.getenv("memgraph_url", "bolt://localhost:7687"),
-            username=os.getenv("memgraph_username", "memgraph"),
-            password=os.getenv("memgraph_password", "memgraph"),
-        )
-
-        self.agent_llm = LiteLLM(**LLM_PARAMS_reasoning)
-        self.extraction_llm = LiteLLM(**LLM_PARAMS_fast)
+        # 仅在类型检查时导入, 避免运行时开销
+        if TYPE_CHECKING:
+            from qdrant_client import QdrantClient
+            from llama_index.graph_stores.memgraph import MemgraphGraphStore
+            from llama_index.core import StorageContext
 
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         cache_base_dir = os.path.join(project_root, ".cache", "rag")
@@ -82,7 +44,84 @@ class RAG:
             'task_list': Cache(os.path.join(cache_base_dir, "task_list"), size_limit=int(32 * (1024**2))),
         }
 
-    def _get_storage_context(self, run_id: str) -> StorageContext:
+    @property
+    def embed_model(self) -> Union[LiteLLMEmbedding, HuggingFaceEmbedding]:
+        if self._embed_model is None:
+            logger.info("正在延迟加载 embed_model...")
+            embed_model_name = os.getenv("embed_model")
+            embed_BASE_URL = os.getenv("embed_BASE_URL")
+            embed_API_KEY = os.getenv("embed_API_KEY")
+            embed_dimensions = int(os.getenv("embed_dims", "1024"))
+            if embed_model_name and embed_BASE_URL and embed_API_KEY:
+                logger.info(f"使用远程嵌入模型: {embed_model_name}")
+                self._embed_model = LiteLLMEmbedding(
+                    model_name=embed_model_name,
+                    api_base=embed_BASE_URL,
+                    api_key=embed_API_KEY,
+                    kwargs={"dimensions": embed_dimensions},
+                )
+                self._embed_model.get_text_embedding("test")
+            else:
+                model_identifier = os.getenv("local_embed_model", "BAAI/bge-m3")
+                logger.info(f"使用本地嵌入模型: {model_identifier}")
+                model_folder_name = model_identifier.split("/")[-1]
+                project_root = os.path.abspath(
+                    os.path.join(os.path.dirname(__file__), "..")
+                )
+                local_model_path = os.path.join(
+                    project_root, "models", model_folder_name
+                )
+                if not os.path.isdir(local_model_path):
+                    raise FileNotFoundError(
+                        f"本地嵌入模型路径不存在: {local_model_path}. "
+                        "请确认模型已下载或配置了远程嵌入模型 API。"
+                    )
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                self._embed_model = HuggingFaceEmbedding(
+                    model_name=local_model_path, device=device
+                )
+        return self._embed_model
+
+    @property
+    def qdrant_client(self) -> "QdrantClient":
+        from qdrant_client import QdrantClient
+        if self._qdrant_client is None:
+            logger.info("正在延迟加载 qdrant_client...")
+            self._qdrant_client = QdrantClient(
+                host=os.getenv("qdrant_host", "localhost"),
+                port=int(os.getenv("qdrant_port", "6333")),
+            )
+        return self._qdrant_client
+
+    @property
+    def graph_store(self) -> "MemgraphGraphStore":
+        from llama_index.graph_stores.memgraph import MemgraphGraphStore
+        if self._graph_store is None:
+            logger.info("正在延迟加载 graph_store...")
+            self._graph_store = MemgraphGraphStore(
+                url=os.getenv("memgraph_url", "bolt://localhost:7687"),
+                username=os.getenv("memgraph_username", "memgraph"),
+                password=os.getenv("memgraph_password", "memgraph"),
+            )
+        return self._graph_store
+
+    @property
+    def agent_llm(self) -> LiteLLM:
+        if self._agent_llm is None:
+            logger.info("正在延迟加载 agent_llm...")
+            self._agent_llm = LiteLLM(**LLM_PARAMS_reasoning)
+        return self._agent_llm
+
+    @property
+    def extraction_llm(self) -> LiteLLM:
+        if self._extraction_llm is None:
+            logger.info("正在延迟加载 extraction_llm...")
+            self._extraction_llm = LiteLLM(**LLM_PARAMS_fast)
+        return self._extraction_llm
+
+    def _get_storage_context(self, run_id: str) -> "StorageContext":
+        from llama_index.vector_stores.qdrant import QdrantVectorStore
+        from llama_index.core import StorageContext
         vector_store = QdrantVectorStore(
             client=self.qdrant_client,
             collection_name=f"write_vectors_{run_id}"
@@ -192,6 +231,9 @@ class RAG:
             logger.warning("内容为空, 跳过存储。")
             return
 
+        from llama_index.core import Document, StorageContext, VectorStoreIndex, KnowledgeGraphIndex
+        from llama_index.core.prompts import PromptTemplate
+
         # 获取当前运行的存储上下文, 连接到正确的 Qdrant 集合和 Memgraph 实例
         storage_context = self._get_storage_context(task.run_id)
         
@@ -221,6 +263,7 @@ class RAG:
         # 2. 知识图谱存储: 适用于包含事实、实体和关系的内容 (设计、搜索结果、正文)
         if content_type in ['design', 'search', 'write']:
             logger.info(f"正在从 '{content_type}' 内容中提取并存入知识图谱...")
+            from utils.prompt_loader import load_prompts
             # 加载针对不同内容类型的定制化图谱提取 Prompt
             design_prompt, write_prompt, search_prompt = load_prompts(task.category, "graph_cn", "design_prompt", "write_prompt", "search_prompt")
             kg_extraction_prompts = {
@@ -244,6 +287,7 @@ class RAG:
                 llm=self.extraction_llm,        # 使用为提取任务优化的轻量级LLM
                 include_embeddings=True,        # 将图谱节点与向量嵌入关联, 支持混合搜索
                 embed_model=self.embed_model,   # 显式传递配置的 embedding model
+                show_progress=True,             # 显示处理进度条, 提供直观反馈
             )
             
         logger.info(f"完成存储: {task.run_id} {task.id} {content_type}")
@@ -260,7 +304,6 @@ class RAG:
             "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
         }
         if not task.parent_id:
-            logger.info(f"根任务, 无需获取依赖上下文。")
             return ret
     
         db = get_db(run_id=task.run_id, category=task.category)
@@ -284,11 +327,8 @@ class RAG:
         return ret
     
     async def get_context(self, task: Task) -> Dict[str, Any]:
-        logger.info(f"开始获取上下文: {task.run_id} {task.id} {task.task_type} {task.goal}")
-
         ret = await self.get_context_base(task)
         if not task.parent_id:
-            logger.info(f"根任务, 无需获取依赖上下文。")
             return ret
         
         dependent_design = ret.get("dependent_design", "")
@@ -438,6 +478,7 @@ class RAG:
 
     async def get_query(self, task: Task, search_type: Literal['text_summary', 'upper_design', 'upper_search'], dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> Dict[str, Any]:
         logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal} {search_type} \n dependent_design: \n{dependent_design} \n dependent_search: \n{dependent_search} \n text_latest: \n{text_latest}")
+        from utils.prompt_loader import load_prompts
         (
             SYSTEM_PROMPT_design, USER_PROMPT_design,
             SYSTEM_PROMPT_design_for_write,
@@ -523,6 +564,10 @@ class RAG:
             return cached_result
 
         # 3. 动态加载特定于类别的配置和格式化函数
+        from utils.prompt_loader import load_prompts
+        from llama_index.core import VectorStoreIndex
+        from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
+
         get_search_config, format_response_with_sorting = load_prompts(
             task.category, "rag_cn", "get_search_config", "format_response_with_sorting"
         )
@@ -544,6 +589,9 @@ class RAG:
         )
 
         # 6. 为知识图谱查询引擎定义一个定制化的 Cypher 查询生成 Prompt
+        from llama_index.core.prompts import PromptTemplate
+        from llama_index.core import KnowledgeGraphIndex
+
         kg_query_gen_prompt_str = f"""
 # 角色
 你是一位精通 Cypher 的图数据库查询专家。
@@ -623,6 +671,8 @@ class RAG:
             formatter: 用于格式化和排序响应的函数。
         """
         logger.info(f"开始 复杂模式 ReActAgent \n{json.dumps(config, indent=2, ensure_ascii=False)}")
+
+        from llama_index.core.agent import ReActAgent
 
         # 1. 创建向量搜索工具
         #    - `_create_time_aware_tool` 将查询引擎包装成一个 Agent 可调用的工具。
@@ -735,7 +785,7 @@ class RAG:
         logger.info(f"完成\n{final_message.content}")
         return final_message.content
 
-    def _create_time_aware_tool(self, query_engine: Any, name: str, description: str, sort_by: Literal['time', 'narrative', 'relevance'], formatter: Callable) -> "FunctionTool":
+    def _create_time_aware_tool(self, query_engine: Any, name: str, description: str, sort_by: Literal['time', 'narrative', 'relevance'], formatter: Callable) -> Any:
         """
         将一个查询引擎包装成一个 Agent 可用的、具备排序功能的工具 (FunctionTool)。
         Args:
@@ -747,6 +797,9 @@ class RAG:
         Returns:
             FunctionTool: 一个可供 ReActAgent 使用的工具。
         """
+        from llama_index.core.tools import FunctionTool
+        from llama_index.core.base.response.schema import Response
+
         async def time_aware_query(query_str: str) -> str:
             # 实际执行查询的内部函数
             response: Response = await query_engine.aquery(query_str)

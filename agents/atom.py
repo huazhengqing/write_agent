@@ -1,8 +1,5 @@
 import os
 import importlib
-import litellm
-import collections
-from loguru import logger
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
 from utils.models import Task
@@ -18,8 +15,6 @@ class AtomOutput(BaseModel):
 
 
 async def atom(task: Task) -> Task:
-    # logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
-    
     if os.getenv("deployment_environment") == "test":
         if task.task_type in ["design", "search"]:
             module_path = f"prompts.{task.category}.atom_{task.task_type}_cn"
@@ -48,6 +43,4 @@ async def atom(task: Task) -> Task:
     if data.goal_update and len(data.goal_update.strip()) > 10 and data.goal_update != task.goal:
         updated_task.goal = data.goal_update
         updated_task.results["goal_update"] = data.goal_update
-    
-    # logger.info(f"完成\n{updated_task.model_dump_json(indent=2, exclude_none=True)}")
     return updated_task

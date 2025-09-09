@@ -1,21 +1,11 @@
 import os
 import json
-import httpx
 import asyncio
-import litellm
-import collections
 import functools
 from loguru import logger
 from diskcache import Cache
-from bs4 import BeautifulSoup
-from trafilatura import extract
 from pydantic import BaseModel, Field
-from langgraph.graph import StateGraph, END
-from typing import List, TypedDict, Optional, Any
-from sentence_transformers import SentenceTransformer, util
-from langchain_community.utilities import SearxSearchWrapper
-from langdetect import detect, LangDetectException
-from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
+from typing import List, TypedDict, Optional, Any, TYPE_CHECKING
 from utils.models import Task
 from utils.prompt_loader import load_prompts
 from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
@@ -23,6 +13,9 @@ from utils.rag import get_rag
 
 
 ###############################################################################
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
+
 
 
 # 每个(子)任务的最大搜索-抓取-规划循环次数, 用于防止无限循环。
@@ -80,11 +73,21 @@ class SearchAgentState(TypedDict):
 SEARCH_CACHE = Cache(os.path.join(".cache", 'search_cache'), size_limit=int(128 * 1024 * 1024))
 SCRAPE_CACHE = Cache(os.path.join(".cache", 'scrape_cache'), size_limit=int(128 * 1024 * 1024))
 
+_search_tool_instance = None
+def get_search_tool():
+    """延迟加载 SearxSearchWrapper 以加速启动。"""
+    global _search_tool_instance
+    if _search_tool_instance is None:
+        from langchain_community.utilities import SearxSearchWrapper
+        logger.info("正在延迟加载 SearxSearchWrapper...")
+        _search_tool_instance = SearxSearchWrapper(searx_host=os.environ.get("SearXNG", "http://127.0.0.1:8080"))
+    return _search_tool_instance
 
-search_tool = SearxSearchWrapper(searx_host=os.environ.get("SearXNG", "http://127.0.0.1:8080"))
 
+def get_embedding_model(language: str) -> "SentenceTransformer":
+    """根据语言延迟加载并返回一个 SentenceTransformer 模型。"""
+    from sentence_transformers import SentenceTransformer
 
-def get_embedding_model(language: str) -> SentenceTransformer:
     if language.startswith('zh'):
         model_name = 'BAAI/bge-small-zh'
         model_local_dir = 'bge-small-zh'
@@ -131,6 +134,10 @@ async def scrape_webpages(urls: List[str]) -> List[dict]:
         则自动降级到使用 `Playwright` 进行深度抓取, 它可以执行JavaScript。
     这种策略旨在兼顾速度和抓取成功率。
     """
+    import httpx
+    from trafilatura import extract
+    from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
+
     if not urls:
         return []
 
@@ -281,7 +288,7 @@ async def planner_node(state: SearchAgentState) -> dict:
 
 @async_retry(retries=2, backoff_in_seconds=2)
 async def _search_with_retry(query: str):
-    return search_tool.results(query)
+    return get_search_tool().results(query)
 
 async def search_node(state: SearchAgentState) -> dict:
     queries = state['plan'].queries
@@ -522,6 +529,8 @@ async def should_continue_search(state: SearchAgentState) -> str:
         # 这比简单的词汇匹配(如Jaccard)更准确, 能更好地判断内容是否真的没有新意。
         similarity_threshold = 0.98
         
+        from sentence_transformers import util
+        
         embedding_model = state['embedding_model']
         # 1. 将新旧摘要编码为向量
         embeddings = embedding_model.encode([prev_summary, current_summary], convert_to_tensor=True) # type: ignore
@@ -591,6 +600,9 @@ async def search(task: Task) -> Task:
     """
     logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
     
+    from langgraph.graph import StateGraph, END
+    from langdetect import detect, LangDetectException
+
     # 根据任务目标检测语言, 并加载相应的嵌入模型
     try:
         lang = detect(task.goal)

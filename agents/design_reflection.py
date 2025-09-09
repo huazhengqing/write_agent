@@ -1,7 +1,4 @@
 import os
-from loguru import logger
-import litellm
-import collections
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
 from utils.rag import get_rag
@@ -9,8 +6,6 @@ from utils.prompt_loader import load_prompts
 
 
 async def design_reflection(task: Task) -> Task:
-    logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
-    
     updated_task = task.model_copy(deep=True)
     if os.getenv("deployment_environment") == "test":
         updated_task.results["design_reflection"] = ""
@@ -25,6 +20,4 @@ async def design_reflection(task: Task) -> Task:
         reasoning = message.get("reasoning_content") or message.get("reasoning", "")
         updated_task.results["design_reflection"] = content
         updated_task.results["design_reflection_reasoning"] = reasoning
-
-    logger.info(f"完成\n{updated_task.model_dump_json(indent=2, exclude_none=True)}")
     return updated_task
