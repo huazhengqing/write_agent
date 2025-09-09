@@ -33,7 +33,7 @@ class StoryWritingNLWriteAtomWithUpdateEN(PromptTemplate):
 # 输出格式
 1. 首先, 在 `<think></think>` 中思考目标更新。然后, 根据原子任务判断规则, 深入全面地评估是否需要拆解设计和写作子任务。这决定了该任务是原子任务还是复杂任务。
 
-2. 然后, 在 `<result></result>` 中输出结果。在 `<goal_updating></goal_updating>` 中, 直接输出更新后的目标；如果不需要更新, 则输出原始目标。在 `<atomic_task_determination></atomic_task_determination>` 中, 输出该任务是原子任务还是复杂任务。
+2. 然后, 在 `<result></result>` 中输出结果。在 `<goal_updating></goal_updating>` 中, 直接输出更新后的目标；如果不需要更新, 则输出原始目标。在 `<atom_task_determination></atom_task_determination>` 中, 输出该任务是原子任务还是复杂任务。
 
 具体格式如下: 
 <think>
@@ -43,9 +43,9 @@ class StoryWritingNLWriteAtomWithUpdateEN(PromptTemplate):
 <goal_updating>
 [更新后的目标]
 </goal_updating>
-<atomic_task_determination>
-atomic/complex
-</atomic_task_determination>
+<atom_task_determination>
+atom/complex
+</atom_task_determination>
 </result>
 """.strip()
 
@@ -101,16 +101,16 @@ class StoryWritingNLWriteAtomEN(PromptTemplate):
 # 输出格式
 1. 首先, 在 `<think></think>` 中, 遵循原子任务判定规则, 依次评估是否需要拆分出设计或写作子任务。这将决定该任务是原子任务还是复杂任务。
 
-2. 然后, 在 `<result><atomic_task_determination></atomic_task_determination></result>` 中输出结果。
+2. 然后, 在 `<result><atom_task_determination></atom_task_determination></result>` 中输出结果。
 
 具体格式如下: 
 <think>
 思考目标更新；然后根据原子任务判定规则进行深入和全面的思考。
 </think>
 <result>
-<atomic_task_determination>
-atomic/complex
-</atomic_task_determination>
+<atom_task_determination>
+atom/complex
+</atom_task_determination>
 </result>
 """.strip()
 

@@ -8,8 +8,6 @@ from utils.models import Task
 
 
 def get_search_config(task: Task, inquiry_plan: Dict[str, Any], search_type: Literal['text_summary', 'upper_design', 'upper_search']) -> Dict[str, Any]:
-    logger.info(f"开始 {task.run_id} {task.id} {search_type} \n{json.dumps(inquiry_plan, indent=2, ensure_ascii=False)}")
-
     current_level = len(task.id.split("."))
     configs = {
         'text_summary': {
@@ -80,30 +78,14 @@ def get_search_config(task: Task, inquiry_plan: Dict[str, Any], search_type: Lit
             'kg_sort_by': 'relevance',
         }
     }
-
     config = configs[search_type]
     config["kg_filters_str"] = " AND ".join(config['kg_filters_list'])
     config["kg_tool_desc"] = f"功能: 探索实体、关系、路径。查询必须满足过滤条件: {config['kg_filters_str']}。"
     config["query_text"] = _build_agent_query(inquiry_plan, config['final_instruction'], config['rules_text'])
-
-    logger.info(f"结束 \n{json.dumps(config, indent=2, ensure_ascii=False)}")
     return config
 
+
 def _build_agent_query(inquiry_plan: Dict[str, Any], final_instruction: str, rules_text: str) -> str:
-    """
-    构建一个结构化的、详细的查询文本, 用于指导 ReAct Agent 或最终的合成 LLM。
-
-    这个查询文本由三部分组成:
-    1.  核心探询目标: 来自探询计划的主查询。
-    2.  具体信息需求: 将探询计划中的问题列表化, 并标注优先级。
-    3.  任务指令与规则: 包含最终目标和具体的执行规则 (如优先级处理、冲突解决等)。
-    Args:
-        inquiry_plan (Dict[str, Any]): LLM 生成的探询计划。
-        final_instruction (str): 针对当前任务的最终目标描述。
-        rules_text (str): 针对当前任务的特定整合规则。
-    """
-    logger.info(f"开始 \n{inquiry_plan}\n{final_instruction}\n{rules_text}")
-
     main_inquiry = inquiry_plan.get("main_inquiry", "请综合分析并回答以下问题。")
 
     # 1. 构建“核心探询目标”和“具体信息需求”部分
@@ -131,9 +113,8 @@ def _build_agent_query(inquiry_plan: Dict[str, Any], final_instruction: str, rul
     instruction_block += adapted_rules_text
 
     query_text += instruction_block
-
-    logger.info(f"结束 \n{query_text}")
     return query_text
+
 
 def format_response_with_sorting(response: Response, sort_by: Literal['time', 'narrative', 'relevance']) -> str:
     """

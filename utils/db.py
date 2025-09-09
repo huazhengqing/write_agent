@@ -181,14 +181,12 @@ class DB:
         
         # 过滤掉None值和空字符串
         fields_to_update = {k: v for k, v in update_fields.items() if v}
-        
         if not fields_to_update:
             return
 
         set_clause = ", ".join([f"{key} = ?" for key in fields_to_update.keys()])
         values = list(fields_to_update.values())
         values.append(task.id)
-        
         with self._lock:
             self.cursor.execute(
                 f"""
@@ -204,18 +202,14 @@ class DB:
         """
         高效获取任务上下文列表 (父任务链 + 兄弟任务), 仅查询必要的字段。
         """
-        all_task_data = {}  # 使用字典存储
-
+        all_task_data = {}
         with self._lock:
             # 1. 获取父任务链的 ID
             id_parts = task.id.split('.')
             if len(id_parts) > 1:
                 parent_chain_ids = [".".join(id_parts[:i]) for i in range(1, len(id_parts))]
-                
-                # 为 SQL IN 子句创建占位符
                 placeholders = ','.join(['?'] * len(parent_chain_ids))
                 query = f"SELECT id, hierarchical_position, goal, length FROM t_tasks WHERE id IN ({placeholders})"
-                
                 self.cursor.execute(query, parent_chain_ids)
                 rows = self.cursor.fetchall()
                 for row in rows:
@@ -231,12 +225,8 @@ class DB:
                 for row in rows:
                     all_task_data[row[0]] = (row[1], row[2], row[3])
         
-        # 3. 确保当前任务也被包含 (使用最新的内存中信息)
         all_task_data[task.id] = (task.hierarchical_position, task.goal, task.length)
-
-        # 4. 按ID进行自然排序
         sorted_ids = sorted(all_task_data.keys(), key=self._natural_sort_key)
-        # 5. 格式化为指定的字符串输出
         output_lines = []
         for task_id in sorted_ids:
             hierarchical_position, goal, length = all_task_data[task_id]
@@ -247,61 +237,67 @@ class DB:
             if length:
                 line += f" {length}"
             output_lines.append(line)
-            
         return "\n".join(output_lines)
 
     def get_dependent_design(self, task: Task) -> str:
         if not task.parent_id:
             return ""
-
-        with self._lock:
-            # 不能有 task_type = 'design', 因为 write 任务会有 design_reflection
-            self.cursor.execute(
-                "SELECT id, design, design_reflection FROM t_tasks WHERE parent_id = ?",
-                (task.parent_id,)
-            )
-            rows = self.cursor.fetchall()
-
-        if not rows:
+        id_parts = task.id.split('.')
+        if len(id_parts) < 2:
+            return ""
+        try:
+            current_seq = int(id_parts[-1])
+        except ValueError:
             return ""
 
+        # 生成需要查询的兄弟任务ID列表
+        # 例如, 当前是 1.5, 则查询 1.1, 1.2, 1.3, 1.4
+        dependent_ids = [f"{task.parent_id}.{i}" for i in range(1, current_seq)]
+        if not dependent_ids:
+            return ""
+
+        with self._lock:
+            placeholders = ','.join(['?'] * len(dependent_ids))
+            self.cursor.execute(
+                f"SELECT id, design, design_reflection FROM t_tasks WHERE id IN ({placeholders})",
+                tuple(dependent_ids)
+            )
+            rows = self.cursor.fetchall()
+        if not rows:
+            return ""
         # 按 task id 进行自然排序 (例如, '1.10' 会在 '1.2' 之后)
         sorted_rows = sorted(rows, key=lambda row: self._natural_sort_key(row[0]))
         content_list = []
         for row in sorted_rows:
-            # row[0] is id, row[1] is design, row[2] is design_reflection
-            design_content = row[1]
-            reflection_content = row[2]
-            
-            combined_content = []
-            if design_content:
-                combined_content.append(design_content)
-            if reflection_content:
-                combined_content.append(reflection_content)
-            
-            if combined_content:
-                content_list.append("\n\n".join(combined_content))
-                
+            content = row[2] if row[2] else row[1]
+            if content:
+                content_list.append(content)
         return "\n\n".join(content_list)
 
     def get_dependent_search(self, task: Task) -> str:
         if not task.parent_id:
             return ""
-
+        id_parts = task.id.split('.')
+        if len(id_parts) < 2:
+            return ""
+        try:
+            current_seq = int(id_parts[-1])
+        except ValueError:
+            return ""
+        dependent_ids = [f"{task.parent_id}.{i}" for i in range(1, current_seq)]
+        if not dependent_ids:
+            return ""
         with self._lock:
+            placeholders = ','.join(['?'] * len(dependent_ids))
             self.cursor.execute(
-                "SELECT id, search FROM t_tasks WHERE parent_id = ? AND task_type = 'search'",
-                (task.parent_id,)
+                f"SELECT id, search FROM t_tasks WHERE id IN ({placeholders}) AND task_type = 'search'",
+                tuple(dependent_ids)
             )
             rows = self.cursor.fetchall()
-
         if not rows:
             return ""
-
-        # 按 task id 进行自然排序
         sorted_rows = sorted(rows, key=lambda row: self._natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
-        
         return "\n\n".join(content_list)
 
     def get_subtask_design(self, parent_id: str) -> str:

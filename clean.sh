@@ -4,6 +4,8 @@
 rm -f run.log  logs/*.log
 rm -rf .litellm_cache/*
 rm -rf .cache/*
+rm -rf .prefect/storage/*
+rm -rf .pytest_cache
 rm -rf output/story/*.db
 rm -rf output/*/*.db
 

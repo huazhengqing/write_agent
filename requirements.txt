@@ -2,6 +2,7 @@ nltk
 httpx
 jieba
 psutil
+pytest
 openai
 loguru
 prefect
@@ -17,6 +18,7 @@ transformers
 stopwordsiso
 qdrant-client
 python-dotenv
+pytest-asyncio
 beautifulsoup4
 litellm[caching]
 sentence_transformers

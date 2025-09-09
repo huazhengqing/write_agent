@@ -1,7 +1,6 @@
 #coding: utf8
 import os
 import json
-import torch
 import hashlib
 import asyncio
 from loguru import logger
@@ -20,13 +19,13 @@ class RAG:
     def __init__(self):
         self._embed_model: Optional[Union[LiteLLMEmbedding, HuggingFaceEmbedding]] = None
         self._qdrant_client: Optional[QdrantClient] = None
+        self._qdrant_aclient: Optional["AsyncQdrantClient"] = None
         self._graph_store: Optional[MemgraphGraphStore] = None
         self._agent_llm: Optional[LiteLLM] = None
         self._extraction_llm: Optional[LiteLLM] = None
 
-        # 仅在类型检查时导入, 避免运行时开销
         if TYPE_CHECKING:
-            from qdrant_client import QdrantClient
+            from qdrant_client import QdrantClient, AsyncQdrantClient
             from llama_index.graph_stores.memgraph import MemgraphGraphStore
             from llama_index.core import StorageContext
 
@@ -76,10 +75,9 @@ class RAG:
                         f"本地嵌入模型路径不存在: {local_model_path}. "
                         "请确认模型已下载或配置了远程嵌入模型 API。"
                     )
-                device = "cuda" if torch.cuda.is_available() else "cpu"
-                self._embed_model = HuggingFaceEmbedding(
-                    model_name=local_model_path, device=device
-                )
+                # import torch
+                # device = "cuda" if torch.cuda.is_available() else "cpu"
+                # self._embed_model = HuggingFaceEmbedding(model_name=local_model_path, device=device)
         return self._embed_model
 
     @property
@@ -92,6 +90,17 @@ class RAG:
                 port=int(os.getenv("qdrant_port", "6333")),
             )
         return self._qdrant_client
+
+    @property
+    def qdrant_aclient(self) -> "AsyncQdrantClient":
+        from qdrant_client import AsyncQdrantClient
+        if self._qdrant_aclient is None:
+            logger.info("正在延迟加载 qdrant_aclient...")
+            self._qdrant_aclient = AsyncQdrantClient(
+                host=os.getenv("qdrant_host", "localhost"),
+                port=int(os.getenv("qdrant_port", "6333")),
+            )
+        return self._qdrant_aclient
 
     @property
     def graph_store(self) -> "MemgraphGraphStore":
@@ -124,6 +133,7 @@ class RAG:
         from llama_index.core import StorageContext
         vector_store = QdrantVectorStore(
             client=self.qdrant_client,
+            aclient=self.qdrant_aclient,
             collection_name=f"write_vectors_{run_id}"
         )
         return StorageContext.from_defaults(
@@ -134,18 +144,11 @@ class RAG:
 ###############################################################################
 
     async def add(self, task: Task, task_type: str):
-        """
-        根据任务类型, 将任务的产出结果持久化到数据库、文件和 RAG 索引中, 并管理相关缓存。
-        """
         db = get_db(run_id=task.run_id, category=task.category)
-
-        # 处理原子任务的创建或更新
         if task_type == "task_atom":
-            # 仅当是根任务或目标被更新时, 才写入数据库
             if task.id == "1" or task.results.get("goal_update"):
                 self.caches['task_list'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_task, task)
-        # 处理任务规划阶段
         elif task_type == "task_plan_before_reflection":
             if task.results.get("design_reflection"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
@@ -154,7 +157,6 @@ class RAG:
         elif task_type == "task_plan":
             if task.results.get("plan"):
                 await asyncio.to_thread(db.add_result, task)
-        # 处理对任务规划的反思
         elif task_type == "task_plan_reflection":
             if task.results.get("plan_reflection"):
                 self.caches['task_list'].evict(tag=task.run_id)
@@ -162,7 +164,6 @@ class RAG:
                 self.caches['upper_search'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await asyncio.to_thread(db.add_sub_tasks, task)
-        # 处理设计任务的执行结果
         elif task_type == "task_execute_design":
             if task.results.get("design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
@@ -172,23 +173,19 @@ class RAG:
                 self.caches['dependent_design'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await self.store(task, "design", task.results.get("design_reflection"))
-        # 处理搜索任务的执行结果
         elif task_type == "task_execute_search":
             if task.results.get("search"):
                 self.caches['dependent_search'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await self.store(task, "search", task.results.get("search"))
-        # 处理对设计结果的反思
         elif task_type == "task_execute_write_before_reflection":
             if task.results.get("design_reflection"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await self.store(task, "design", task.results.get("design_reflection"))
-        # 处理写作任务的初步执行结果 (通常是草稿)
         elif task_type == "task_execute_write":
             if task.results.get("write"):
                 await asyncio.to_thread(db.add_result, task)
-        # 处理对写作结果的反思 (生成最终内容)
         elif task_type == "task_execute_write_reflection":
             write_reflection = task.results.get("write_reflection")
             if write_reflection:
@@ -197,25 +194,21 @@ class RAG:
                 await asyncio.to_thread(db.add_result, task)
                 await asyncio.to_thread(self.text_file_append, self.get_text_file_path(task), write_reflection)
                 await self.store(task, "write", write_reflection)
-        # 处理为正文生成的摘要
         elif task_type == "task_execute_summary":
             if task.results.get("summary"):
                 self.caches['text_summary'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await self.store(task, "summary", task.results.get("summary"))
-        # 处理对子任务设计的聚合
         elif task_type == "task_aggregate_design":
             if task.results.get("design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await self.store(task, "design", task.results.get("design"))
-        # 处理对子任务搜索结果的聚合
         elif task_type == "task_aggregate_search":
             if task.results.get("search"):
                 self.caches['dependent_search'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await self.store(task, "search", task.results.get("search"))
-        # 处理对子任务摘要的聚合
         elif task_type == "task_aggregate_summary":
             if task.results.get("summary"):
                 self.caches['text_summary'].evict(tag=task.run_id)
@@ -238,11 +231,8 @@ class RAG:
 
     async def store(self, task: Task, content_type: Literal['design', 'search', 'write', 'summary'], content: str):
         """
-        将指定类型的内容存储到 RAG 索引中 (向量存储和知识图谱)。
-        - 向量存储 (Vector Store): 用于语义相似性搜索。
-          - 存储 'design', 'search', 'summary' 类型的内容。
-        - 知识图谱 (Knowledge Graph): 用于提取和查询结构化事实 (实体和关系)。
-          - 存储 'design', 'search', 'write' 类型的内容。
+        - 向量存储 (Vector Store): 存储 'design', 'search', 'summary' 类型的内容。
+        - 知识图谱 (Knowledge Graph): 存储 'design', 'search', 'write' 类型的内容。
         """
         logger.info(f"开始存储: {task.run_id} {task.id} {task.task_type} {task.goal} {content_type}")
 
@@ -253,10 +243,8 @@ class RAG:
         from llama_index.core import Document, StorageContext, VectorStoreIndex, KnowledgeGraphIndex
         from llama_index.core.prompts import PromptTemplate
 
-        # 获取当前运行的存储上下文, 连接到正确的 Qdrant 集合和 Memgraph 实例
         storage_context = self._get_storage_context(task.run_id)
         
-        # 构建文档元数据, 用于后续的过滤和排序
         doc_metadata = {
             "run_id": task.run_id,                      # 运行ID, 用于数据隔离
             "hierarchy_level": len(task.id.split(".")), # 任务层级, 用于范围查询
@@ -265,13 +253,10 @@ class RAG:
             "status": "active",                         # 状态, 用于标记/取消文档
             "created_at": datetime.now().isoformat()    # 创建时间, 用于时序排序
         }
-        # 将内容和元数据封装成 LlamaIndex 的 Document 对象
         doc = Document(id_=task.id, text=content, metadata=doc_metadata)
 
-        # 1. 向量存储: 适用于需要进行语义搜索的内容 (设计、搜索结果、摘要)
         if content_type in ['design', 'search', 'summary']:
             logger.info(f"正在将 '{content_type}' 内容存入向量索引...")
-            # 使用 to_thread 将同步的索引操作移到工作线程, 避免阻塞事件循环
             await asyncio.to_thread(
                 VectorStoreIndex.from_documents, 
                 [doc], 
@@ -279,34 +264,28 @@ class RAG:
                 embed_model=self.embed_model
             )
 
-        # 2. 知识图谱存储: 适用于包含事实、实体和关系的内容 (设计、搜索结果、正文)
         if content_type in ['design', 'search', 'write']:
             logger.info(f"正在从 '{content_type}' 内容中提取并存入知识图谱...")
             from utils.prompt_loader import load_prompts
-            # 加载针对不同内容类型的定制化图谱提取 Prompt
             design_prompt, write_prompt, search_prompt = load_prompts(task.category, "graph_cn", "design_prompt", "write_prompt", "search_prompt")
-            kg_extraction_prompts = {
+            prompts = {
                 "design": PromptTemplate(design_prompt),
                 "write": PromptTemplate(write_prompt),
                 "search": PromptTemplate(search_prompt),
             }
-            kg_prompt = kg_extraction_prompts.get(content_type)
-            
-            if not kg_prompt:
+            kg_extraction_prompt = prompts.get(content_type)
+            if not kg_extraction_prompt:
                 logger.warning(f"内容类型 '{content_type}' 没有找到对应的图谱提取Prompt, 将跳过图谱存储。")
                 return
-
-            # 使用 to_thread 将同步的图谱构建操作移到工作线程
             await asyncio.to_thread(
                 KnowledgeGraphIndex.from_documents,
                 [doc],
                 storage_context=storage_context,
-                max_triplets_per_chunk=15,      # 每个文本块最多提取15个三元组
-                kg_extraction_prompt=kg_prompt, # 使用定制化Prompt指导LLM提取
-                llm=self.extraction_llm,        # 使用为提取任务优化的轻量级LLM
+                embed_model=self.embed_model, 
+                llm=self.extraction_llm, 
+                kg_extraction_prompt=kg_extraction_prompt, 
                 include_embeddings=True,        # 将图谱节点与向量嵌入关联, 支持混合搜索
-                embed_model=self.embed_model,   # 显式传递配置的 embedding model
-                show_progress=True,             # 显示处理进度条, 提供直观反馈
+                max_triplets_per_chunk=15,      # 每个文本块最多提取15个三元组
             )
             
         logger.info(f"完成存储: {task.run_id} {task.id} {content_type}")
@@ -324,25 +303,19 @@ class RAG:
         }
         if not task.parent_id:
             return ret
-    
         db = get_db(run_id=task.run_id, category=task.category)
         dependent_design = await self.get_dependent_design(db, task)
         dependent_search = await self.get_dependent_search(db, task)
         text_latest = await self.get_text_latest(task)
-        
         task_list = ""
-        # 仅当任务层级大于等于2时才获取任务列表
         if len(task.id.split(".")) >= 2:
             task_list = await self.get_context_task_list(db, task)
-
         ret.update({
             "dependent_design": dependent_design,
             "dependent_search": dependent_search,
             "text_latest": text_latest,
             "task_list": task_list,
         })
-    
-        logger.info(f"完成上下文获取\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
         return ret
     
     async def get_context(self, task: Task) -> Dict[str, Any]:
@@ -359,7 +332,7 @@ class RAG:
         current_level = len(task.id.split("."))
         if current_level >= 3:
             rag_context_coros["upper_design"] = self.search_context(task, 'upper_design', dependent_design, dependent_search, text_latest, task_list)
-            rag_context_coros["upper_search"] = self.search_context(task, 'upper_search', dependent_design, dependent_search, text_latest, task_list)
+            # rag_context_coros["upper_search"] = self.search_context(task, 'upper_search', dependent_design, dependent_search, text_latest, task_list)
     
         if len(text_latest) > 500:
             rag_context_coros["text_summary"] = self.search_context(task, 'text_summary', dependent_design, dependent_search, text_latest, task_list)
@@ -375,38 +348,38 @@ class RAG:
 
     async def get_dependent_design(self, db: Any, task: Task) -> str:
         cache_key = f"dependent_design:{task.run_id}:{task.id}"
-        cached_result = self.caches['dependent_design'].get(cache_key)
+        cached_result = await asyncio.to_thread(self.caches['dependent_design'].get, cache_key)
         if cached_result is not None:
             return cached_result
         
         result = await asyncio.to_thread(db.get_dependent_design, task)
 
-        self.caches['dependent_design'].set(cache_key, result, tag=task.run_id)
+        await asyncio.to_thread(self.caches['dependent_design'].set, cache_key, result, tag=task.run_id)
         return result
 
     async def get_dependent_search(self, db: Any, task: Task) -> str:
         cache_key = f"dependent_search:{task.run_id}:{task.id}"
-        cached_result = self.caches['dependent_search'].get(cache_key)
+        cached_result = await asyncio.to_thread(self.caches['dependent_search'].get, cache_key)
         if cached_result is not None:
             return cached_result
         result = await asyncio.to_thread(db.get_dependent_search, task)
-        self.caches['dependent_search'].set(cache_key, result, tag=task.run_id)
+        await asyncio.to_thread(self.caches['dependent_search'].set, cache_key, result, tag=task.run_id)
         return result
 
     async def get_context_task_list(self, db: Any, task: Task) -> str:
         cache_key = f"task_list:{task.run_id}:{task.parent_id}"
-        cached_result = self.caches['task_list'].get(cache_key)
+        cached_result = await asyncio.to_thread(self.caches['task_list'].get, cache_key)
         if cached_result is not None:
             return cached_result
         result = await asyncio.to_thread(db.get_context_task_list, task)
-        self.caches['task_list'].set(cache_key, result, tag=task.run_id)
+        await asyncio.to_thread(self.caches['task_list'].set, cache_key, result, tag=task.run_id)
         return result
 
     async def get_text_latest(self, task: Task, length: int = 3000) -> str:
         logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal} {length}")
 
         key = f"get_text_latest:{task.run_id}:{length}"
-        cached_result = self.caches['text_latest'].get(key)
+        cached_result = await asyncio.to_thread(self.caches['text_latest'].get, key)
         if cached_result is not None:
             return cached_result
 
@@ -431,7 +404,7 @@ class RAG:
                     # 3. 如果全文都没有换行符, 或者只有一段很长的内容, 则直接硬截取
                     result = full_content[-length:]
 
-        self.caches['text_latest'].set(key, result, tag=task.run_id)
+        await asyncio.to_thread(self.caches['text_latest'].set, key, result, tag=task.run_id)
         logger.info(f"完成 {result}")
         return result
 
@@ -439,14 +412,14 @@ class RAG:
         file_path = self.get_text_file_path(task)
 
         key = f"get_text_length:{file_path}"
-        cached_result = self.caches['text_length'].get(key)
+        cached_result = await asyncio.to_thread(self.caches['text_length'].get, key)
         if cached_result is not None:
             return cached_result
         
         full_content = await asyncio.to_thread(self.text_file_read, file_path)
         length = len(full_content)
         
-        self.caches['text_length'].set(key, length, tag=task.run_id)
+        await asyncio.to_thread(self.caches['text_length'].set, key, length, tag=task.run_id)
 
         return length
 
@@ -532,7 +505,7 @@ class RAG:
             "task_list": task_list
         }
         SYSTEM_PROMPT, USER_PROMPT = PROMPTS[search_type]
-        if task.task_type == 'write' and search_type == 'upper_design':
+        if task.task_type == 'write' and search_type == 'upper_design' and task.results["atom_result"] == "atom":
             SYSTEM_PROMPT = SYSTEM_PROMPT_design_for_write
         messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context_dict_user)
         llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["reasoning"])
@@ -544,31 +517,13 @@ class RAG:
         return inquiry_plan
 
     async def search_context(self, task: Task, search_type: Literal['text_summary', 'upper_design', 'upper_search'], dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
-        """
-        根据指定的搜索类型, 为当前任务检索并合成上下文信息。
-
-        该方法是 RAG 的核心调度器, 包含以下步骤:
-        1.  生成探询计划 (Inquiry Plan): 使用 LLM 确定需要检索哪些信息。
-        2.  缓存检查: 检查是否已有缓存的检索结果, 如果有则直接返回。
-        3.  配置与引擎设置:
-            - 获取特定于搜索类型的配置 (过滤器、工具描述等)。
-            - 初始化向量查询引擎 (用于语义搜索)。
-            - 初始化知识图谱查询引擎 (用于事实和关系搜索), 并注入一个定制的 Cypher 生成 Prompt。
-        4.  选择检索策略:
-            - 对于大型文档或复杂查询, 使用 ReAct Agent 进行多步推理和工具调用。
-            - 否则, 使用简单的并行查询 + LLM 合成策略。
-        5.  执行检索与合成: 调用相应的执行函数 (`_execute_react_agent` 或 `_execute_simple`)。
-        6.  缓存结果: 将最终结果存入缓存并返回。
-        """
         logger.info(f"开始 {task.run_id} {task.id} {search_type}")
 
-        # 1. 使用 LLM 生成一个结构化的“探询计划”, 指导后续的检索方向和内容
         inquiry_plan = await self.get_query(task, search_type, dependent_design, dependent_search, text_latest, task_list)
         if not inquiry_plan or not inquiry_plan.get("questions"):
             logger.warning("生成的探询计划为空或无效, 跳过搜索。")
             return ""
 
-        # 2. 基于探询计划和任务信息生成缓存键, 检查并返回缓存结果
         key_data = {
             "run_id": task.run_id,
             "inquiry_plan": inquiry_plan,
@@ -577,12 +532,11 @@ class RAG:
         }
         cache_key = hashlib.sha256(json.dumps(key_data, sort_keys=True).encode('utf-8')).hexdigest()
         cache = self.caches[search_type]
-        cached_result = cache.get(cache_key)
+        cached_result = await asyncio.to_thread(cache.get, cache_key)
         if cached_result is not None:
             logger.info(f"命中缓存, 直接返回结果: {cache_key}")
             return cached_result
 
-        # 3. 动态加载特定于类别的配置和格式化函数
         from utils.prompt_loader import load_prompts
         from llama_index.core import VectorStoreIndex
         from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
@@ -591,23 +545,20 @@ class RAG:
             task.category, "rag_cn", "get_search_config", "format_response_with_sorting"
         )
 
-        # 4. 获取搜索配置并初始化存储上下文
         config = get_search_config(task, inquiry_plan, search_type)
         storage_context = self._get_storage_context(task.run_id)
 
-        # 5. 设置向量查询引擎, 并应用元数据过滤器
         vector_filters = MetadataFilters(
             filters=[MetadataFilter(key=f['key'], value=f['value']) for f in config['vector_filters_list']]
         )
-        vector_index = VectorStoreIndex.from_vector_store(
+        vector_index = await asyncio.to_thread(
+            VectorStoreIndex.from_vector_store,
             storage_context.vector_store, 
             embed_model=self.embed_model
         )
-        vector_query_engine = vector_index.as_query_engine(
-            filters=vector_filters
-        )
+        # .as_query_engine() 是一个轻量级的同步配置操作, 无需放入线程池。
+        vector_query_engine = vector_index.as_query_engine(filters=vector_filters)
 
-        # 6. 为知识图谱查询引擎定义一个定制化的 Cypher 查询生成 Prompt
         from llama_index.core.prompts import PromptTemplate
         from llama_index.core import KnowledgeGraphIndex
 
@@ -634,15 +585,16 @@ class RAG:
 # 行动
 现在, 请为上述用户问题生成 Cypher 查询语句。
 """
-        # 7. 设置知识图谱查询引擎
         kg_query_gen_prompt = PromptTemplate(kg_query_gen_prompt_str)
-        kg_index = KnowledgeGraphIndex.from_documents(
+        kg_index = await asyncio.to_thread(
+            KnowledgeGraphIndex.from_documents,
             [], 
             storage_context=storage_context, 
             llm=self.agent_llm, 
             include_embeddings=True,
             embed_model=self.embed_model
         )
+        # .as_query_engine() 是一个轻量级的同步配置操作, 无需放入线程池。
         kg_query_engine = kg_index.as_query_engine(
             include_text=False,
             graph_query_synthesis_prompt=kg_query_gen_prompt
@@ -672,23 +624,12 @@ class RAG:
                 formatter=format_response_with_sorting
             )
 
-        cache.set(cache_key, result, tag=task.run_id)
+        await asyncio.to_thread(cache.set, cache_key, result, tag=task.run_id)
         logger.info(f"结果已存入缓存: {cache_key}")
         logger.info(f"完成 \n{result}")
         return result
     
     async def _execute_react_agent(self, vector_query_engine: Any, kg_query_engine: Any, config: Dict[str, Any], formatter: Callable) -> str:
-        """
-        使用 ReAct Agent 执行复杂的、多步骤的检索任务。
-
-        ReAct (Reasoning and Acting) Agent 能够通过思考和行动的循环来解决复杂问题。
-        它会根据初始问题, 动态地决定使用哪个工具 (向量搜索或知识图谱搜索), 
-        并根据工具返回的结果进行思考, 规划下一步行动, 直到找到最终答案。
-        Args:
-            vector_query_engine: 向量查询引擎实例。
-            kg_query_engine: 知识图谱查询引擎实例。
-            formatter: 用于格式化和排序响应的函数。
-        """
         logger.info(f"开始 复杂模式 ReActAgent \n{json.dumps(config, indent=2, ensure_ascii=False)}")
 
         from llama_index.core.agent import ReActAgent
@@ -735,42 +676,23 @@ class RAG:
         return ret
 
     async def _execute_simple(self, inquiry_plan: Dict[str, Any], vector_query_engine: Any, kg_query_engine: Any, config: Dict[str, Any], formatter: Callable) -> str:
-        """
-        执行简单的并行检索与合成策略。
-
-        此方法适用于非 Agent 模式, 流程如下:
-        1.  将探询计划中的所有问题合并为一个查询。
-        2.  并行地向向量查询引擎和知识图谱查询引擎发送该查询。
-        3.  将两个引擎返回的结果格式化并排序。
-        4.  构建一个包含原始目标、检索结果和整合规则的 Prompt。
-        5.  调用 LLM 对检索到的信息进行最终的分析、整合和提炼, 生成最终答案。
-        6.  包含重试和缓存清理机制, 确保结果的健壮性。
-        Args:
-            inquiry_plan (Dict[str, Any]): 包含信息需求的探询计划。
-            vector_query_engine: 向量查询引擎实例。
-            kg_query_engine: 知识图谱查询引擎实例。
-            config (Dict[str, Any]): 包含查询文本、排序方式等信息的配置字典。
-            formatter: 用于格式化和排序响应的函数。
-        """
         logger.info(f"开始 简单模式 \n{json.dumps(config, indent=2, ensure_ascii=False)}\n{json.dumps(inquiry_plan, indent=2, ensure_ascii=False)}")
         
-        # 1. 从探询计划中提取所有问题, 并合并成一个单一的查询字符串
         all_questions = list(inquiry_plan.get("questions", {}).keys())
         if not all_questions:
             logger.warning("探询计划中没有问题, 无法执行查询。")
             return ""
         single_question = "\n".join(all_questions)
 
-        # 2. 使用 asyncio.gather 并行执行向量查询和知识图谱查询
-        vector_response_task = vector_query_engine.aquery(single_question)
-        kg_response_task = kg_query_engine.aquery(single_question)
-        vector_response, kg_response = await asyncio.gather(vector_response_task, kg_response_task)
+        vector_response = await asyncio.to_thread(vector_query_engine.query, single_question)
 
-        # 3. 格式化并根据配置对检索结果进行排序
-        formatted_vector_str = formatter(vector_response, config['vector_sort_by'])
-        formatted_kg_str = formatter(kg_response, config['kg_sort_by'])
+        logger.info(f"正在执行知识图谱查询: {single_question}")
+        kg_response = await asyncio.to_thread(kg_query_engine.query, single_question)
+        logger.info(f"知识图谱查询完成, 响应: {kg_response}")
 
-        # 4. 构建用于最终信息合成的 Prompt
+        formatted_vector_str = await asyncio.to_thread(formatter, vector_response, config['vector_sort_by'])
+        formatted_kg_str = await asyncio.to_thread(formatter, kg_response, config['kg_sort_by'])
+
         synthesis_user_prompt = f"""
 # 任务
 - 遵循“探询计划与规则”。
@@ -794,7 +716,6 @@ class RAG:
 - 禁止任何关于你自身或任务过程的描述 (例如, “根据您的要求...”)。
 """
 
-        # 5. 准备调用 LLM 进行信息合成
         synthesis_messages = [
             {"role": "system", "content": "角色: 信息整合分析师。任务: 遵循用户指令, 整合并提炼向量检索和知识图谱的信息。输出: 一个逻辑连贯、事实准确、完全基于所提供材料的最终回答。"},
             {"role": "user", "content": synthesis_user_prompt}
@@ -821,9 +742,10 @@ class RAG:
 
         async def time_aware_query(query_str: str) -> str:
             # 实际执行查询的内部函数
-            response: Response = await query_engine.aquery(query_str)
+            response: Response = await asyncio.to_thread(query_engine.query, query_str)
             # 查询后, 使用指定的排序方式格式化结果
-            return formatter(response, sort_by)
+            # formatter 是一个纯CPU操作, 如果结果集很大, 可能会阻塞, 放入线程池更安全。
+            return await asyncio.to_thread(formatter, response, sort_by)
 
         # 使用 LlamaIndex 的 FunctionTool.from_defaults 创建工具
         return FunctionTool.from_defaults(
@@ -843,131 +765,3 @@ def get_rag():
     return _rag_instance
 
 ###############################################################################
-#                           测试代码 (Test Code)                              #
-###############################################################################
-
-if __name__ == '__main__':
-    import unittest
-    from unittest.mock import patch, MagicMock, AsyncMock
-
-    # 为测试模拟 LlamaIndex 的 Response 和 Node 对象
-    class MockNode:
-        def __init__(self, content, metadata, score):
-            self._content = content
-            self.metadata = metadata
-            self._score = score
-
-        def get_content(self):
-            return self._content
-
-        def get_score(self):
-            return self._score
-
-    class MockResponse:
-        def __init__(self, response_text, source_nodes):
-            self._response_text = response_text
-            self.source_nodes = source_nodes
-
-        def __str__(self):
-            return self._response_text
-
-    class TestRAGMethods(unittest.IsolatedAsyncioTestCase):
-        """
-        针对 RAG 类中核心方法的单元测试。
-        通过模拟外部依赖 (LLM, 数据库, 向量存储), 专注于测试内部逻辑。
-        """
-        def setUp(self):
-            """在每个测试开始前, 模拟所有外部依赖。"""
-            # 模拟环境变量, 避免在 RAG 初始化时进行真实连接
-            self.env_patcher = patch.dict(os.environ, {
-                "embed_model": "", # 强制使用本地模型路径
-                "local_embed_model": "mock_model", # 提供一个假的本地模型名
-                "qdrant_host": "localhost",
-                "qdrant_port": "6333",
-                "memgraph_url": "bolt://localhost:7687",
-                "memgraph_username": "memgraph",
-                "memgraph_password": "memgraph",
-                "deployment_environment": "test" # 启用详细日志
-            })
-            self.env_patcher.start()
-
-            # 模拟外部客户端和模型加载, 避免 I/O 操作
-            self.hf_embedding_patcher = patch('utils.rag.HuggingFaceEmbedding', autospec=True)
-            self.qdrant_client_patcher = patch('utils.rag.QdrantClient', autospec=True)
-            self.memgraph_store_patcher = patch('utils.rag.MemgraphGraphStore', autospec=True)
-            
-            self.mock_hf_embedding = self.hf_embedding_patcher.start()
-            self.mock_qdrant_client = self.qdrant_client_patcher.start()
-            self.mock_memgraph_store = self.memgraph_store_patcher.start()
-
-            # 现在可以安全地实例化 RAG 类
-            self.rag_instance = RAG()
-
-        def tearDown(self):
-            """在每个测试结束后, 停止所有模拟。"""
-            self.env_patcher.stop()
-            self.hf_embedding_patcher.stop()
-            self.qdrant_client_patcher.stop()
-            self.memgraph_store_patcher.stop()
-
-        @patch('utils.rag.llm_acompletion', new_callable=AsyncMock)
-        async def test_execute_simple(self, mock_llm_completion):
-            """测试 _execute_simple 方法的逻辑: 并行查询 -> 格式化 -> LLM 合成。"""
-            print("\n--- 正在运行: test_execute_simple ---")
-            
-            # 1. 准备: 设置模拟数据和对象
-            inquiry_plan = {"information_needs": [{"questions": ["主角是谁?", "主要情节是什么?"]}]}
-            config = {"query_text": "# 核心目标\n回答问题。", "vector_sort_by": "relevance", "kg_sort_by": "relevance"}
-
-            # 模拟查询引擎
-            mock_vector_engine = MagicMock()
-            mock_vector_engine.aquery = AsyncMock(return_value=MockResponse("向量搜索找到主角是爱丽丝。", [MockNode("爱丽丝是一个勇敢的战士。", {"task_id": "1.1", "created_at": "2023-01-01T12:00:00"}, 0.9)]))
-            mock_kg_engine = MagicMock()
-            mock_kg_engine.aquery = AsyncMock(return_value=MockResponse("知识图谱找到爱丽丝和鲍勃是朋友。", [MockNode("爱丽丝 -> 是朋友 -> 鲍勃", {"task_id": "1.2", "created_at": "2023-01-01T13:00:00"}, 0.8)]))
-
-            # 模拟最终的 LLM 合成调用
-            mock_final_message = MagicMock()
-            mock_final_message.content = "主角是一个名叫爱丽丝的勇敢战士, 她是鲍勃的朋友。"
-            mock_llm_completion.return_value = mock_final_message
-
-            # 2. 执行: 运行被测试的方法
-            result = await self.rag_instance._execute_simple(inquiry_plan=inquiry_plan, vector_query_engine=mock_vector_engine, kg_query_engine=mock_kg_engine, config=config)
-
-            # 3. 断言: 检查行为和输出是否符合预期
-            self.assertEqual(result, "主角是一个名叫爱丽丝的勇敢战士, 她是鲍勃的朋友。")
-            mock_vector_engine.aquery.assert_awaited_once_with("主角是谁?\n主要情节是什么?")
-            mock_kg_engine.aquery.assert_awaited_once_with("主角是谁?\n主要情节是什么?")
-            mock_llm_completion.assert_awaited_once()
-            user_prompt = mock_llm_completion.call_args[0][0]['messages'][1]['content']
-            self.assertIn("向量搜索找到主角是爱丽丝。", user_prompt)
-            self.assertIn("知识图谱找到爱丽丝和鲍勃是朋友。", user_prompt)
-            print("--- 测试通过: test_execute_simple ---")
-
-        @patch('utils.rag.ReActAgent', autospec=True)
-        async def test_execute_react_agent(self, MockReActAgent):
-            """测试 _execute_react_agent 方法的逻辑: 创建工具 -> 初始化 Agent -> 执行。"""
-            print("\n--- 正在运行: test_execute_react_agent ---")
-
-            # 1. 准备
-            config = {"query_text": "查找关于爱丽丝的信息。", "vector_tool_desc": "向量搜索工具。", "kg_tool_desc": "知识图谱搜索工具。", "vector_sort_by": "relevance", "kg_sort_by": "relevance"}
-            mock_vector_engine = MagicMock()
-            mock_kg_engine = MagicMock()
-
-            # 模拟 ReActAgent 实例及其 `achat` 方法
-            mock_agent_instance = MockReActAgent.return_value
-            mock_agent_instance.achat = AsyncMock(return_value="Agent 发现爱丽丝是一个勇敢的战士。")
-
-            # 2. 执行
-            result = await self.rag_instance._execute_react_agent(vector_query_engine=mock_vector_engine, kg_query_engine=mock_kg_engine, config=config)
-
-            # 3. 断言
-            self.assertEqual(result, "Agent 发现爱丽丝是一个勇敢的战士。")
-            MockReActAgent.assert_called_once()
-            agent_init_kwargs = MockReActAgent.call_args.kwargs
-            self.assertEqual(len(agent_init_kwargs['tools']), 2)
-            self.assertEqual(agent_init_kwargs['tools'][0].metadata.name, "time_aware_vector_search")
-            mock_agent_instance.achat.assert_awaited_once_with("查找关于爱丽丝的信息。")
-            print("--- 测试通过: test_execute_react_agent ---")
-
-    # 运行测试
-    unittest.main()

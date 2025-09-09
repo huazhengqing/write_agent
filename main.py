@@ -19,10 +19,9 @@ load_dotenv()
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
 
+
 def setup_global_logger():
     logger.remove()
-
-    # 截获并重定向 Python 内置的 logging 日志到 Loguru
     class InterceptHandler(logging.Handler):
         def emit(self, record: logging.LogRecord):
             try:
@@ -41,7 +40,6 @@ def setup_global_logger():
 
     logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
     logging.getLogger("llama_index").setLevel(logging.DEBUG)
-
     logger.add(
         log_dir / "main.log",
         filter=lambda record: not record["extra"].get("run_id"), 
@@ -59,23 +57,23 @@ def sanitize_filename(name: str) -> str:
     return s[:100]
 
 
-@task
-async def task_init(task_info):
-    if not task_info or not task_info.get('category') or not task_info.get('language'):
-        raise ValueError("任务信息为空")
+def flow_write_all(tasks_data: list):
+    logger.info(f"接收到 {len(tasks_data)} 个任务, 准备并行处理...")
+    flow_runs = []
+    for task_info in tasks_data:
+        if not task_info or not task_info.get('category') or not task_info.get('language'):
+            logger.error(f"任务信息不完整, 跳过: {task_info}")
+            continue
 
-    category = task_info.get('category') or 'error'
-    language = task_info.get('language') or 'error'
-    root_name = task_info["name"]
-    sanitized_category = sanitize_filename(category)
-    sanitized_name = sanitize_filename(root_name)
-    sanitized_language = sanitize_filename(language)
-    goal = task_info["goal"]
-    stable_unique_id = hashlib.sha256(goal.encode('utf-8')).hexdigest()[:16]
-    run_id = f"{sanitized_category}_{sanitized_name}_{sanitized_language}_{stable_unique_id}"
-
-    ensure_task_logger(run_id)
-    with logger.contextualize(run_id=run_id):
+        category = task_info.get('category', 'error')
+        language = task_info.get('language', 'error')
+        root_name = task_info.get("name", "untitled")
+        goal = task_info.get("goal", "")
+        sanitized_category = sanitize_filename(category)
+        sanitized_name = sanitize_filename(root_name)
+        sanitized_language = sanitize_filename(language)
+        stable_unique_id = hashlib.sha256(goal.encode('utf-8')).hexdigest()[:16]
+        run_id = f"{sanitized_category}_{sanitized_name}_{sanitized_language}_{stable_unique_id}"
         task_params = {
             "id": "1",
             "parent_id": "",
@@ -90,23 +88,28 @@ async def task_init(task_info):
         }
         task_args = {k: v for k, v in task_params.items() if v is not None}
         root_task = Task(**task_args)
-        
-        logger.info(f"创建根任务:\n{root_task.model_dump_json(indent=2, exclude_none=True)}")
-        
-        try:
-            await flow_write(current_task=root_task)
-        except Exception as e:
-            logger.error(f"任务执行失败: {str(e)}")
-            logger.exception(f"任务异常详情:")
-            return e
+        flow_runs.append(flow_write(current_task=root_task))
 
-@flow
-async def flow_write_all(tasks_data: list):
-    return task_init.map(tasks_data)
+    logger.info(f"即将并行启动 {len(flow_runs)} 个流程...")
+    if flow_runs:
+        async def run_concurrently():
+            return await asyncio.gather(*flow_runs, return_exceptions=True)
+        results = asyncio.run(run_concurrently())
+        successful_runs = 0
+        failed_runs = 0
+        for res in results:
+            if isinstance(res, Exception):
+                failed_runs += 1
+                logger.error(f"一个子流程执行失败: {res}")
+            else:
+                successful_runs += 1
+        logger.info(f"所有并行的子流程已执行完毕。成功: {successful_runs}, 失败: {failed_runs}。")
+    else:
+        logger.info("没有需要执行的流程。")
+
 
 def main():
     setup_global_logger()
-
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "json_file",
@@ -120,12 +123,11 @@ def main():
         sys.exit(1)
     except json.JSONDecodeError as e:
         sys.exit(1)
-
     tasks_data = data.get("tasks")
     if not tasks_data:
         return
-        
-    asyncio.run(flow_write_all(tasks_data))
+    flow_write_all(tasks_data)
+
 
 if __name__ == "__main__":
     main()

@@ -3,6 +3,7 @@ import re
 import collections
 import json
 import hashlib
+import os
 import threading
 from loguru import logger
 from typing import List, Dict, Any, Optional, Type, Callable
@@ -19,6 +20,7 @@ LLM_TEMPERATURES = {
 
 LLM_PARAMS_reasoning = {
     'model': 'openrouter/deepseek/deepseek-r1-0528:free',
+    'api_key': os.getenv("OPENROUTER_API_KEY"),
     'temperature': 0.1,
     'caching': True,
     'max_tokens': 10000,
@@ -31,7 +33,11 @@ LLM_PARAMS_reasoning = {
     'safe_mode': False,
     'safe_prompt': False,
     'fallbacks': [
-        'openai/deepseek-ai/DeepSeek-R1-0528',
+        {
+            "model": 'openai/deepseek-ai/DeepSeek-R1-0528',
+            "api_base": os.getenv("OPENAI_BASE_URL"),
+            "api_key": os.getenv("OPENAI_API_KEY")
+        }
         # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b',
         # 'openrouter/qwen/qwen3-32b',
         # 'openrouter/qwen/qwen3-30b-a3b',
@@ -41,6 +47,7 @@ LLM_PARAMS_reasoning = {
 
 LLM_PARAMS_fast= {
     "model": 'openrouter/deepseek/deepseek-chat-v3-0324:free',
+    'api_key': os.getenv("OPENROUTER_API_KEY"),
     'temperature': 0.1,
     'caching': True,
     'max_tokens': 5000,
@@ -53,8 +60,11 @@ LLM_PARAMS_fast= {
     'safe_mode': False,
     'safe_prompt': False,
     "fallbacks": [
-        'openai/deepseek-ai/DeepSeek-V3',
-        # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b', 
+        {
+            "model": 'openai/deepseek-ai/DeepSeek-V3',
+            "api_base": os.getenv("OPENAI_BASE_URL"),
+            "api_key": os.getenv("OPENAI_API_KEY")
+        }
     ]
 }
 
@@ -77,7 +87,7 @@ def custom_get_cache_key(**kwargs):
 _litellm_setup_lock = threading.Lock()
 _litellm_initialized = False
 
-def _setup_litellm():
+def setup_litellm():
     """
     延迟初始化 litellm 库。
     此函数是线程安全的, 确保 litellm 的配置只执行一次。
@@ -196,25 +206,12 @@ PROMPT_SELF_CORRECTION = """
 
 
 async def llm_acompletion(llm_params: Dict[str, Any], response_model: Optional[Type[BaseModel]] = None, validator: Optional[Callable[[Any], None]] = None):
-    _setup_litellm()
+    setup_litellm()
     import litellm
 
     params_to_log = llm_params.copy()
     params_to_log.pop('messages', None)
     logger.info(f"LLM 参数:\n{json.dumps(params_to_log, indent=2, ensure_ascii=False, default=str)}")
-
-    system_prompt = ""
-    user_prompt = ""
-    messages = llm_params.get('messages', [])
-    for message in messages:
-        if message.get("role") == "system":
-            system_prompt = message.get("content", "")
-        elif message.get("role") == "user":
-            user_prompt = message.get("content", "")
-    if system_prompt:
-        logger.info(f"系统提示词:\n{system_prompt}")
-    if user_prompt:
-        logger.info(f"用户提示词:\n{user_prompt}")
 
     llm_params_for_api = llm_params.copy()
     if response_model:
@@ -225,6 +222,19 @@ async def llm_acompletion(llm_params: Dict[str, Any], response_model: Optional[T
 
     max_retries = 5
     for attempt in range(max_retries):
+        system_prompt = ""
+        user_prompt = ""
+        messages = llm_params_for_api.get('messages', [])
+        for message in messages:
+            if message.get("role") == "system":
+                system_prompt = message.get("content", "")
+            elif message.get("role") == "user":
+                user_prompt = message.get("content", "")
+        if system_prompt:
+            logger.info(f"系统提示词:\n{system_prompt}")
+        if user_prompt:
+            logger.info(f"用户提示词:\n{user_prompt}")
+
         raw_output_for_correction = None
         try:
             response = await litellm.acompletion(**llm_params_for_api)

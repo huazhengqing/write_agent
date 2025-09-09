@@ -73,7 +73,7 @@ The writing task you need to evaluate:
 # 输出格式要求
 1. 首先, 在 `<think></think>` 中思考目标更新。然后, 根据原子任务判定规则, 深入全面地评估是否需要分解分析、搜索和写作子任务。这决定了该任务是原子任务还是复杂任务。
 
-2. 然后, 在 `<result></result>` 中输出结果。在 `<goal_updating></goal_updating>` 中, 直接输出更新后的目标；如果不需要更新, 则输出原始目标。在 `<atomic_task_determination></atomic_task_determination>` 中, 输出任务是原子任务还是复杂任务。
+2. 然后, 在 `<result></result>` 中输出结果。在 `<goal_updating></goal_updating>` 中, 直接输出更新后的目标；如果不需要更新, 则输出原始目标。在 `<atom_task_determination></atom_task_determination>` 中, 输出任务是原子任务还是复杂任务。
 
 具体格式如下: 
 <think>
@@ -83,9 +83,9 @@ The writing task you need to evaluate:
 <goal_updating>
 [更新后的目标]
 </goal_updating>
-<atomic_task_determination>
-atomic/complex
-</atomic_task_determination>
+<atom_task_determination>
+atom/complex
+</atom_task_determination>
 </result>
 
 ===
@@ -93,7 +93,7 @@ atomic/complex
 ```
 {to_run_task}
 ```
-Complete the goal-updating and atomic writing task determination job as requirements in # Summary and Introduction, # Goal Updating Tips, # Atomic Task Determination Rules and # Report Requirements. Output follow the # Output Format Requirement, think in <think></think> and output the result in <result></result>
+Complete the goal-updating and atom writing task determination job as requirements in # Summary and Introduction, # Goal Updating Tips, # atom Task Determination Rules and # Report Requirements. Output follow the # Output Format Requirement, think in <think></think> and output the result in <result></result>
 """.strip()
         super().__init__(system_message, content_template)
         
@@ -159,16 +159,16 @@ The writing task you need to evaluate:
 # 输出格式
 1. 首先, 在 `<think></think>` 标签中, 遵循原子任务判定规则, 依次评估是否需要拆分分析、搜索和写作子任务。这将决定该任务是原子任务还是复杂任务。
 
-2. 然后, 在 `<result><atomic_task_determination></atomic_task_determination</result>` 标签中输出结果。
+2. 然后, 在 `<result><atom_task_determination></atom_task_determination</result>` 标签中输出结果。
 
 具体格式如下: 
 <think>
 根据原子任务判定规则进行思考。
 </think>
 <result>
-<atomic_task_determination>
+<atom_task_determination>
 原子/复杂
-</atomic_task_determination>
+</atom_task_determination>
 </result>
 
 ===
@@ -176,7 +176,7 @@ The writing task you need to evaluate:
 ```
 {to_run_task}
 ```
-Complete the atomic writing task determination job as requirements in # Summary and Introduction, # Atomic Task Determination Rules and # Report Requirements. Output follow the # Output Format Requirement, think in <think></think> and output the result in <result></result>
+Complete the atom writing task determination job as requirements in # Summary and Introduction, # atom Task Determination Rules and # Report Requirements. Output follow the # Output Format Requirement, think in <think></think> and output the result in <result></result>
 """.strip()
 
 
