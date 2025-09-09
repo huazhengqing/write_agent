@@ -2,7 +2,7 @@ from loguru import logger
 import collections
 import litellm
 from utils.models import Task
-from utils.llm import get_llm_messages, get_llm_params, llm_acompletion
+from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
 from utils.rag import get_rag
 from utils.prompt_loader import load_prompts
 
@@ -20,7 +20,7 @@ async def summary(task: Task) -> Task:
         "text": task.results.get("write_reflection")
     }
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context_dict_user)
-    llm_params = get_llm_params(messages, temperature=0.2)
+    llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["summarization"])
     message = await llm_acompletion(llm_params)
     content = message.content
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")

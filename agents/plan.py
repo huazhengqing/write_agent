@@ -6,7 +6,7 @@ from loguru import logger
 from typing import Optional, Literal, List
 from pydantic import BaseModel, Field
 from utils.models import Task
-from utils.llm import get_llm_messages, get_llm_params, llm_acompletion
+from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
 from utils.rag import get_rag
 from utils.prompt_loader import load_prompts
 
@@ -34,14 +34,17 @@ async def plan(task: Task) -> Task:
             task_level_func = test_get_task_level
         else:
             task_level_func = get_task_level
-        context = await get_rag().get_context_base(task)
+        context = await get_rag().get_context(task)
         messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, task_level_func(task.hierarchical_position), context)
     else:
         SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, f"plan_{task.task_type}_cn", "SYSTEM_PROMPT", "USER_PROMPT")
-        context = await get_rag().get_context_base(task)
+        if task.task_type == "search":
+            context = await get_rag().get_context_base(task)
+        else:
+            context = await get_rag().get_context(task)
         messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
 
-    llm_params = get_llm_params(messages, temperature=0.1)
+    llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["reasoning"])
     message = await llm_acompletion(llm_params, response_model=PlanOutput)
     data = message.validated_data
     content = message.content

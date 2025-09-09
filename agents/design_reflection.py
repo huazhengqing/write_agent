@@ -3,7 +3,7 @@ from loguru import logger
 import litellm
 import collections
 from utils.models import Task
-from utils.llm import get_llm_messages, get_llm_params, llm_acompletion
+from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
 from utils.rag import get_rag
 from utils.prompt_loader import load_prompts
 
@@ -17,9 +17,9 @@ async def design_reflection(task: Task) -> Task:
         updated_task.results["design_reflection_reasoning"] = ""
     else:
         SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "design_reflection_cn", "SYSTEM_PROMPT", "USER_PROMPT")
-        context = await get_rag().get_context_base(task)
+        context = await get_rag().get_context(task)
         messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
-        llm_params = get_llm_params(messages, temperature=0.75)
+        llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["creative"])
         message = await llm_acompletion(llm_params)
         content = message.content
         reasoning = message.get("reasoning_content") or message.get("reasoning", "")

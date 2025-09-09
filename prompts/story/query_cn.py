@@ -98,6 +98,9 @@ USER_PROMPT_design = """
 # 当前任务信息 (JSON)
 {task}
 
+# 任务树:
+{task_list}
+
 # 同层级的设计成果:
 <dependent_design>
 {dependent_design}
@@ -161,6 +164,9 @@ USER_PROMPT_write = """
 # 当前任务: 
 {task}
 
+# 任务树:
+{task_list}
+
 # 同层级的设计成果:
 <dependent_design>
 {dependent_design}
@@ -216,6 +222,9 @@ SYSTEM_PROMPT_search = """
 USER_PROMPT_search = """
 # 当前任务: 
 {task}
+
+# 任务树:
+{task_list}
 
 # 同层级的设计成果:
 <dependent_design>

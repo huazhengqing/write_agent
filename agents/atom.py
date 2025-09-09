@@ -6,7 +6,7 @@ from loguru import logger
 from typing import Optional, Literal
 from pydantic import BaseModel, Field
 from utils.models import Task
-from utils.llm import get_llm_messages, get_llm_params, llm_acompletion
+from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
 from utils.rag import get_rag
 from utils.prompt_loader import load_prompts
 
@@ -36,7 +36,7 @@ async def atom(task: Task) -> Task:
     SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, module_name, "SYSTEM_PROMPT", "USER_PROMPT")
     context = await get_rag().get_context_base(task)
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
-    llm_params = get_llm_params(messages, temperature=0.1)
+    llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["reasoning"])
     message = await llm_acompletion(llm_params, response_model=AtomOutput)
     data = message.validated_data
     content = message.content

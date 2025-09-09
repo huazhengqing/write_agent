@@ -25,7 +25,7 @@ from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
 from llama_index.core import Document, StorageContext, VectorStoreIndex, KnowledgeGraphIndex
 from utils.db import get_db
 from utils.models import Task
-from utils.llm import LLM_PARAMS_fast, LLM_PARAMS_reasoning, get_llm_messages, get_llm_params, llm_acompletion
+from utils.llm import LLM_PARAMS_fast, LLM_PARAMS_reasoning, get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
 from utils.prompt_loader import load_prompts
 
 
@@ -251,8 +251,6 @@ class RAG:
 ###############################################################################
 
     async def get_context_base(self, task: Task) -> Dict[str, Any]:
-        logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
-    
         ret = {
             "task": task.model_dump_json(
                 indent=2,
@@ -262,41 +260,60 @@ class RAG:
             "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
         }
         if not task.parent_id:
-            logger.info(f"完成\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
+            logger.info(f"根任务, 无需获取依赖上下文。")
             return ret
     
         db = get_db(run_id=task.run_id, category=task.category)
-        dependent_design_task = self.get_dependent_design(db, task)
-        dependent_search_task = self.get_dependent_search(db, task)
-        text_latest_task = self.get_text_latest(task)
-        dependent_design, dependent_search, text_latest = await asyncio.gather(
-            dependent_design_task, dependent_search_task, text_latest_task
-        )
-        ret["dependent_design"] = dependent_design
-        ret["dependent_search"] = dependent_search
-        ret["text_latest"] = text_latest
+        dependent_design = await self.get_dependent_design(db, task)
+        dependent_search = await self.get_dependent_search(db, task)
+        text_latest = await self.get_text_latest(task)
         
-        context_tasks = {}
-        current_level = len(task.id.split("."))
-        if current_level >= 2:
-            context_tasks["task_list"] = self.get_context_task_list(db, task)
+        task_list = ""
+        # 仅当任务层级大于等于2时才获取任务列表
+        if len(task.id.split(".")) >= 2:
+            task_list = await self.get_context_task_list(db, task)
+
+        ret.update({
+            "dependent_design": dependent_design,
+            "dependent_search": dependent_search,
+            "text_latest": text_latest,
+            "task_list": task_list,
+        })
     
-        if current_level >= 3:
-            context_tasks["upper_design"] = self.search_context(task, 'upper_design', dependent_design, dependent_search, text_latest)
-            context_tasks["upper_search"] = self.search_context(task, 'upper_search', dependent_design, dependent_search, text_latest)
-    
-        if len(text_latest) > 500:
-            context_tasks["text_summary"] = self.search_context(task, 'text_summary', dependent_design, dependent_search, text_latest)
-    
-        if context_tasks:
-            results = await asyncio.gather(*context_tasks.values())
-            for i, key in enumerate(context_tasks.keys()):
-                result = results[i]
-                ret[key] = result
-    
-        logger.info(f"完成\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
+        logger.info(f"完成上下文获取\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
         return ret
     
+    async def get_context(self, task: Task) -> Dict[str, Any]:
+        logger.info(f"开始获取上下文: {task.run_id} {task.id} {task.task_type} {task.goal}")
+
+        ret = await self.get_context_base(task)
+        if not task.parent_id:
+            logger.info(f"根任务, 无需获取依赖上下文。")
+            return ret
+        
+        dependent_design = ret.get("dependent_design", "")
+        dependent_search = ret.get("dependent_search", "")
+        text_latest = ret.get("text_latest", "")
+        task_list = ret.get("task_list", "")
+
+        rag_context_coros = {}
+        current_level = len(task.id.split("."))
+        if current_level >= 3:
+            rag_context_coros["upper_design"] = self.search_context(task, 'upper_design', dependent_design, dependent_search, text_latest, task_list)
+            rag_context_coros["upper_search"] = self.search_context(task, 'upper_search', dependent_design, dependent_search, text_latest, task_list)
+    
+        if len(text_latest) > 500:
+            rag_context_coros["text_summary"] = self.search_context(task, 'text_summary', dependent_design, dependent_search, text_latest, task_list)
+        
+        if not rag_context_coros:
+            return ret
+
+        results = await asyncio.gather(*rag_context_coros.values())
+        ret.update({key: result for key, result in zip(rag_context_coros.keys(), results)})
+
+        logger.info(f"完成上下文获取\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
+        return ret
+
     async def get_dependent_design(self, db: Any, task: Task) -> str:
         cache_key = f"dependent_design:{task.run_id}:{task.parent_id}"
         cached_result = self.caches['dependent_design'].get(cache_key)
@@ -384,7 +401,6 @@ class RAG:
         logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
 
         ret = await self.get_context_base(task)
-
         if task.sub_tasks:
             db = get_db(run_id=task.run_id, category=task.category)
             ret["subtask_design"] = await asyncio.to_thread(db.get_subtask_design, task.id)
@@ -396,7 +412,6 @@ class RAG:
         logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal}")
 
         ret = await self.get_context_base(task)
-
         if task.sub_tasks:
             db = get_db(run_id=task.run_id, category=task.category)
             ret["subtask_search"] = await asyncio.to_thread(db.get_subtask_search, task.id)
@@ -414,7 +429,6 @@ class RAG:
                 include={'id', 'hierarchical_position', 'goal', 'length'}
             ),
         }
-
         if task.sub_tasks:
             db = get_db(run_id=task.run_id, category=task.category)
             ret["subtask_summary"] = await asyncio.to_thread(db.get_subtask_summary, task.id)
@@ -422,7 +436,7 @@ class RAG:
         logger.info(f"完成\n{json.dumps(ret, indent=2, ensure_ascii=False)}")
         return ret
 
-    async def get_query(self, task: Task, search_type: Literal['text_summary', 'upper_design', 'upper_search'], dependent_design: str, dependent_search: str, text_latest: str) -> Dict[str, Any]:
+    async def get_query(self, task: Task, search_type: Literal['text_summary', 'upper_design', 'upper_search'], dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> Dict[str, Any]:
         logger.info(f"开始 {task.run_id} {task.id} {task.task_type} {task.goal} {search_type} \n dependent_design: \n{dependent_design} \n dependent_search: \n{dependent_search} \n text_latest: \n{text_latest}")
         (
             SYSTEM_PROMPT_design, USER_PROMPT_design,
@@ -454,13 +468,14 @@ class RAG:
             ),
             "dependent_design": dependent_design,
             "dependent_search": dependent_search,
-            "text_latest": text_latest
+            "text_latest": text_latest,
+            "task_list": task_list
         }
         SYSTEM_PROMPT, USER_PROMPT = PROMPTS[search_type]
         if task.task_type == 'write' and search_type == 'upper_design':
             SYSTEM_PROMPT = SYSTEM_PROMPT_design_for_write
         messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context_dict_user)
-        llm_params = get_llm_params(messages, temperature=0.1)
+        llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["reasoning"])
         message = await llm_acompletion(llm_params, response_model=InquiryPlan)
         inquiry_plan_obj = message.validated_data
         inquiry_plan = inquiry_plan_obj.model_dump()
@@ -468,7 +483,7 @@ class RAG:
         logger.info(f"完成 \n{json.dumps(inquiry_plan, indent=2, ensure_ascii=False)}")
         return inquiry_plan
 
-    async def search_context(self, task: Task, search_type: Literal['text_summary', 'upper_design', 'upper_search'], dependent_design: str, dependent_search: str, text_latest: str) -> str:
+    async def search_context(self, task: Task, search_type: Literal['text_summary', 'upper_design', 'upper_search'], dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
         """
         根据指定的搜索类型, 为当前任务检索并合成上下文信息。
 
@@ -488,7 +503,7 @@ class RAG:
         logger.info(f"开始 {task.run_id} {task.id} {search_type}")
 
         # 1. 使用 LLM 生成一个结构化的“探询计划”, 指导后续的检索方向和内容
-        inquiry_plan = await self.get_query(task, search_type, dependent_design, dependent_search, text_latest)
+        inquiry_plan = await self.get_query(task, search_type, dependent_design, dependent_search, text_latest, task_list)
         if not inquiry_plan or not inquiry_plan.get("questions"):
             logger.warning("生成的探询计划为空或无效, 跳过搜索。")
             return ""

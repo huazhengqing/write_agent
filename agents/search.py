@@ -18,7 +18,7 @@ from langdetect import detect, LangDetectException
 from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeoutError
 from utils.models import Task
 from utils.prompt_loader import load_prompts
-from utils.llm import get_llm_messages, get_llm_params, llm_acompletion
+from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
 from utils.rag import get_rag
 
 
@@ -229,22 +229,6 @@ PROMPT_STAGNATION_DETECTION = """
 停滞了吗? (只回答 true 或 false)
 """
 
-
-PROMPT_SELF_CORRECTION = """
-# 任务: 修正JSON输出
-上次的输出因格式错误导致解析失败。
-
-# 错误信息
-{error}
-
-# 格式错误的原始输出
-{raw_output}
-
-# 要求 
-严格根据 Pydantic 模型的要求, 修正并仅返回完整的、有效的 JSON 对象。禁止任何额外解释。
-"""
-
-
 ###############################################################################
 
 
@@ -270,7 +254,8 @@ async def planner_node(state: SearchAgentState) -> dict:
     turn = state['turn_count'] + 1
     task = state['task']
 
-    # 1. 准备 Prompt 所需的核心上下文
+    logger.info(f"▶️ 1. 进入规划节点 (第 {turn} 轮)...")
+    
     context_dict = {
         'current_focus': state['current_focus'], 
         'rolling_summary': state.get('rolling_summary') or "无, 这是第一次研究, 请开始探索。",
@@ -278,15 +263,10 @@ async def planner_node(state: SearchAgentState) -> dict:
         'reasoning_history': "\n\n".join(state['reasoning_history'][-2:]) or "无",
     }
 
-    # 2. 确定当前的研究焦点
-    logger.info(f"▶️ 1. 进入规划节点 (第 {turn} 轮)...")
-  
     SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "search_cn", "SYSTEM_PROMPT", "USER_PROMPT")
-
     context = await get_rag().get_context_base(task)
-
+    context.update(context_dict)
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
-    
     plan = await get_structured_output_with_retry(messages, Plan)
     
     # 如果解析失败, 创建一个空的 Plan 对象以避免下游节点出错
@@ -505,12 +485,10 @@ async def synthesize_node(state: SearchAgentState) -> dict:
     }
     
     SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "search_cn", "SYSTEM_PROMPT_SYNTHESIZE", "USER_PROMPT_SYNTHESIZE")
-
     context = await get_rag().get_context_base(task)
     context.update(context_dict)
-    
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
-    llm_params = get_llm_params(messages, temperature=0.4)
+    llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["synthesis"])
     message = await llm_acompletion(llm_params)
     final_report = message.content
 
@@ -562,7 +540,7 @@ async def should_continue_search(state: SearchAgentState) -> str:
             prev_summary=prev_summary,
             current_summary=current_summary
         )
-        llm_params = get_llm_params([{"role": "user", "content": prompt}], temperature=0)
+        llm_params = get_llm_params([{"role": "user", "content": prompt}], temperature=LLM_TEMPERATURES["classification"])
         
         def stagnation_validator(content: str):
             """验证LLM的响应是否为 'true' 或 'false'。"""

@@ -65,21 +65,9 @@ USER_PROMPT = """
 {text_latest}
 </text_latest>
 
-### 历史情节概要:
-<text_summary>
-{text_summary}
-</text_summary>
-
 ## 整体规划
 
 ### 任务树:
 {task_list}
 
-### 上层设计成果:
-<upper_design>
-{upper_design}
-</upper_design>
-
-### 上层信息收集成果:
-{upper_search}
 """
