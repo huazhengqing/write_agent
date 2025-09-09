@@ -11,8 +11,7 @@ from diskcache import Cache
 from datetime import datetime
 from qdrant_client import QdrantClient
 from pydantic import BaseModel, Field
-from typing import Dict, Any, List, Literal, Optional
-from litellm.caching.cache_key_generator import get_cache_key
+from typing import Dict, Any, List, Literal, Optional, Callable
 from llama_index.llms.litellm import LiteLLM
 from llama_index.core.agent import ReActAgent
 from llama_index.core.tools import FunctionTool
@@ -82,7 +81,7 @@ class RAG:
             'text_summary': Cache(os.path.join(cache_base_dir, "text_summary"), size_limit=int(128 * (1024**2))),
             'task_list': Cache(os.path.join(cache_base_dir, "task_list"), size_limit=int(32 * (1024**2))),
         }
- 
+
     def _get_storage_context(self, run_id: str) -> StorageContext:
         vector_store = QdrantVectorStore(
             client=self.qdrant_client,
@@ -108,9 +107,9 @@ class RAG:
                 await asyncio.to_thread(db.add_task, task)
                 # 任务列表已变更, 清除缓存
                 self.caches['task_list'].evict(tag=task.run_id)
-        # 处理任务规划阶段, 批量添加子任务
+        # 处理任务规划阶段
         elif task_type == "task_plan":
-            await asyncio.to_thread(db.add_sub_tasks, task)
+            await asyncio.to_thread(db.add_result, task)
         # 处理对任务规划的反思
         elif task_type == "task_plan_reflection":
             # 规划反思可能影响任务结构和上层上下文, 清除相关缓存
@@ -462,32 +461,8 @@ class RAG:
             SYSTEM_PROMPT = SYSTEM_PROMPT_design_for_write
         messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context_dict_user)
         llm_params = get_llm_params(messages, temperature=0.1)
-        llm_params['response_format'] = {
-            "type": "json_object",
-            "schema": InquiryPlan.model_json_schema()
-        }
-
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                message = await llm_acompletion(llm_params)
-                content = message.content
-                inquiry_plan_obj = InquiryPlan.model_validate_json(content)
-                break  # 验证成功, 跳出循环
-            except Exception as e:
-                logger.warning(f"探询计划生成或验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    try:
-                        # 尝试删除错误的缓存条目
-                        cache_key = get_cache_key(**llm_params)
-                        litellm.cache.delete(cache_key)
-                        logger.info(f"已删除错误的探询计划缓存: {cache_key}。正在重试...")
-                    except Exception as cache_e:
-                        logger.error(f"删除缓存条目失败: {cache_e}")
-                else:
-                    logger.error("探询计划生成在多次重试后仍然失败。")
-                    raise
-
+        message = await llm_acompletion(llm_params, response_model=InquiryPlan)
+        inquiry_plan_obj = message.validated_data
         inquiry_plan = inquiry_plan_obj.model_dump()
 
         logger.info(f"完成 \n{json.dumps(inquiry_plan, indent=2, ensure_ascii=False)}")
@@ -514,7 +489,7 @@ class RAG:
 
         # 1. 使用 LLM 生成一个结构化的“探询计划”, 指导后续的检索方向和内容
         inquiry_plan = await self.get_query(task, search_type, dependent_design, dependent_search, text_latest)
-        if not inquiry_plan or not inquiry_plan.get("information_needs"):
+        if not inquiry_plan or not inquiry_plan.get("questions"):
             logger.warning("生成的探询计划为空或无效, 跳过搜索。")
             return ""
 
@@ -532,11 +507,16 @@ class RAG:
             logger.info(f"命中缓存, 直接返回结果: {cache_key}")
             return cached_result
 
-        # 3. 获取搜索配置并初始化存储上下文
-        config = self.get_search_config(task, inquiry_plan, search_type)
+        # 3. 动态加载特定于类别的配置和格式化函数
+        get_search_config, format_response_with_sorting = load_prompts(
+            task.category, "rag_cn", "get_search_config", "format_response_with_sorting"
+        )
+
+        # 4. 获取搜索配置并初始化存储上下文
+        config = get_search_config(task, inquiry_plan, search_type)
         storage_context = self._get_storage_context(task.run_id)
 
-        # 4. 设置向量查询引擎, 并应用元数据过滤器
+        # 5. 设置向量查询引擎, 并应用元数据过滤器
         vector_filters = MetadataFilters(
             filters=[MetadataFilter(key=f['key'], value=f['value']) for f in config['vector_filters_list']]
         )
@@ -548,7 +528,7 @@ class RAG:
             filters=vector_filters
         )
 
-        # 5. 为知识图谱查询引擎定义一个定制化的 Cypher 查询生成 Prompt
+        # 6. 为知识图谱查询引擎定义一个定制化的 Cypher 查询生成 Prompt
         kg_query_gen_prompt_str = f"""
 # 角色
 你是一位精通 Cypher 的图数据库查询专家。
@@ -565,16 +545,14 @@ class RAG:
 
 # 核心规则 (必须严格遵守)
 1.  强制过滤 (最重要!): 生成的查询 必须 包含一个 `WHERE` 子句, 以确保数据隔离。过滤条件为: `{config["kg_filters_str"]}`。
-    - 正确示例: `MATCH (n) WHERE {config["kg_filters_str"]} AND n.property = 'value' RETURN n`
-    - 错误示例 (缺少强制过滤): `MATCH (n) WHERE n.property = 'value' RETURN n`
-2.  Schema 遵从: 只能使用图谱 Schema 中定义的节点标签和关系类型。严禁使用任何 Schema 之外的元素。
-3.  单行输出: 最终的 Cypher 查询必须是单行文本, 不含换行符。
-4.  效率优先: 在满足查询需求的前提下, 生成的查询应尽可能高效。
+2.  Schema遵从: 仅使用Schema中定义的节点标签和关系类型。
+3.  单行输出: Cypher查询必须是单行文本。
+4.  效率优先: 生成的查询应尽可能高效。
 
 # 行动
 现在, 请为上述用户问题生成 Cypher 查询语句。
 """
-        # 6. 设置知识图谱查询引擎
+        # 7. 设置知识图谱查询引擎
         kg_query_gen_prompt = PromptTemplate(kg_query_gen_prompt_str)
         kg_index = KnowledgeGraphIndex.from_documents(
             [], 
@@ -588,7 +566,7 @@ class RAG:
             graph_query_synthesis_prompt=kg_query_gen_prompt
         )
 
-        # 7. 判断是使用简单检索, 还是更复杂的 ReAct Agent 检索
+        # 8. 判断是使用简单检索, 还是更复杂的 ReAct Agent 检索
         novel_length = await self.get_text_length(task)
         retrieval_mode = inquiry_plan.get("retrieval_mode", "simple")
         # 当小说长度超过阈值、探询计划要求复杂模式、且非上层资料搜索时, 启用 Agent
@@ -599,7 +577,8 @@ class RAG:
             result = await self._execute_react_agent(
                 vector_query_engine=vector_query_engine,
                 kg_query_engine=kg_query_engine,
-                config=config
+                config=config,
+                formatter=format_response_with_sorting
             )
         else:
             # 简单模式: 并行查询, 然后由 LLM 一次性合成
@@ -607,15 +586,16 @@ class RAG:
                 inquiry_plan=inquiry_plan,
                 vector_query_engine=vector_query_engine,
                 kg_query_engine=kg_query_engine,
-                config=config
+                config=config,
+                formatter=format_response_with_sorting
             )
 
         cache.set(cache_key, result, tag=task.run_id)
         logger.info(f"结果已存入缓存: {cache_key}")
         logger.info(f"完成 \n{result}")
         return result
-
-    async def _execute_react_agent(self, vector_query_engine: Any, kg_query_engine: Any, config: Dict[str, Any]) -> str:
+    
+    async def _execute_react_agent(self, vector_query_engine: Any, kg_query_engine: Any, config: Dict[str, Any], formatter: Callable) -> str:
         """
         使用 ReAct Agent 执行复杂的、多步骤的检索任务。
 
@@ -625,6 +605,7 @@ class RAG:
         Args:
             vector_query_engine: 向量查询引擎实例。
             kg_query_engine: 知识图谱查询引擎实例。
+            formatter: 用于格式化和排序响应的函数。
         """
         logger.info(f"开始 复杂模式 ReActAgent \n{json.dumps(config, indent=2, ensure_ascii=False)}")
 
@@ -636,7 +617,8 @@ class RAG:
             vector_query_engine,
             name="time_aware_vector_search",
             description=config['vector_tool_desc'],
-            sort_by=config['vector_sort_by']
+            sort_by=config['vector_sort_by'],
+            formatter=formatter
         )
 
         # 2. 创建知识图谱搜索工具
@@ -645,7 +627,8 @@ class RAG:
             kg_query_engine,
             name="time_aware_knowledge_graph_search",
             description=config["kg_tool_desc"],
-            sort_by=config['kg_sort_by']
+            sort_by=config['kg_sort_by'],
+            formatter=formatter
         )
 
         # 3. 初始化 ReAct Agent
@@ -667,7 +650,7 @@ class RAG:
         logger.info(f"完成\n{ret}")
         return ret
 
-    async def _execute_simple(self, inquiry_plan: Dict[str, Any], vector_query_engine: Any, kg_query_engine: Any, config: Dict[str, Any]) -> str:
+    async def _execute_simple(self, inquiry_plan: Dict[str, Any], vector_query_engine: Any, kg_query_engine: Any, config: Dict[str, Any], formatter: Callable) -> str:
         """
         执行简单的并行检索与合成策略。
 
@@ -683,11 +666,12 @@ class RAG:
             vector_query_engine: 向量查询引擎实例。
             kg_query_engine: 知识图谱查询引擎实例。
             config (Dict[str, Any]): 包含查询文本、排序方式等信息的配置字典。
+            formatter: 用于格式化和排序响应的函数。
         """
         logger.info(f"开始 简单模式 \n{json.dumps(config, indent=2, ensure_ascii=False)}\n{json.dumps(inquiry_plan, indent=2, ensure_ascii=False)}")
         
         # 1. 从探询计划中提取所有问题, 并合并成一个单一的查询字符串
-        all_questions = [q for need in inquiry_plan.get("information_needs", []) for q in need.get("questions", [])]
+        all_questions = list(inquiry_plan.get("questions", {}).keys())
         if not all_questions:
             logger.warning("探询计划中没有问题, 无法执行查询。")
             return ""
@@ -699,8 +683,8 @@ class RAG:
         vector_response, kg_response = await asyncio.gather(vector_response_task, kg_response_task)
 
         # 3. 格式化并根据配置对检索结果进行排序
-        formatted_vector_str = self._format_response_with_sorting(vector_response, config['vector_sort_by'])
-        formatted_kg_str = self._format_response_with_sorting(kg_response, config['kg_sort_by'])
+        formatted_vector_str = formatter(vector_response, config['vector_sort_by'])
+        formatted_kg_str = formatter(kg_response, config['kg_sort_by'])
 
         # 4. 构建用于最终信息合成的 Prompt
         synthesis_user_prompt = f"""
@@ -720,14 +704,10 @@ class RAG:
 {formatted_kg_str}
 ---
 
-# 输出原则
-- 分析: 严格遵循“探询计划与规则”中的“最终目标”和“执行规则”。
-- 整合: 综合两个信息源, 注意各自侧重(语义 vs 事实)。
-- 应用: 严格应用“执行规则”处理信息(如解决冲突、融合信息)。
-- 内容:
-    - 必须完全基于提供的信息源。
-    - 必须是整合提炼后的答案, 禁止罗列。
-    - 禁止任何关于你自身或任务过程的描述 (例如, “根据您的要求...”)。
+# 输出要求
+- 严格遵循“探询计划与规则”中的所有指令。
+- 必须完全基于提供的信息源进行整合提炼, 禁止罗列。
+- 禁止任何关于你自身或任务过程的描述 (例如, “根据您的要求...”)。
 """
 
         # 5. 准备调用 LLM 进行信息合成
@@ -736,171 +716,19 @@ class RAG:
             {"role": "user", "content": synthesis_user_prompt}
         ]
         llm_params = get_llm_params(synthesis_messages, temperature=self.agent_llm.temperature)
-        
-        # 6. 调用 LLM, 并加入重试和缓存清理逻辑
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                final_message = await llm_acompletion(llm_params)
-                content = final_message.content
-                # 验证返回的内容是否有效
-                if not content or len(content.strip()) < 20:
-                    raise ValueError("合成的回答为空或过短。")
-                break # 验证成功, 跳出重试循环
-            except Exception as e:
-                logger.warning(f"简单模式合成失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    try:
-                        # 如果 LLM 调用失败, 尝试删除可能存在的错误缓存, 以便重试时能重新生成
-                        cache_key = get_cache_key(**llm_params)
-                        litellm.cache.delete(cache_key)
-                        logger.info(f"已删除错误的合成缓存: {cache_key}。正在重试...")
-                    except Exception as cache_e:
-                        logger.error(f"删除缓存失败: {cache_e}")
-                else:
-                    # 所有重试均失败后, 记录错误并抛出异常
-                    logger.error("简单模式合成在多次重试后仍然失败。")
-                    raise
-
+        final_message = await llm_acompletion(llm_params)
         logger.info(f"完成\n{final_message.content}")
         return final_message.content
 
-    def get_search_config(self, task: Task, inquiry_plan: Dict[str, Any], search_type: Literal['text_summary', 'upper_design', 'upper_search']) -> Dict[str, Any]:
-        logger.info(f"开始 {task.run_id} {task.id} {search_type} \n{json.dumps(inquiry_plan, indent=2, ensure_ascii=False)}")
-
-        current_level = len(task.id.split("."))
-        configs = {
-            'text_summary': {
-                'kg_filters_list': [
-                    "n.status = 'active'",
-                    f"n.run_id = '{task.run_id}'",
-                    "n.content_type = 'write'"
-                ],
-                'vector_filters_list': [{'key': 'content_type', 'value': 'summary'}],
-                'vector_tool_desc': "功能: 检索情节摘要、角色关系、事件发展。范围: 所有层级的历史摘要。",
-                'final_instruction': "任务: 整合情节摘要(向量)与正文细节(图谱), 提供写作上下文。重点: 角色关系、关键伏笔、情节呼应。",
-                'rules_text': """
-# 整合规则
-1.  冲突解决: 向量(摘要)与图谱(细节)冲突时, 以图谱为准。
-2.  排序依据:
-    - 向量: 相关性。
-    - 图谱: 章节顺序 (时间线)。
-3.  输出要求: 整合为连贯叙述, 禁止罗列。
-""",
-                'vector_sort_by': 'narrative',
-                'kg_sort_by': 'narrative',
-            },
-            'upper_design': {
-                'kg_filters_list': [
-                    "n.status = 'active'",
-                    f"n.run_id = '{task.run_id}'",
-                    "n.content_type = 'design'",
-                    f"n.hierarchy_level < {current_level}"
-                ],
-                'vector_filters_list': [{'key': 'content_type', 'value': 'design'}],
-                'vector_tool_desc': f"功能: 检索小说设定、摘要、概念。范围: 任务层级 < {current_level}。",
-                'final_instruction': "任务: 整合上层设计, 提供统一、无冲突的宏观设定和指导原则。",
-                'rules_text': """
-# 整合规则
-1.  时序优先: 结果按时间倒序。遇直接矛盾, 采纳最新版本。
-2.  矛盾 vs. 细化:
-    - 矛盾: 无法共存的描述 (A是孤儿 vs A父母健在)。
-    - 细化: 补充细节, 不推翻核心 (A会用剑 -> A擅长流风剑法)。细化应融合, 不是矛盾。
-3.  输出要求:
-    - 融合非冲突信息。
-    - 报告被忽略的冲突旧信息。
-    - 禁止罗列, 聚焦问题。
-""",
-                'vector_sort_by': 'time',
-                'kg_sort_by': 'time',
-            },
-            'upper_search': {
-                'kg_filters_list': [
-                    "n.status = 'active'",
-                    f"n.run_id = '{task.run_id}'",
-                    "n.content_type = 'search'",
-                    f"n.hierarchy_level < {current_level}"
-                ],
-                'vector_filters_list': [{'key': 'content_type', 'value': 'search'}],
-                'vector_tool_desc': f"功能: 从外部研究资料库检索事实、概念、历史事件。范围: 任务层级 < {current_level}。",
-                'final_instruction': "任务: 整合外部研究资料, 提供准确、有深度、经过批判性评估的背景支持。",
-                'rules_text': """
-# 整合规则
-1.  评估: 批判性评估所有信息。
-2.  冲突处理:
-    - 识别并报告矛盾。
-    - 列出冲突来源和时间戳。
-    - 无法解决时, 保留不确定性。
-3.  时效性: `created_at`是评估因素, 但非唯一标准。结果按相关性排序。
-4.  输出要求: 组织为连贯报告, 禁止罗列。
-""",
-                'vector_sort_by': 'relevance',
-                'kg_sort_by': 'relevance',
-            }
-        }
-
-        config = configs[search_type]
-        config["kg_filters_str"] = " AND ".join(config['kg_filters_list'])
-        config["kg_tool_desc"] = f"功能: 探索实体、关系、路径。查询必须满足过滤条件: {config['kg_filters_str']}。"
-        config["query_text"] = self._build_agent_query(inquiry_plan, config['final_instruction'], config['rules_text'])
-
-        logger.info(f"结束 \n{json.dumps(config, indent=2, ensure_ascii=False)}")
-        return config
-
-    def _build_agent_query(self, inquiry_plan: Dict[str, Any], final_instruction: str, rules_text: str) -> str:
-        """
-        构建一个结构化的、详细的查询文本, 用于指导 ReAct Agent 或最终的合成 LLM。
-
-        这个查询文本由三部分组成:
-        1.  核心探询目标: 来自探询计划的主查询。
-        2.  具体信息需求: 将探询计划中的问题列表化, 并标注优先级。
-        3.  任务指令与规则: 包含最终目标和具体的执行规则 (如优先级处理、冲突解决等)。
-        Args:
-            inquiry_plan (Dict[str, Any]): LLM 生成的探询计划。
-            final_instruction (str): 针对当前任务的最终目标描述。
-            rules_text (str): 针对当前任务的特定整合规则。
-        """
-        logger.info(f"开始 \n{inquiry_plan}\n{final_instruction}\n{rules_text}")
-
-        main_inquiry = inquiry_plan.get("main_inquiry", "请综合分析并回答以下问题。")
-
-        # 1. 构建“核心探询目标”和“具体信息需求”部分
-        query_text = f"# 核心探询目标\n{main_inquiry}\n\n# 具体信息需求\n"
-        has_priorities = False
-        for need in inquiry_plan.get("information_needs", []):
-            description = need.get('description', '未知需求')
-            priority = need.get('priority', 'medium')
-            if priority in ['high', 'low']: # 检查是否存在高/低优先级, 以便后续添加规则
-                has_priorities = True
-            questions = need.get('questions', [])
-            query_text += f"\n## {description} (优先级: {priority})\n"
-            for q in questions:
-                query_text += f"- {q}\n"
-
-        # 2. 构建“任务指令与规则”部分
-        instruction_block = f"\n# 任务指令与规则\n"
-        instruction_block += f"## 最终目标\n{final_instruction}\n"
-        instruction_block += f"\n## 执行规则\n"
-        if has_priorities:
-            instruction_block += "- 优先级: 你必须优先分析和回答标记为 `high` 优先级的信息需求。\n"
-
-        # 动态调整传入规则的 Markdown 标题层级, 使其能正确嵌入到当前结构中
-        adapted_rules_text = re.sub(r'^\s*#\s+', '### ', rules_text.lstrip(), count=1)
-        instruction_block += adapted_rules_text
-
-        query_text += instruction_block
-
-        logger.info(f"结束 \n{query_text}")
-        return query_text
-
-    def _create_time_aware_tool(self, query_engine: Any, name: str, description: str, sort_by: Literal['time', 'narrative', 'relevance'] = 'relevance') -> "FunctionTool":
+    def _create_time_aware_tool(self, query_engine: Any, name: str, description: str, sort_by: Literal['time', 'narrative', 'relevance'], formatter: Callable) -> "FunctionTool":
         """
         将一个查询引擎包装成一个 Agent 可用的、具备排序功能的工具 (FunctionTool)。
         Args:
             query_engine: LlamaIndex 的查询引擎实例 (如 VectorQueryEngine)。
             name (str): 工具的名称, Agent 会用这个名字来调用它。
             description (str): 工具的功能描述, Agent 根据这个描述来决定何时使用该工具。
-            sort_by (Literal): 结果的排序方式, 会传递给 `_format_response_with_sorting`。
+            sort_by (Literal): 结果的排序方式, 会传递给 `formatter`。
+            formatter: 用于格式化和排序响应的函数。
         Returns:
             FunctionTool: 一个可供 ReActAgent 使用的工具。
         """
@@ -908,7 +736,7 @@ class RAG:
             # 实际执行查询的内部函数
             response: Response = await query_engine.aquery(query_str)
             # 查询后, 使用指定的排序方式格式化结果
-            return self._format_response_with_sorting(response, sort_by)
+            return formatter(response, sort_by)
 
         # 使用 LlamaIndex 的 FunctionTool.from_defaults 创建工具
         return FunctionTool.from_defaults(
@@ -916,61 +744,6 @@ class RAG:
             name=name,
             description=description
         )
-
-    def _format_response_with_sorting(self, response: Response, sort_by: Literal['time', 'narrative', 'relevance']) -> str:
-        """
-        格式化查询响应, 并根据指定策略对来源节点进行排序。
-        Args:
-            response (Response): 查询引擎返回的响应对象。
-            sort_by (Literal): 排序策略: 'time' (时间倒序), 'narrative' (章节顺序), 'relevance' (相关性)。
-        """
-        if not response.source_nodes:
-            return f"未找到相关来源信息, 但综合回答是: \n{str(response)}"
-
-        # 默认使用 LlamaIndex 返回的顺序 (通常是按相关性)
-        sorted_nodes = response.source_nodes
-        sort_description = ""
-
-        if sort_by == 'narrative':
-            # 定义一个“自然排序”的 key 函数, 能正确处理 '1.2' 和 '1.10' 这样的章节号
-            def natural_sort_key(s: str) -> List[Any]:
-                return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
-
-            sorted_nodes = sorted(
-                list(response.source_nodes),
-                key=lambda n: natural_sort_key(n.metadata.get("task_id", "")),
-                reverse=False  # 正序排列
-            )
-            sort_description = "按小说章节顺序排列 (从前到后)"
-        elif sort_by == 'time':
-            # 按元数据中的 'created_at' 时间戳对来源节点进行降序排序
-            sorted_nodes = sorted(
-                list(response.source_nodes),
-                key=lambda n: n.metadata.get("created_at", "1970-01-01T00:00:00"),
-                reverse=True  # 倒序排列, 最新的在前
-            )
-            sort_description = "按时间倒序排列 (最新的在前)"
-        else: # 'relevance' 或其他默认情况
-            sort_description = "按相关性排序"
-
-        # 格式化每个来源节点的详细信息
-        source_details = []
-        for node in sorted_nodes:
-            timestamp = node.metadata.get("created_at", "未知时间")
-            task_id = node.metadata.get("task_id", "未知章节")
-            score = node.get_score()
-            score_str = f"{score:.4f}" if score is not None else "N/A"
-            # 将文本中的多个空白符合并为一个空格, 以简化输出
-            content = re.sub(r'\s+', ' ', node.get_content()).strip()
-            source_details.append(f"来源信息 (章节: {task_id}, 时间: {timestamp}, 相关性: {score_str}):\n---\n{content}\n---")
-
-        formatted_sources = "\n\n".join(source_details)
-
-        # 将综合回答和详细来源信息组合成最终输出
-        final_output = f"综合回答:\n{str(response)}\n\n详细来源 ({sort_description}):\n{formatted_sources}"
-
-        logger.info(f"结束 \n{final_output}")
-        return final_output
 
 ###############################################################################
 

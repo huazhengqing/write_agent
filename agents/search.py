@@ -12,7 +12,6 @@ from trafilatura import extract
 from pydantic import BaseModel, Field
 from langgraph.graph import StateGraph, END
 from typing import List, TypedDict, Optional, Any
-from litellm.caching.cache_key_generator import get_cache_key
 from sentence_transformers import SentenceTransformer, util
 from langchain_community.utilities import SearxSearchWrapper
 from langdetect import detect, LangDetectException
@@ -251,45 +250,15 @@ PROMPT_SELF_CORRECTION = """
 
 # 图节点
 
-async def get_structured_output_with_retry(messages: List[dict], response_model: BaseModel, max_retries: int = 3):
-    llm_params = get_llm_params(messages, response_model=response_model)
-    
-    for attempt in range(max_retries):
-        try:
-            message = await llm_acompletion(llm_params)
-
-            if not message.tool_calls or len(message.tool_calls) == 0:
-                # 有时模型可能在内容中返回JSON字符串, 而不是工具调用
-                if message.content:
-                    try:
-                        validated_data = response_model.model_validate_json(message.content)
-                        logger.info("LLM返回了内容而非工具调用, 但内容成功解析。")
-                        return validated_data
-                    except Exception as json_e:
-                        raise ValueError(f"LLM响应中缺少工具调用, 且内容无法解析为目标JSON: {json_e}") from json_e
-                raise ValueError("LLM响应中缺少预期的工具调用 (tool_calls) 且内容为空。")
-
-            tool_call = message.tool_calls[0]
-            # litellm v1.34.0+ 可能会自动解析, 但我们为了稳健性手动处理
-            if hasattr(tool_call.function, 'parsed_arguments') and tool_call.function.parsed_arguments:
-                parsed_args = tool_call.function.parsed_arguments
-            else:
-                parsed_args = json.loads(tool_call.function.arguments)
-            
-            validated_data = response_model(**parsed_args)
-            return validated_data # 成功
-        except Exception as e:
-            logger.warning(f"调用LLM或解析输出失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                try:
-                    cache_key = get_cache_key(**llm_params)
-                    litellm.cache.delete(cache_key)
-                    logger.info(f"已删除错误的结构化输出缓存: {cache_key}。正在重试...")
-                except Exception as cache_e:
-                    logger.error(f"删除缓存失败: {cache_e}")
-            else:
-                logger.error("达到最大重试次数, 结构化输出解析失败。")
-                return None # 所有重试失败后返回 None
+async def get_structured_output_with_retry(messages: List[dict], response_model: BaseModel):
+    """
+    一个用于获取结构化输出的包装函数, 它会配置LLM使用工具调用, 
+    然后调用带有内置重试和验证逻辑的 `llm_acompletion`。
+    """
+    # `litellm` 的 `response_model` 参数会自动处理工具的创建和选择, 无需手动构建 `tools` 和 `tool_choice`
+    llm_params = get_llm_params(messages)
+    message = await llm_acompletion(llm_params, response_model=response_model)
+    return getattr(message, 'validated_data', None)
 
 async def planner_node(state: SearchAgentState) -> dict:
     """
@@ -508,27 +477,8 @@ async def rolling_summary_node(state: SearchAgentState) -> dict:
     )
 
     llm_params = get_llm_params([{"role": "user", "content": prompt}])
-
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            message = await llm_acompletion(llm_params)
-            summary = message.content
-            if not summary or len(summary.strip()) < 20: # 简单验证: 内容不能为空或过短
-                raise ValueError("生成的滚动总结为空或过短。")
-            break  # 验证成功, 跳出循环
-        except Exception as e:
-            logger.warning(f"响应内容验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                try:
-                    cache_key = get_cache_key(**llm_params)
-                    litellm.cache.delete(cache_key)
-                    logger.info(f"已删除错误的缓存条目: {cache_key}。正在重试...")
-                except Exception as cache_e:
-                    logger.error(f"删除缓存条目失败: {cache_e}")
-            else:
-                logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
-                raise
+    message = await llm_acompletion(llm_params)
+    summary = message.content
 
     logger.info(f"🔄 生成滚动总结: {summary[:200]}...")
     return {"rolling_summary": summary, "previous_rolling_summary": previous_summary}
@@ -560,29 +510,9 @@ async def synthesize_node(state: SearchAgentState) -> dict:
     context.update(context_dict)
     
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
-
     llm_params = get_llm_params(messages, temperature=0.4)
-
-    max_retries = 3
-    for attempt in range(max_retries):
-        try:
-            message = await llm_acompletion(llm_params)
-            final_report = message.content
-            if not final_report or len(final_report.strip()) < 20: # 简单验证: 内容不能为空或过短
-                raise ValueError("生成的最终报告为空或过短。")
-            break  # 验证成功, 跳出循环
-        except Exception as e:
-            logger.warning(f"响应内容验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-            if attempt < max_retries - 1:
-                try:
-                    cache_key = get_cache_key(**llm_params)
-                    litellm.cache.delete(cache_key)
-                    logger.info(f"已删除错误的缓存条目: {cache_key}。正在重试...")
-                except Exception as cache_e:
-                    logger.error(f"删除缓存条目失败: {cache_e}")
-            else:
-                logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
-                raise
+    message = await llm_acompletion(llm_params)
+    final_report = message.content
 
     logger.info("✅ 报告生成完毕。")
 
@@ -634,27 +564,18 @@ async def should_continue_search(state: SearchAgentState) -> str:
         )
         llm_params = get_llm_params([{"role": "user", "content": prompt}], temperature=0)
         
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                message = await llm_acompletion(llm_params)
-                content = message.content.strip().lower()
-                if content not in ['true', 'false']:
-                    raise ValueError(f"无效的停滞检测响应: '{content}'")
-                is_stagnant = content == 'true'
-                break # 验证成功
-            except Exception as e:
-                logger.warning(f"停滞检测LLM调用失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    try:
-                        cache_key = get_cache_key(**llm_params)
-                        litellm.cache.delete(cache_key)
-                        logger.info(f"已删除错误的停滞检测缓存: {cache_key}。正在重试...")
-                    except Exception as cache_e:
-                        logger.error(f"删除缓存失败: {cache_e}")
-                else:
-                    logger.error("停滞检测在多次重试后仍然失败。将默认继续研究以避免卡死。")
-                    is_stagnant = False # 默认为不-停滞, 避免因检测失败而卡住
+        def stagnation_validator(content: str):
+            """验证LLM的响应是否为 'true' 或 'false'。"""
+            content = content.strip().lower()
+            if content not in ['true', 'false']:
+                raise ValueError(f"无效的停滞检测响应: '{content}'")
+
+        try:
+            message = await llm_acompletion(llm_params, validator=stagnation_validator)
+            is_stagnant = message.content.strip().lower() == 'true'
+        except Exception as e:
+            logger.error(f"停滞检测在多次重试后仍然失败: {e}。将默认继续研究以避免卡死。")
+            is_stagnant = False # 默认为不-停滞, 避免因检测失败而卡住
 
         if is_stagnant:
             logger.info("⏹️ 研究停滞(LLM判断), 新一轮未发现显著信息, 结束当前任务研究。")

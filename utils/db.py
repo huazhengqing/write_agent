@@ -40,7 +40,8 @@ Table: t_tasks
 - summary_reasoning: TEXT - 正文摘要的推理过程
 - atom: TEXT - 判断原子任务的结果
 - atom_reasoning: TEXT - 判断原子任务的推理过程
-- created_at: TIMESTAMP - 记录创建/更新时的时间戳。
+- created_at: TIMESTAMP - 记录创建时的时间戳。
+- updated_at: TIMESTAMP - 记录最后更新时的时间戳。
 """
 
 
@@ -83,13 +84,41 @@ class DB:
             summary_reasoning TEXT,
             atom TEXT,
             atom_reasoning TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         """)
         self.cursor.execute("""
         CREATE INDEX IF NOT EXISTS idx_parent_id ON t_tasks (parent_id)
         """)
+        self.cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_updated_at ON t_tasks (updated_at)
+        """)
+        self.cursor.execute("""
+        CREATE INDEX IF NOT EXISTS idx_parent_id_task_type ON t_tasks (parent_id, task_type)
+        """)
+        self.cursor.execute("""
+        CREATE TRIGGER IF NOT EXISTS t_tasks_auto_update_timestamp
+        AFTER UPDATE ON t_tasks
+        FOR EACH ROW
+        BEGIN
+            UPDATE t_tasks SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+        END;
+        """)
         self.conn.commit()
+
+    @staticmethod
+    def _natural_sort_key(task_id_str: str) -> List[int]:
+        """为任务ID字符串提供健壮的自然排序键, 处理空或格式错误的ID。"""
+        if not task_id_str:
+            return []
+        try:
+            # 过滤掉拆分后可能产生的空字符串(如 '1.'), 并转换为整数列表
+            return [int(p) for p in task_id_str.split('.') if p]
+        except ValueError:
+            # 如果ID格式错误(包含非数字), 返回[]。
+            # 在排序中, 这会使无效ID排在最后。
+            return []
 
     def add_task(self, task: Task):
         dependency = json.dumps(task.dependency, ensure_ascii=False)
@@ -97,7 +126,7 @@ class DB:
             """
             INSERT INTO t_tasks 
             (id, parent_id, task_type, hierarchical_position, goal, length, dependency) 
-            VALUES (?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 parent_id = excluded.parent_id,
                 task_type = excluded.task_type,
@@ -169,25 +198,6 @@ class DB:
         )
         self.conn.commit()
 
-    """
-    获取任务上下文, 包括两部分:
-    1. 父任务链: 从根任务到当前任务的父任务的完整任务信息。
-    2. 当前层级任务: 与当前任务同层级的所有任务(兄弟任务)的信息。
-
-    任务ID格式为 "父任务ID.子任务序号", 根任务ID为 "1"。
-    例如, 对于任务ID "1.3.5", 此函数将:
-    - 获取父任务链 "1" 和 "1.3" 的信息。
-    - 获取所有父ID为 "1.3" 的任务信息。
-    返回的格式: 
-    1. goal length
-    1.3 goal length
-    1.3.1 goal  length
-    1.3.2 goal  length
-    1.3.3 goal  length
-    1.3.4 goal  length
-    1.3.5 goal  length
-    如果 没有 length , 就不显示 
-    """
     def get_context_task_list(self, task: Task) -> str:
         """
         高效获取任务上下文列表 (父任务链 + 兄弟任务), 仅查询必要的字段。
@@ -222,11 +232,7 @@ class DB:
         all_task_data[task.id] = (task.hierarchical_position, task.goal, task.length)
 
         # 4. 按ID进行自然排序
-        def natural_sort_key(task_id_str: str):
-            return [int(p) for p in task_id_str.split('.')]
-
-        sorted_ids = sorted(all_task_data.keys(), key=natural_sort_key)
-
+        sorted_ids = sorted(all_task_data.keys(), key=self._natural_sort_key)
         # 5. 格式化为指定的字符串输出
         output_lines = []
         for task_id in sorted_ids:
@@ -256,11 +262,7 @@ class DB:
             return ""
 
         # 按 task id 进行自然排序 (例如, '1.10' 会在 '1.2' 之后)
-        def natural_sort_key(row):
-            return [int(p) for p in row[0].split('.')]
-
-        sorted_rows = sorted(rows, key=natural_sort_key)
-
+        sorted_rows = sorted(rows, key=lambda row: self._natural_sort_key(row[0]))
         content_list = []
         for row in sorted_rows:
             # row[0] is id, row[1] is design, row[2] is design_reflection
@@ -292,11 +294,7 @@ class DB:
             return ""
 
         # 按 task id 进行自然排序
-        def natural_sort_key(row):
-            return [int(p) for p in row[0].split('.')]
-
-        sorted_rows = sorted(rows, key=natural_sort_key)
-
+        sorted_rows = sorted(rows, key=lambda row: self._natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
         
         return "\n\n".join(content_list)
@@ -311,10 +309,7 @@ class DB:
         if not rows:
             return ""
 
-        def natural_sort_key(row):
-            return [int(p) for p in row[0].split('.')]
-        sorted_rows = sorted(rows, key=natural_sort_key)
-
+        sorted_rows = sorted(rows, key=lambda row: self._natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
         return "\n\n".join(content_list)
 
@@ -328,10 +323,7 @@ class DB:
         if not rows:
             return ""
 
-        def natural_sort_key(row):
-            return [int(p) for p in row[0].split('.')]
-        sorted_rows = sorted(rows, key=natural_sort_key)
-
+        sorted_rows = sorted(rows, key=lambda row: self._natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
         return "\n\n".join(content_list)
 
@@ -345,50 +337,59 @@ class DB:
         if not rows:
             return ""
 
-        def natural_sort_key(row):
-            return [int(p) for p in row[0].split('.')]
-        sorted_rows = sorted(rows, key=natural_sort_key)
-
+        sorted_rows = sorted(rows, key=lambda row: self._natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
         
         return "\n\n".join(content_list)
 
-    def get_latest_write_reflection(self, length: int) -> str:
+    def get_latest_write_reflection(self, length: int = 500) -> str:
+        # 通过 updated_at 倒序获取最近更新的内容, 这是最高效的方式。
+        # 此查询利用新创建的 idx_updated_at 索引, 避免了全表扫描, 显著提升性能。
+        # 原有实现是基于任务ID进行自然排序, 必须加载所有数据到内存, 性能较差。
+        # 此处将“最新”的定义从“任务ID最大”调整为“时间上最近更新”, 更符合直觉且高效。
         self.cursor.execute(
-            "SELECT id, write_reflection FROM t_tasks WHERE write_reflection IS NOT NULL AND write_reflection != ''"
+            """
+            SELECT write_reflection 
+            FROM t_tasks 
+            WHERE write_reflection IS NOT NULL AND write_reflection != '' 
+            ORDER BY updated_at DESC
+            """
         )
         rows = self.cursor.fetchall()
 
         if not rows:
             return ""
 
-        # 按 task id 进行自然排序
-        def natural_sort_key(row):
-            """为任务ID提供健壮的自然排序键, 处理空或格式错误的ID。"""
-            try:
-                # 过滤掉拆分后可能产生的空字符串(如 '1.'), 并转换为整数列表
-                return [int(p) for p in row[0].split('.') if p]
-            except (AttributeError, ValueError):
-                # 如果ID为None、空字符串或格式错误, 返回[]。
-                # 在降序排序中, 这会使无效ID排在最后。
-                return []
-
-        # 按任务ID倒序排列, 从最新到最旧
-        sorted_rows = sorted(rows, key=natural_sort_key, reverse=True)
-
         # 累积内容直到达到指定长度
         content_parts = []
         total_length = 0
-        for row in sorted_rows:
-            content = row[1]
+        for row in rows:
+            content = row[0]
             if content:
                 content_parts.append(content)
                 total_length += len(content)
                 if total_length >= length:
                     break
         
-        # 因为我们是倒序添加的(最新在前), 所以需要反转列表以恢复正确的章节顺序
+        # 因为我们是按时间倒序获取的(最新在前), 所以需要反转列表以恢复正确的时序
         return "\n\n".join(reversed(content_parts))
+
+    def get_word_count_last_24h(self) -> int:
+        """
+        获取最近24小时内 'write_reflection' 字段的总字数。
+        """
+        self.cursor.execute(
+            """
+            SELECT write_reflection 
+            FROM t_tasks 
+            WHERE updated_at >= datetime('now', '-24 hours') 
+            AND write_reflection IS NOT NULL AND write_reflection != ''
+            """
+        )
+        rows = self.cursor.fetchall()
+        if not rows:
+            return 0
+        return sum(len(row[0]) for row in rows)
 
     def close(self):
         if self.conn:

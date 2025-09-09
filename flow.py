@@ -1,13 +1,13 @@
 import os
+import asyncio
 from pathlib import Path
 from loguru import logger
-from diskcache import Cache
 from typing import Any, Dict
 from prefect import flow, task
 from prefect.cache_policies import INPUTS
-from datetime import date
 from utils.models import Task
 from utils.rag import get_rag
+from utils.db import get_db
 from agents.atom import atom
 from agents.plan import plan
 from agents.plan_reflection import plan_reflection
@@ -23,8 +23,6 @@ from agents.summary_aggregate import summary_aggregate
 
 
 day_wordcount_goal = 10000
-wordcount_cache = Cache(os.path.join(".cache", "wordcount"), size_limit=int(32 * (1024**2)))
-
 
 _SINK_IDS = {}
 def ensure_task_logger(run_id: str):
@@ -134,10 +132,6 @@ async def task_execute_write_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         ret = await write_reflection(task)
-        with wordcount_cache.transact():
-            today_key = f"{task.run_id}:{date.today().isoformat()}"
-            count = wordcount_cache.get(today_key, 0)
-            wordcount_cache.set(today_key, count + len(ret.results["write_reflection"]))
         return ret
 
 @task(
@@ -223,11 +217,11 @@ async def flow_write(current_task: Task):
     if not current_task.id or not current_task.goal:
         raise ValueError("任务ID和目标不能为空。")
 
-    # 检查是否完成当日字数目标
-    today_key = f"{current_task.run_id}:{date.today().isoformat()}"
-    day_wordcount = wordcount_cache.get(today_key, 0)
-    if day_wordcount > day_wordcount_goal:
-        logger.info(f"已达到当日字数目标, 完成任务: {current_task.run_id} ({day_wordcount}字)")
+    # 检查是否完成最近24小时的字数目标
+    db = get_db(run_id=current_task.run_id, category=current_task.category)
+    word_count_24h = await asyncio.to_thread(db.get_word_count_last_24h)
+    if word_count_24h >= day_wordcount_goal:
+        logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停任务: {current_task.run_id}")
         return
 
     # 步骤1: 判断任务是否为原子任务
@@ -289,11 +283,10 @@ async def flow_write(current_task: Task):
             # 步骤 2.3: 递归处理所有子任务
             logger.info(f"任务 '{current_task.id}' 分解为 {len(ret_plan_reflection.sub_tasks)} 个子任务, 开始递归处理。")
             for sub_task in ret_plan_reflection.sub_tasks:
-                # 每次递归前都检查字数
-                today_key = f"{sub_task.run_id}:{date.today().isoformat()}"
-                day_wordcount = wordcount_cache.get(today_key, 0)
-                if day_wordcount > day_wordcount_goal:
-                    logger.info(f"已完成当日字数目标, 暂停处理后续子任务: {sub_task.run_id}")
+                # 每次递归前都检查字数目标
+                word_count_24h = await asyncio.to_thread(db.get_word_count_last_24h)
+                if word_count_24h >= day_wordcount_goal:
+                    logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停处理后续子任务: {sub_task.run_id}")
                     return
                 
                 # 递归调用自身来处理子任务

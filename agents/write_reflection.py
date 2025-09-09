@@ -1,7 +1,6 @@
 import collections
 import os
 import litellm
-from litellm.caching.cache_key_generator import get_cache_key
 from loguru import logger
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_acompletion
@@ -22,28 +21,8 @@ async def write_reflection(task: Task) -> Task:
         context["to_reflection"] = task.results.get("write")
         messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
         llm_params = get_llm_params(messages, temperature=0.75)
-
-        max_retries = 3
-        for attempt in range(max_retries):
-            try:
-                message = await llm_acompletion(llm_params)
-                content = message.content
-                if not content or len(content.strip()) < 20: # 简单验证: 内容不能为空或过短
-                    raise ValueError("生成的内容为空或过短。")
-                break  # 验证成功, 跳出循环
-            except Exception as e:
-                logger.warning(f"响应内容验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-                if attempt < max_retries - 1:
-                    try:
-                        cache_key = get_cache_key(**llm_params)
-                        litellm.cache.delete(cache_key)
-                        logger.info(f"已删除错误的缓存条目: {cache_key}。正在重试...")
-                    except Exception as cache_e:
-                        logger.error(f"删除缓存条目失败: {cache_e}")
-                else:
-                    logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
-                    raise
-
+        message = await llm_acompletion(llm_params)
+        content = message.content
         reasoning = message.get("reasoning_content") or message.get("reasoning", "")
         updated_task.results["write_reflection"] = content
         updated_task.results["write_reflection_reasoning"] = reasoning
