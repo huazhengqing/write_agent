@@ -143,70 +143,84 @@ class RAG:
         if task_type == "task_atom":
             # 仅当是根任务或目标被更新时, 才写入数据库
             if task.id == "1" or task.results.get("goal_update"):
-                await asyncio.to_thread(db.add_task, task)
-                # 任务列表已变更, 清除缓存
                 self.caches['task_list'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_task, task)
         # 处理任务规划阶段
         elif task_type == "task_plan_before_reflection":
-            await asyncio.to_thread(db.add_result, task)
-            await self.store(task, "design", task.results.get("design_reflection"))
+            if task.results.get("design_reflection"):
+                self.caches['dependent_design'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await self.store(task, "design", task.results.get("design_reflection"))
         elif task_type == "task_plan":
-            await asyncio.to_thread(db.add_result, task)
+            if task.results.get("plan"):
+                await asyncio.to_thread(db.add_result, task)
         # 处理对任务规划的反思
         elif task_type == "task_plan_reflection":
-            # 规划反思可能影响任务结构和上层上下文, 清除相关缓存
-            self.caches['task_list'].evict(tag=task.run_id)
-            self.caches['upper_design'].evict(tag=task.run_id)
-            self.caches['upper_search'].evict(tag=task.run_id)
-            await asyncio.to_thread(db.add_result, task)
-            await asyncio.to_thread(db.add_sub_tasks, task)
+            if task.results.get("plan_reflection"):
+                self.caches['task_list'].evict(tag=task.run_id)
+                self.caches['upper_design'].evict(tag=task.run_id)
+                self.caches['upper_search'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await asyncio.to_thread(db.add_sub_tasks, task)
         # 处理设计任务的执行结果
         elif task_type == "task_execute_design":
-            await asyncio.to_thread(db.add_result, task)
+            if task.results.get("design"):
+                self.caches['dependent_design'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
         elif task_type == "task_execute_design_reflection":
-            await asyncio.to_thread(db.add_result, task)
-            await self.store(task, "design", task.results.get("design_reflection"))
+            if task.results.get("design_reflection"):
+                self.caches['dependent_design'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await self.store(task, "design", task.results.get("design_reflection"))
         # 处理搜索任务的执行结果
         elif task_type == "task_execute_search":
-            await asyncio.to_thread(db.add_result, task)
-            await self.store(task, "search", task.results.get("search"))
+            if task.results.get("search"):
+                self.caches['dependent_search'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await self.store(task, "search", task.results.get("search"))
         # 处理对设计结果的反思
         elif task_type == "task_execute_write_before_reflection":
-            await asyncio.to_thread(db.add_result, task)
-            await self.store(task, "design", task.results.get("design_reflection"))
+            if task.results.get("design_reflection"):
+                self.caches['dependent_design'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await self.store(task, "design", task.results.get("design_reflection"))
         # 处理写作任务的初步执行结果 (通常是草稿)
         elif task_type == "task_execute_write":
-            await asyncio.to_thread(db.add_result, task)
+            if task.results.get("write"):
+                await asyncio.to_thread(db.add_result, task)
         # 处理对写作结果的反思 (生成最终内容)
         elif task_type == "task_execute_write_reflection":
-            # 正文内容已变更, 清除相关缓存
-            self.caches['text_latest'].evict(tag=task.run_id)
-            self.caches['text_length'].evict(tag=task.run_id)
             write_reflection = task.results.get("write_reflection")
-            await asyncio.to_thread(db.add_result, task)
-            # 将最终内容追加到主文本文件
-            await asyncio.to_thread(self.text_file_append, self.get_text_file_path(task), write_reflection)
-            # 将最终内容存入 RAG 索引
-            await self.store(task, "write", write_reflection)
+            if write_reflection:
+                self.caches['text_latest'].evict(tag=task.run_id)
+                self.caches['text_length'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await asyncio.to_thread(self.text_file_append, self.get_text_file_path(task), write_reflection)
+                await self.store(task, "write", write_reflection)
         # 处理为正文生成的摘要
         elif task_type == "task_execute_summary":
-            # 摘要内容已变更, 清除缓存
-            self.caches['text_summary'].evict(tag=task.run_id)
-            await asyncio.to_thread(db.add_result, task)
-            await self.store(task, "summary", task.results.get("summary"))
+            if task.results.get("summary"):
+                self.caches['text_summary'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await self.store(task, "summary", task.results.get("summary"))
         # 处理对子任务设计的聚合
         elif task_type == "task_aggregate_design":
-            await asyncio.to_thread(db.add_result, task)
-            await self.store(task, "design", task.results.get("design"))
+            if task.results.get("design"):
+                self.caches['dependent_design'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await self.store(task, "design", task.results.get("design"))
         # 处理对子任务搜索结果的聚合
         elif task_type == "task_aggregate_search":
-            await asyncio.to_thread(db.add_result, task)
-            await self.store(task, "search", task.results.get("search"))
+            if task.results.get("search"):
+                self.caches['dependent_search'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await self.store(task, "search", task.results.get("search"))
         # 处理对子任务摘要的聚合
         elif task_type == "task_aggregate_summary":
-            self.caches['text_summary'].evict(tag=task.run_id)
-            await asyncio.to_thread(db.add_result, task)
-            await self.store(task, "summary", task.results.get("summary"))
+            if task.results.get("summary"):
+                self.caches['text_summary'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await self.store(task, "summary", task.results.get("summary"))
         else:
             raise ValueError("不支持的任务类型")
 
@@ -360,7 +374,7 @@ class RAG:
         return ret
 
     async def get_dependent_design(self, db: Any, task: Task) -> str:
-        cache_key = f"dependent_design:{task.run_id}:{task.parent_id}"
+        cache_key = f"dependent_design:{task.run_id}:{task.id}"
         cached_result = self.caches['dependent_design'].get(cache_key)
         if cached_result is not None:
             return cached_result
@@ -371,7 +385,7 @@ class RAG:
         return result
 
     async def get_dependent_search(self, db: Any, task: Task) -> str:
-        cache_key = f"dependent_search:{task.run_id}:{task.parent_id}"
+        cache_key = f"dependent_search:{task.run_id}:{task.id}"
         cached_result = self.caches['dependent_search'].get(cache_key)
         if cached_result is not None:
             return cached_result
