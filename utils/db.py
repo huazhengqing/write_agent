@@ -54,58 +54,60 @@ class DB:
         self.db_path = db_path
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.cursor = self.conn.cursor()
+        self._lock = threading.Lock()
         self._create_table()
 
     def _create_table(self):
-        self.cursor.execute("""
-        CREATE TABLE IF NOT EXISTS t_tasks (
-            id TEXT PRIMARY KEY,
-            parent_id TEXT,
-            task_type TEXT,
-            hierarchical_position TEXT,
-            goal TEXT,
-            length TEXT,
-            dependency TEXT,
-            plan TEXT,
-            plan_reasoning TEXT,
-            plan_reflection TEXT,
-            plan_reflection_reasoning TEXT,
-            design TEXT,
-            design_reasoning TEXT,
-            design_reflection TEXT,
-            design_reflection_reasoning TEXT,
-            search TEXT,
-            search_reasoning TEXT,
-            write TEXT,
-            write_reasoning TEXT,
-            write_reflection TEXT,
-            write_reflection_reasoning TEXT,
-            summary TEXT,
-            summary_reasoning TEXT,
-            atom TEXT,
-            atom_reasoning TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-        """)
-        self.cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_parent_id ON t_tasks (parent_id)
-        """)
-        self.cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_updated_at ON t_tasks (updated_at)
-        """)
-        self.cursor.execute("""
-        CREATE INDEX IF NOT EXISTS idx_parent_id_task_type ON t_tasks (parent_id, task_type)
-        """)
-        self.cursor.execute("""
-        CREATE TRIGGER IF NOT EXISTS t_tasks_auto_update_timestamp
-        AFTER UPDATE ON t_tasks
-        FOR EACH ROW
-        BEGIN
-            UPDATE t_tasks SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
-        END;
-        """)
-        self.conn.commit()
+        with self._lock:
+            self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS t_tasks (
+                id TEXT PRIMARY KEY,
+                parent_id TEXT,
+                task_type TEXT,
+                hierarchical_position TEXT,
+                goal TEXT,
+                length TEXT,
+                dependency TEXT,
+                plan TEXT,
+                plan_reasoning TEXT,
+                plan_reflection TEXT,
+                plan_reflection_reasoning TEXT,
+                design TEXT,
+                design_reasoning TEXT,
+                design_reflection TEXT,
+                design_reflection_reasoning TEXT,
+                search TEXT,
+                search_reasoning TEXT,
+                write TEXT,
+                write_reasoning TEXT,
+                write_reflection TEXT,
+                write_reflection_reasoning TEXT,
+                summary TEXT,
+                summary_reasoning TEXT,
+                atom TEXT,
+                atom_reasoning TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+            """)
+            self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_parent_id ON t_tasks (parent_id)
+            """)
+            self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_updated_at ON t_tasks (updated_at)
+            """)
+            self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_parent_id_task_type ON t_tasks (parent_id, task_type)
+            """)
+            self.cursor.execute("""
+            CREATE TRIGGER IF NOT EXISTS t_tasks_auto_update_timestamp
+            AFTER UPDATE ON t_tasks
+            FOR EACH ROW
+            BEGIN
+                UPDATE t_tasks SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
+            END;
+            """)
+            self.conn.commit()
 
     @staticmethod
     def _natural_sort_key(task_id_str: str) -> List[int]:
@@ -122,30 +124,31 @@ class DB:
 
     def add_task(self, task: Task):
         dependency = json.dumps(task.dependency, ensure_ascii=False)
-        self.cursor.execute(
-            """
-            INSERT INTO t_tasks 
-            (id, parent_id, task_type, hierarchical_position, goal, length, dependency) 
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET
-                parent_id = excluded.parent_id,
-                task_type = excluded.task_type,
-                hierarchical_position = excluded.hierarchical_position,
-                goal = excluded.goal,
-                length = excluded.length,
-                dependency = excluded.dependency
-            """,
-            (
-                task.id, 
-                task.parent_id, 
-                task.task_type, 
-                task.hierarchical_position, 
-                task.goal, 
-                task.length, 
-                dependency
+        with self._lock:
+            self.cursor.execute(
+                """
+                INSERT INTO t_tasks 
+                (id, parent_id, task_type, hierarchical_position, goal, length, dependency) 
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    parent_id = excluded.parent_id,
+                    task_type = excluded.task_type,
+                    hierarchical_position = excluded.hierarchical_position,
+                    goal = excluded.goal,
+                    length = excluded.length,
+                    dependency = excluded.dependency
+                """,
+                (
+                    task.id, 
+                    task.parent_id, 
+                    task.task_type, 
+                    task.hierarchical_position, 
+                    task.goal, 
+                    task.length, 
+                    dependency
+                )
             )
-        )
-        self.conn.commit()
+            self.conn.commit()
 
     def add_sub_tasks(self, task: Task):
         tasks_to_process = collections.deque(task.sub_tasks or [])
@@ -187,16 +190,17 @@ class DB:
         set_clause = ", ".join([f"{key} = ?" for key in fields_to_update.keys()])
         values = list(fields_to_update.values())
         values.append(task.id)
-
-        self.cursor.execute(
-            f"""
-            UPDATE t_tasks 
-            SET {set_clause}
-            WHERE id = ?
-            """,
-            tuple(values)
-        )
-        self.conn.commit()
+        
+        with self._lock:
+            self.cursor.execute(
+                f"""
+                UPDATE t_tasks 
+                SET {set_clause}
+                WHERE id = ?
+                """,
+                tuple(values)
+            )
+            self.conn.commit()
 
     def get_context_task_list(self, task: Task) -> str:
         """
@@ -204,29 +208,30 @@ class DB:
         """
         all_task_data = {}  # 使用字典存储
 
-        # 1. 获取父任务链的 ID
-        id_parts = task.id.split('.')
-        if len(id_parts) > 1:
-            parent_chain_ids = [".".join(id_parts[:i]) for i in range(1, len(id_parts))]
-            
-            # 为 SQL IN 子句创建占位符
-            placeholders = ','.join(['?'] * len(parent_chain_ids))
-            query = f"SELECT id, hierarchical_position, goal, length FROM t_tasks WHERE id IN ({placeholders})"
-            
-            self.cursor.execute(query, parent_chain_ids)
-            rows = self.cursor.fetchall()
-            for row in rows:
-                all_task_data[row[0]] = (row[1], row[2], row[3])
+        with self._lock:
+            # 1. 获取父任务链的 ID
+            id_parts = task.id.split('.')
+            if len(id_parts) > 1:
+                parent_chain_ids = [".".join(id_parts[:i]) for i in range(1, len(id_parts))]
+                
+                # 为 SQL IN 子句创建占位符
+                placeholders = ','.join(['?'] * len(parent_chain_ids))
+                query = f"SELECT id, hierarchical_position, goal, length FROM t_tasks WHERE id IN ({placeholders})"
+                
+                self.cursor.execute(query, parent_chain_ids)
+                rows = self.cursor.fetchall()
+                for row in rows:
+                    all_task_data[row[0]] = (row[1], row[2], row[3])
 
-        # 2. 获取兄弟任务 (与当前任务同属一个父任务)
-        if task.parent_id:
-            self.cursor.execute(
-                "SELECT id, hierarchical_position, goal, length FROM t_tasks WHERE parent_id = ?",
-                (task.parent_id,)
-            )
-            rows = self.cursor.fetchall()
-            for row in rows:
-                all_task_data[row[0]] = (row[1], row[2], row[3])
+            # 2. 获取兄弟任务 (与当前任务同属一个父任务)
+            if task.parent_id:
+                self.cursor.execute(
+                    "SELECT id, hierarchical_position, goal, length FROM t_tasks WHERE parent_id = ?",
+                    (task.parent_id,)
+                )
+                rows = self.cursor.fetchall()
+                for row in rows:
+                    all_task_data[row[0]] = (row[1], row[2], row[3])
         
         # 3. 确保当前任务也被包含 (使用最新的内存中信息)
         all_task_data[task.id] = (task.hierarchical_position, task.goal, task.length)
@@ -251,12 +256,13 @@ class DB:
         if not task.parent_id:
             return ""
 
-        # 不能有 task_type = 'design', 因为 write 任务会有 design_reflection
-        self.cursor.execute(
-            "SELECT id, design, design_reflection FROM t_tasks WHERE parent_id = ?",
-            (task.parent_id,)
-        )
-        rows = self.cursor.fetchall()
+        with self._lock:
+            # 不能有 task_type = 'design', 因为 write 任务会有 design_reflection
+            self.cursor.execute(
+                "SELECT id, design, design_reflection FROM t_tasks WHERE parent_id = ?",
+                (task.parent_id,)
+            )
+            rows = self.cursor.fetchall()
 
         if not rows:
             return ""
@@ -284,11 +290,12 @@ class DB:
         if not task.parent_id:
             return ""
 
-        self.cursor.execute(
-            "SELECT id, search FROM t_tasks WHERE parent_id = ? AND task_type = 'search'",
-            (task.parent_id,)
-        )
-        rows = self.cursor.fetchall()
+        with self._lock:
+            self.cursor.execute(
+                "SELECT id, search FROM t_tasks WHERE parent_id = ? AND task_type = 'search'",
+                (task.parent_id,)
+            )
+            rows = self.cursor.fetchall()
 
         if not rows:
             return ""
@@ -300,11 +307,12 @@ class DB:
         return "\n\n".join(content_list)
 
     def get_subtask_design(self, parent_id: str) -> str:
-        self.cursor.execute(
-            "SELECT id, design FROM t_tasks WHERE parent_id = ? AND task_type = 'design'",
-            (parent_id,)
-        )
-        rows = self.cursor.fetchall()
+        with self._lock:
+            self.cursor.execute(
+                "SELECT id, design FROM t_tasks WHERE parent_id = ? AND task_type = 'design'",
+                (parent_id,)
+            )
+            rows = self.cursor.fetchall()
 
         if not rows:
             return ""
@@ -314,11 +322,12 @@ class DB:
         return "\n\n".join(content_list)
 
     def get_subtask_search(self, parent_id: str) -> str:
-        self.cursor.execute(
-            "SELECT id, search FROM t_tasks WHERE parent_id = ? AND task_type = 'search'",
-            (parent_id,)
-        )
-        rows = self.cursor.fetchall()
+        with self._lock:
+            self.cursor.execute(
+                "SELECT id, search FROM t_tasks WHERE parent_id = ? AND task_type = 'search'",
+                (parent_id,)
+            )
+            rows = self.cursor.fetchall()
 
         if not rows:
             return ""
@@ -328,11 +337,12 @@ class DB:
         return "\n\n".join(content_list)
 
     def get_subtask_summary(self, parent_id: str) -> str:
-        self.cursor.execute(
-            "SELECT id, summary FROM t_tasks WHERE parent_id = ? AND task_type = 'write'",
-            (parent_id,)
-        )
-        rows = self.cursor.fetchall()
+        with self._lock:
+            self.cursor.execute(
+                "SELECT id, summary FROM t_tasks WHERE parent_id = ? AND task_type = 'write'",
+                (parent_id,)
+            )
+            rows = self.cursor.fetchall()
 
         if not rows:
             return ""
@@ -347,15 +357,16 @@ class DB:
         # 此查询利用新创建的 idx_updated_at 索引, 避免了全表扫描, 显著提升性能。
         # 原有实现是基于任务ID进行自然排序, 必须加载所有数据到内存, 性能较差。
         # 此处将“最新”的定义从“任务ID最大”调整为“时间上最近更新”, 更符合直觉且高效。
-        self.cursor.execute(
-            """
-            SELECT write_reflection 
-            FROM t_tasks 
-            WHERE write_reflection IS NOT NULL AND write_reflection != '' 
-            ORDER BY updated_at DESC
-            """
-        )
-        rows = self.cursor.fetchall()
+        with self._lock:
+            self.cursor.execute(
+                """
+                SELECT write_reflection 
+                FROM t_tasks 
+                WHERE write_reflection IS NOT NULL AND write_reflection != '' 
+                ORDER BY updated_at DESC
+                """
+            )
+            rows = self.cursor.fetchall()
 
         if not rows:
             return ""
@@ -378,22 +389,24 @@ class DB:
         """
         获取最近24小时内 'write_reflection' 字段的总字数。
         """
-        self.cursor.execute(
-            """
-            SELECT write_reflection 
-            FROM t_tasks 
-            WHERE updated_at >= datetime('now', '-24 hours') 
-            AND write_reflection IS NOT NULL AND write_reflection != ''
-            """
-        )
-        rows = self.cursor.fetchall()
-        if not rows:
-            return 0
-        return sum(len(row[0]) for row in rows)
+        with self._lock:
+            self.cursor.execute(
+                """
+                SELECT write_reflection 
+                FROM t_tasks 
+                WHERE updated_at >= datetime('now', '-24 hours') 
+                AND write_reflection IS NOT NULL AND write_reflection != ''
+                """
+            )
+            rows = self.cursor.fetchall()
+            if not rows:
+                return 0
+            return sum(len(row[0]) for row in rows)
 
     def close(self):
-        if self.conn:
-            self.conn.close()
+        with self._lock:
+            if self.conn:
+                self.conn.close()
 
 
 ###############################################################################
