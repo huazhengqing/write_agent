@@ -46,6 +46,22 @@ async def task_atom(task: Task) -> Task:
     persist_result=True, 
     cache_policy=INPUTS,
     retries=1,
+    task_run_name="plan_before_reflection: {task.run_id} - {task.id}",
+)
+async def task_plan_before_reflection(task: Task) -> Task:
+    if task.id == "1":
+        return task
+    if task.task_type != "write":
+        return task
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        from agents.plan_before_reflection import plan_before_reflection
+        return await plan_before_reflection(task)
+
+@task(
+    persist_result=True, 
+    cache_policy=INPUTS,
+    retries=1,
     task_run_name="plan: {task.run_id} - {task.id}",
 )
 async def task_plan(task: Task) -> Task:
@@ -101,6 +117,18 @@ async def task_execute_search(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         from agents.search import search
         return await search(task)
+
+@task(
+    persist_result=True, 
+    cache_policy=INPUTS,
+    retries=1,
+    task_run_name="execute_write_before_reflection: {task.run_id} - {task.id}",
+)
+async def task_execute_write_before_reflection(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        from agents.write_before_reflection import write_before_reflection
+        return await write_before_reflection(task)
 
 @task(
     persist_result=True, 
@@ -228,33 +256,35 @@ async def flow_write(current_task: Task):
     # 原子任务是足够小、可以被单个Agent直接处理的任务。
     ret_atom = await task_atom(current_task)
     await task_store(ret_atom, "task_atom")
-
-    is_atom = ret_atom.results.get("atom_result") == "atom"
     
     # 步骤2: 根据是否为原子任务, 选择不同执行路径
+    is_atom = ret_atom.results.get("atom_result") == "atom"
     if is_atom:
         # --- 原子任务执行路径 ---
         logger.info(f"任务 '{current_task.id}' 是原子任务, 直接执行。")
         
         if ret_atom.task_type == "design":
             # 执行设计任务
-            ret_excute = await task_execute_design(ret_atom)
-            await task_store(ret_excute, "task_execute_design")
+            ret_design = await task_execute_design(ret_atom)
+            await task_store(ret_design, "task_execute_design")
+            
+            ret_design_reflection = await task_execute_design_reflection(ret_design)
+            await task_store(ret_design_reflection, "task_execute_design_reflection")
         elif ret_atom.task_type == "search":
             # 执行搜索任务
-            ret_excute = await task_execute_search(ret_atom)
-            await task_store(ret_excute, "task_execute_search")
+            ret_search = await task_execute_search(ret_atom)
+            await task_store(ret_search, "task_execute_search")
         elif ret_atom.task_type == "write":
             # 执行完整的写作流程: 设计反思 -> 写作 -> 写作反思 -> 总结
             if not ret_atom.length:
                 raise ValueError("写作任务没有长度要求")
             
             # 设计反思
-            ret_design_reflection = await task_execute_design_reflection(ret_atom)
-            await task_store(ret_design_reflection, "task_execute_design_reflection")
+            ret_write_before_reflection = await task_execute_write_before_reflection(ret_atom)
+            await task_store(ret_write_before_reflection, "task_execute_write_before_reflection")
 
             # 核心写作
-            ret_write = await task_execute_write(ret_design_reflection)
+            ret_write = await task_execute_write(ret_write_before_reflection)
             await task_store(ret_write, "task_execute_write")
 
             # 写作反思
@@ -271,8 +301,11 @@ async def flow_write(current_task: Task):
         # --- 任务分解与递归路径 ---
         logger.info(f"任务 '{current_task.id}' 不是原子任务, 进行规划和分解。")
 
+        ret_plan_before_reflection = await task_plan_before_reflection(ret_atom)
+        await task_store(ret_plan_before_reflection, "task_execute_write_before_reflection")
+    
         # 步骤 2.1: 规划子任务
-        ret_plan = await task_plan(ret_atom)
+        ret_plan = await task_plan(ret_plan_before_reflection)
         await task_store(ret_plan, "task_plan")
 
         # 步骤 2.2: 对规划进行反思和调整

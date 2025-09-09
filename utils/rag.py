@@ -147,6 +147,9 @@ class RAG:
                 # 任务列表已变更, 清除缓存
                 self.caches['task_list'].evict(tag=task.run_id)
         # 处理任务规划阶段
+        elif task_type == "task_plan_before_reflection":
+            await asyncio.to_thread(db.add_result, task)
+            await self.store(task, "design", task.results.get("design_reflection"))
         elif task_type == "task_plan":
             await asyncio.to_thread(db.add_result, task)
         # 处理对任务规划的反思
@@ -155,19 +158,21 @@ class RAG:
             self.caches['task_list'].evict(tag=task.run_id)
             self.caches['upper_design'].evict(tag=task.run_id)
             self.caches['upper_search'].evict(tag=task.run_id)
+            await asyncio.to_thread(db.add_result, task)
             await asyncio.to_thread(db.add_sub_tasks, task)
         # 处理设计任务的执行结果
         elif task_type == "task_execute_design":
             await asyncio.to_thread(db.add_result, task)
-            await self.store(task, "design", task.results.get("design"))
+        elif task_type == "task_execute_design_reflection":
+            await asyncio.to_thread(db.add_result, task)
+            await self.store(task, "design", task.results.get("design_reflection"))
         # 处理搜索任务的执行结果
         elif task_type == "task_execute_search":
             await asyncio.to_thread(db.add_result, task)
             await self.store(task, "search", task.results.get("search"))
         # 处理对设计结果的反思
-        elif task_type == "task_execute_design_reflection":
+        elif task_type == "task_execute_write_before_reflection":
             await asyncio.to_thread(db.add_result, task)
-            # 将反思后的设计结果更新到 RAG 索引
             await self.store(task, "design", task.results.get("design_reflection"))
         # 处理写作任务的初步执行结果 (通常是草稿)
         elif task_type == "task_execute_write":
