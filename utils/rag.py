@@ -240,7 +240,7 @@ class RAG:
     def get_text_file_path(self, task: Task) -> str:
         return os.path.join("output", task.category, f"{task.run_id}.txt")
 
-    async def store(self, task: Task, content_type: Literal['design', 'search', 'write', 'summary'], content: str):
+    async def store(self, task: Task, content_type: Literal['design', 'search', 'write', 'summary'], content: str) -> None:
         """
         - 向量存储 (Vector Store): 存储 'design', 'search', 'summary' 类型的内容。
         - 知识图谱 (Knowledge Graph): 存储 'design', 'search', 'write' 类型的内容。
