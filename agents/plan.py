@@ -71,6 +71,8 @@ def convert_plan_to_tasks(
             length=plan_item.length,
             **inherited_props
         )
+        if not new_task.hierarchical_position:
+            new_task.hierarchical_position = parent_task.hierarchical_position
         if plan_item.sub_tasks:
             new_task.sub_tasks = convert_plan_to_tasks(plan_item.sub_tasks, new_task)
         tasks.append(new_task)

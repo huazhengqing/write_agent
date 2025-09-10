@@ -71,19 +71,22 @@ USER_PROMPT = """
 - 小说当前状态: 用于确保你的研究方向与故事的最新进展和已有设定保持一致, 避免冲突。
 - 整体规划参考: 用于理解任务的宏观目标, 确保研究服务于更高层级的设计。
 
-## 直接依赖项 (当前任务的直接输入)
+## 直接依赖项
+- 当前任务的直接输入
 
-### 设计结果:
+### 设计方案
 <dependent_design>
 {dependent_design}
 </dependent_design>
 
-### 搜索结果:
+### 信息收集成果
+<dependent_search>
 {dependent_search}
+</dependent_search>
 
 ## 小说当前状态
 
-### 最新章节(续写起点): 
+### 最新章节(续写起点)
 - 从此处无缝衔接
 <text_latest>
 {text_latest}
@@ -91,7 +94,7 @@ USER_PROMPT = """
 
 ## 整体规划
 
-### 任务树:
+### 任务树
 {task_list}
 """
 
@@ -172,41 +175,31 @@ USER_PROMPT_SYNTHESIZE = """
 # 小说创作背景 (用于提炼洞察)
 - 请深度结合以下所有背景信息, 运用你的“洞察提炼方法论”来生成创作切入点。
 
-## 直接依赖项 (当前任务的直接输入)
+## 直接依赖项
+- 当前任务的直接输入
 
-### 设计结果:
+### 设计方案
 <dependent_design>
 {dependent_design}
 </dependent_design>
 
-### 搜索结果:
+### 信息收集成果
+<dependent_search>
 {dependent_search}
+</dependent_search>
 
 ## 小说当前状态
 
-### 最新章节(续写起点): 
+### 最新章节(续写起点)
 - 从此处无缝衔接
 <text_latest>
 {text_latest}
 </text_latest>
 
-### 历史情节概要:
-<text_summary>
-{text_summary}
-</text_summary>
-
 ## 整体规划
 
-### 任务树:
+### 任务树
 {task_list}
-
-### 上层设计成果:
-<upper_design>
-{upper_design}
-</upper_design>
-
-### 上层信息收集成果:
-{upper_search}
 """
 
 

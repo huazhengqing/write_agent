@@ -27,14 +27,15 @@ SYSTEM_PROMPT = """
 - 上下文驱动: 任务目标具体程度由上下文决定, 无依据时使用抽象指令
 - 指令与内容分离: 任务目标是“做什么”, 非具体创作内容。
 - 一致性: 遵守并细化上级设计, 与同级设计逻辑风格协同。
-- 搜索先行: `design` 任务所需外部知识, 必须由前置的 `search` 任务提供。
+- 搜索先行: `design` 任务所需外部知识, 必须由同层级的 `search` 前置任务提供。
+- 依赖约束: `dependency` 字段仅包含同层级(兄弟节点)的任务ID。上层依赖是隐式的, 无需填写。
 - 目标聚焦: 子任务 `goal` 必须明确、具体, 服务于父任务。
 
 # 工作流程:
 - 分析上下文
 - 识别触发点: 潜在风险、逻辑断层或冲突、未解之谜、情节矛盾、新实体等
-- 依据 `#design 分解维度` 生成 `design` 子任务, 并设定其依赖。
-- 为触发点创建额外 `design`/`search` 任务(需外部信息时创建 `search`), 并将其整合进子任务序列中, 并设定其依赖。
+- 依据 `#design 分解维度` 生成 `design` 子任务, 并设定其同层级依赖。
+- 为触发点创建额外 `design`/`search` 任务(需外部信息时创建 `search`), 并将其整合进子任务序列中, 并设定其同层级依赖。
 - 要求: 至少分解出2个子任务
 
 # design 分解维度:
@@ -56,7 +57,7 @@ SYSTEM_PROMPT = """
     - `id`: 父任务ID.子任务序号。
     - `task_type`: design | search。
     - `goal`: 任务目标。精确、简洁关键词驱动。格式为: `[标题]: 根据[前置任务标题] ...`。
-    - `dependency`: 同层级的前置任务ID。
+    - `dependency`: 同层级的前置任务ID列表。
     - `sub_tasks`: 子任务列表。
 - JSON转义: `"` 和 `\\` 等特殊字符必须正确转义。
 
@@ -99,42 +100,46 @@ USER_PROMPT = """
 {task}
 
 
-# 上下文参考
-- 请深度分析以下所有上下文信息。
+# 上下文
 
-## 直接依赖项 (当前任务的直接输入)
+## 直接依赖项
+- 当前任务的直接输入
 
-### 设计结果:
+### 设计方案
 <dependent_design>
 {dependent_design}
 </dependent_design>
 
-### 搜索结果:
+### 信息收集成果
+<dependent_search>
 {dependent_search}
+</dependent_search>
 
 ## 小说当前状态
 
-### 最新章节(续写起点): 
+### 最新章节(续写起点)
 - 从此处无缝衔接
 <text_latest>
 {text_latest}
 </text_latest>
 
-### 历史情节概要:
+### 历史情节概要
 <text_summary>
 {text_summary}
 </text_summary>
 
 ## 整体规划
 
-### 任务树:
+### 任务树
 {task_list}
 
-### 上层设计成果:
+### 上层设计方案
 <upper_design>
 {upper_design}
 </upper_design>
 
-### 上层信息收集成果:
+### 上层信息收集成果
+<upper_search>
 {upper_search}
+</upper_search>
 """

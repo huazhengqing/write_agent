@@ -18,9 +18,9 @@
 ## prompt
 
 
-提示词中的指令必须引用LLM能实际看到的上下文标题，而不是开发者视角下的占位符变量名。
-SYSTEM_PROMPT（系统提示词，即给LLM的指令）必须与 USER_PROMPT（用户提示词，即提供给LLM的上下文）中的标题保持一致。
-将 SYSTEM_PROMPT 中所有引用占位符变量名（如 task, dependent_design, text_latest 等）的地方，都修改为 USER_PROMPT 中对应的Markdown标题（如 当前任务, 设计结果, 最新章节(续写起点)）。
+提示词中的指令必须引用LLM能实际看到的上下文标题, 而不是开发者视角下的占位符变量名。
+SYSTEM_PROMPT（系统提示词, 即给LLM的指令）必须与 USER_PROMPT（用户提示词, 即提供给LLM的上下文）中的标题保持一致。
+将 SYSTEM_PROMPT 中所有引用占位符变量名（如 task, dependent_design, text_latest 等）的地方, 都修改为 USER_PROMPT 中对应的Markdown标题（如 当前任务, 设计结果, 最新章节(续写起点)）。
 
 
 
@@ -52,7 +52,7 @@ SYSTEM_PROMPT（系统提示词，即给LLM的指令）必须与 USER_PROMPT（�
 
 比喻, 以关键词为主
 
-请审查整个 `design_cn.py` 文件，看看还有哪些部分可以优化以更好地规避AI特征。
+请审查整个 `design_cn.py` 文件, 看看还有哪些部分可以优化以更好地规避AI特征。
 
 
 

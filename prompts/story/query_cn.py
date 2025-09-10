@@ -95,22 +95,30 @@ SYSTEM_PROMPT_design_for_write = """
 
 
 USER_PROMPT_design = """
-# 当前任务信息 (JSON)
+# 当前任务
 {task}
 
-# 任务树:
+
+# 上下文
+
+## 任务树(整体规划)
 {task_list}
 
-# 同层级的设计成果:
+## 设计方案
 <dependent_design>
 {dependent_design}
 </dependent_design>
 
-# 同层级搜索结果:
+## 信息收集成果
+<dependent_search>
 {dependent_search}
+</dependent_search>
 
-# 最新章节正文
+## 最新章节(续写起点)
+- 从此处无缝衔接
+<text_latest>
 {text_latest}
+</text_latest>
 """
 
 
@@ -161,22 +169,30 @@ SYSTEM_PROMPT_write = """
 
 
 USER_PROMPT_write = """
-# 当前任务: 
+# 当前任务
 {task}
 
-# 任务树:
+
+# 上下文
+
+## 任务树(整体规划)
 {task_list}
 
-# 同层级的设计成果:
+## 设计方案
 <dependent_design>
 {dependent_design}
 </dependent_design>
 
-# 同层级搜索结果:
+## 信息收集成果
+<dependent_search>
 {dependent_search}
+</dependent_search>
 
-# 最新章节正文
+## 最新章节(续写起点)
+- 从此处无缝衔接
+<text_latest>
 {text_latest}
+</text_latest>
 """
 
 
@@ -220,20 +236,28 @@ SYSTEM_PROMPT_search = """
 
 
 USER_PROMPT_search = """
-# 当前任务: 
+# 当前任务
 {task}
 
-# 任务树:
+
+# 上下文
+
+## 任务树(整体规划)
 {task_list}
 
-# 同层级的设计成果:
+## 设计方案
 <dependent_design>
 {dependent_design}
 </dependent_design>
 
-# 同层级搜索结果:
+## 信息收集成果
+<dependent_search>
 {dependent_search}
+</dependent_search>
 
-# 最新章节正文
+## 最新章节(续写起点)
+- 从此处无缝衔接
+<text_latest>
 {text_latest}
+</text_latest>
 """

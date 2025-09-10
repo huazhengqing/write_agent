@@ -241,13 +241,13 @@ PROMPT_STAGNATION_DETECTION = """
 
 # 图节点
 
-async def get_structured_output_with_retry(messages: List[dict], response_model: BaseModel):
+async def get_structured_output_with_retry(messages: List[dict], response_model: BaseModel, temperature: float):
     """
     一个用于获取结构化输出的包装函数, 它会配置LLM使用工具调用, 
     然后调用带有内置重试和验证逻辑的 `llm_acompletion`。
     """
     # `litellm` 的 `response_model` 参数会自动处理工具的创建和选择, 无需手动构建 `tools` 和 `tool_choice`
-    llm_params = get_llm_params(messages)
+    llm_params = get_llm_params(messages, temperature=temperature)
     message = await llm_acompletion(llm_params, response_model=response_model)
     return getattr(message, 'validated_data', None)
 
@@ -274,7 +274,7 @@ async def planner_node(state: SearchAgentState) -> dict:
     context = await get_rag().get_context_base(task)
     context.update(context_dict)
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
-    plan = await get_structured_output_with_retry(messages, Plan)
+    plan = await get_structured_output_with_retry(messages, Plan, temperature=LLM_TEMPERATURES["reasoning"])
     
     # 如果解析失败, 创建一个空的 Plan 对象以避免下游节点出错
     if not plan:
@@ -407,7 +407,7 @@ async def information_processor_node(state: SearchAgentState) -> dict:
 
     # 调用 LLM
     messages = [{"role": "user", "content": prompt}]
-    processed_results = await get_structured_output_with_retry(messages, ProcessedResults)
+    processed_results = await get_structured_output_with_retry(messages, ProcessedResults, temperature=LLM_TEMPERATURES["reasoning"])
 
     if not processed_results or not processed_results.processed_contents:
         logger.warning("信息处理节点未能从LLM获得有效的处理结果。")
@@ -463,7 +463,7 @@ async def rolling_summary_node(state: SearchAgentState) -> dict:
         new_information=new_info_str
     )
 
-    llm_params = get_llm_params([{"role": "user", "content": prompt}])
+    llm_params = get_llm_params([{"role": "user", "content": prompt}], temperature=LLM_TEMPERATURES["summarization"])
     message = await llm_acompletion(llm_params)
     summary = message.content
 

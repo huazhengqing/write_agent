@@ -7,20 +7,14 @@ import logging
 import argparse
 from pathlib import Path
 from loguru import logger
-from prefect import flow, task
 from dotenv import load_dotenv
 from utils.models import Task
-from flow import flow_write, ensure_task_logger
+from flow import flow_write
 
 
-load_dotenv()
-
-
-log_dir = Path("logs")
-log_dir.mkdir(exist_ok=True)
-
-
-def setup_global_logger():
+def init_logger():
+    log_dir = Path("logs")
+    log_dir.mkdir(exist_ok=True)
     logger.remove()
     class InterceptHandler(logging.Handler):
         def emit(self, record: logging.LogRecord):
@@ -109,7 +103,8 @@ def flow_write_all(tasks_data: list):
 
 
 def main():
-    setup_global_logger()
+    load_dotenv()
+    init_logger()
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "json_file",

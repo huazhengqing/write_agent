@@ -19,51 +19,55 @@ LLM_TEMPERATURES = {
 }
 
 LLM_PARAMS_reasoning = {
-    'model': 'openrouter/deepseek/deepseek-r1-0528:free',
-    'api_key': os.getenv("OPENROUTER_API_KEY"),
-    'temperature': 0.1,
-    'caching': True,
-    'max_tokens': 10000,
-    'max_completion_tokens': 10000,
-    'timeout': 900,
-    'num_retries': 3,
-    'respect_retry_after': True,
-    'disable_moderation': True,
-    'disable_safety_check': True,
-    'safe_mode': False,
-    'safe_prompt': False,
-    'fallbacks': [
+    "model": "openrouter/deepseek/deepseek-r1-0528:free",
+    "api_key": os.getenv("OPENROUTER_API_KEY"),
+    "temperature": LLM_TEMPERATURES["reasoning"],
+    "caching": True,
+    "context_window": 163840,
+    "max_tokens": 10000,
+    "max_completion_tokens": 10000,
+    "timeout": 900,
+    "num_retries": 3,
+    "respect_retry_after": True,
+    "disable_moderation": True,
+    "disable_safety_check": True,
+    "safe_mode": False,
+    "safe_prompt": False,
+    "fallbacks": [
         {
-            "model": 'openai/deepseek-ai/DeepSeek-R1-0528',
+            "model": "openai/deepseek-ai/DeepSeek-R1-0528",
             "api_base": os.getenv("OPENAI_BASE_URL"),
-            "api_key": os.getenv("OPENAI_API_KEY")
+            "api_key": os.getenv("OPENAI_API_KEY"), 
+            "context_window": 163840,
         }
-        # 'openrouter/deepseek/deepseek-r1-0528-qwen3-8b',
-        # 'openrouter/qwen/qwen3-32b',
-        # 'openrouter/qwen/qwen3-30b-a3b',
-        # 'openrouter/deepseek/deepseek-r1-distill-llama-70b',
+        # "openrouter/deepseek/deepseek-r1-0528-qwen3-8b",
+        # "openrouter/qwen/qwen3-32b",
+        # "openrouter/qwen/qwen3-30b-a3b",
+        # "openrouter/deepseek/deepseek-r1-distill-llama-70b",
     ]
 }
 
 LLM_PARAMS_fast= {
-    "model": 'openrouter/deepseek/deepseek-chat-v3-0324:free',
-    'api_key': os.getenv("OPENROUTER_API_KEY"),
-    'temperature': 0.1,
-    'caching': True,
-    'max_tokens': 5000,
-    'max_completion_tokens': 5000,
-    'timeout': 300,
-    'num_retries': 3,
-    'respect_retry_after': True,
-    'disable_moderation': True,
-    'disable_safety_check': True,
-    'safe_mode': False,
-    'safe_prompt': False,
+    "model": "openrouter/deepseek/deepseek-chat-v3-0324:free",
+    "api_key": os.getenv("OPENROUTER_API_KEY"),
+    "temperature": LLM_TEMPERATURES["summarization"],
+    "caching": True,
+    "context_window": 163840,
+    "max_tokens": 5000,
+    "max_completion_tokens": 5000,
+    "timeout": 300,
+    "num_retries": 3,
+    "respect_retry_after": True,
+    "disable_moderation": True,
+    "disable_safety_check": True,
+    "safe_mode": False,
+    "safe_prompt": False,
     "fallbacks": [
         {
-            "model": 'openai/deepseek-ai/DeepSeek-V3',
+            "model": "openai/deepseek-ai/DeepSeek-V3",
             "api_base": os.getenv("OPENAI_BASE_URL"),
-            "api_key": os.getenv("OPENAI_API_KEY")
+            "api_key": os.getenv("OPENAI_API_KEY"),
+            "context_window": 163840,
         }
     ]
 }
@@ -71,27 +75,23 @@ LLM_PARAMS_fast= {
 def custom_get_cache_key(**kwargs):
     """
     自定义缓存键生成逻辑。
-    仅根据 'messages' 和 'temperature' 生成缓存键。
+    仅根据 "messages" 和 "temperature" 生成缓存键。
     """
     messages = kwargs.get("messages", [])
-    temperature = kwargs.get("temperature", LLM_PARAMS_reasoning.get('temperature'))
+    temperature = kwargs.get("temperature", LLM_PARAMS_reasoning.get("temperature"))
     messages_str = json.dumps(messages, sort_keys=True)
     key_data = {
         "messages": messages_str,
         "temperature": temperature
     }
     key_string = json.dumps(key_data, sort_keys=True)
-    return hashlib.sha256(key_string.encode('utf-8')).hexdigest()
+    return hashlib.sha256(key_string.encode("utf-8")).hexdigest()
 
 
 _litellm_setup_lock = threading.Lock()
 _litellm_initialized = False
 
 def setup_litellm():
-    """
-    延迟初始化 litellm 库。
-    此函数是线程安全的, 确保 litellm 的配置只执行一次。
-    """
     global _litellm_initialized
     if _litellm_initialized:
         return
@@ -105,7 +105,7 @@ def setup_litellm():
         
         logger.info("正在延迟加载和配置 litellm...")
         litellm.enable_json_schema_validation=True
-        litellm.cache = Cache(type='disk', get_cache_key=custom_get_cache_key)
+        litellm.cache = Cache(type="disk", get_cache_key=custom_get_cache_key)
         _litellm_initialized = True
         logger.info("litellm 加载和配置完成。")
 
@@ -142,10 +142,10 @@ def get_llm_params(
     llm_params = LLM_PARAMS_reasoning.copy()
     llm_params.update(kwargs)
     if temperature is not None:
-        llm_params['temperature'] = temperature
+        llm_params["temperature"] = temperature
     if tools is not None:
-        llm_params['tools'] = tools
-    llm_params['messages'] = copy.deepcopy(messages)
+        llm_params["tools"] = tools
+    llm_params["messages"] = copy.deepcopy(messages)
     return llm_params
 
 def _format_json_content(content: str) -> str:
@@ -156,7 +156,7 @@ def _format_json_content(content: str) -> str:
         return content
 
 def _format_message_content(content: str) -> str:
-    if content.strip().startswith('{') or content.strip().startswith('['):
+    if content.strip().startswith("{") or content.strip().startswith("["):
         return _format_json_content(content)
     return content
 
@@ -210,12 +210,12 @@ async def llm_acompletion(llm_params: Dict[str, Any], response_model: Optional[T
     import litellm
 
     params_to_log = llm_params.copy()
-    params_to_log.pop('messages', None)
+    params_to_log.pop("messages", None)
     logger.info(f"LLM 参数:\n{json.dumps(params_to_log, indent=2, ensure_ascii=False, default=str)}")
 
     llm_params_for_api = llm_params.copy()
     if response_model:
-        llm_params_for_api['response_format'] = {
+        llm_params_for_api["response_format"] = {
             "type": "json_object",
             "schema": response_model.model_json_schema()
         }
@@ -224,7 +224,7 @@ async def llm_acompletion(llm_params: Dict[str, Any], response_model: Optional[T
     for attempt in range(max_retries):
         system_prompt = ""
         user_prompt = ""
-        messages = llm_params_for_api.get('messages', [])
+        messages = llm_params_for_api.get("messages", [])
         for message in messages:
             if message.get("role") == "system":
                 system_prompt = message.get("content", "")
@@ -250,7 +250,7 @@ async def llm_acompletion(llm_params: Dict[str, Any], response_model: Optional[T
                 if message.tool_calls:
                     tool_call = message.tool_calls[0]
                     raw_output_for_correction = _clean_markdown_fences(tool_call.function.arguments)
-                    if hasattr(tool_call.function, 'parsed_arguments') and tool_call.function.parsed_arguments:
+                    if hasattr(tool_call.function, "parsed_arguments") and tool_call.function.parsed_arguments:
                         parsed_args = tool_call.function.parsed_arguments
                     else:
                         parsed_args = json.loads(raw_output_for_correction)
@@ -289,9 +289,9 @@ async def llm_acompletion(llm_params: Dict[str, Any], response_model: Optional[T
                     logger.info("检测到JSON错误, 下次尝试将进行自我修正...")
                     # 提取原始用户任务内容
                     original_user_content = ""
-                    for msg in reversed(llm_params['messages']):
-                        if msg['role'] == 'user':
-                            original_user_content = msg.get('content', '')
+                    for msg in reversed(llm_params["messages"]):
+                        if msg["role"] == "user":
+                            original_user_content = msg.get("content", "")
                             break
                     
                     correction_prompt = PROMPT_SELF_CORRECTION.format(
@@ -299,10 +299,10 @@ async def llm_acompletion(llm_params: Dict[str, Any], response_model: Optional[T
                         raw_output=raw_output_for_correction,
                         original_task=original_user_content
                     )
-                    system_message = [m for m in llm_params['messages'] if m['role'] == 'system']
-                    llm_params_for_api['messages'] = system_message + [{"role": "user", "content": correction_prompt}]
+                    system_message = [m for m in llm_params["messages"] if m["role"] == "system"]
+                    llm_params_for_api["messages"] = system_message + [{"role": "user", "content": correction_prompt}]
                 else:
-                    llm_params_for_api['messages'] = llm_params['messages']
+                    llm_params_for_api["messages"] = llm_params["messages"]
 
                 logger.info("正在准备重试...")
             else:
