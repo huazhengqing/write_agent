@@ -3,19 +3,20 @@ import json
 import asyncio
 import functools
 from loguru import logger
+import torch
+import litellm
 from diskcache import Cache
 from pydantic import BaseModel, Field
 from typing import List, TypedDict, Optional, Any, TYPE_CHECKING
+from langchain_community.utilities import SearxSearchWrapper
+from sentence_transformers import SentenceTransformer, util
 from utils.models import Task
 from utils.prompt_loader import load_prompts
-from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
+from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES, Embedding_PARAMS
 from utils.rag import get_rag
 
 
 ###############################################################################
-if TYPE_CHECKING:
-    from sentence_transformers import SentenceTransformer
-
 
 
 # 每个(子)任务的最大搜索-抓取-规划循环次数, 用于防止无限循环。
@@ -53,7 +54,6 @@ class SearchAgentState(TypedDict):
     task: Task                          # 传入的原始任务对象, 用于获取上下文和存储记忆。    
     current_focus: str                  # 当前研究循环的具体焦点, 在复杂任务中可能只是原始任务的一部分。
     final_report: Optional[str]         # 最终生成的研究报告, 在 synthesize_node 中填充。
-    embedding_model: Any                # 根据任务语言选择的句子嵌入模型。
     # --- 研究循环状态 (简单路径和复杂路径的子任务循环共用) ---
     plan: Plan                          # 当前的行动计划(思考+查询), 由 planner_node 生成。
     urls_to_scrape: Optional[List[str]] # 从 search_node 返回的待抓取URL列表。
@@ -69,41 +69,11 @@ class SearchAgentState(TypedDict):
 ###############################################################################
 
 
-
 SEARCH_CACHE = Cache(os.path.join(".cache", 'search_cache'), size_limit=int(128 * 1024 * 1024))
 SCRAPE_CACHE = Cache(os.path.join(".cache", 'scrape_cache'), size_limit=int(128 * 1024 * 1024))
+_local_embedding_model: Optional[SentenceTransformer] = None
 
-_search_tool_instance = None
-def get_search_tool():
-    """延迟加载 SearxSearchWrapper 以加速启动。"""
-    global _search_tool_instance
-    if _search_tool_instance is None:
-        from langchain_community.utilities import SearxSearchWrapper
-        logger.info("正在延迟加载 SearxSearchWrapper...")
-        _search_tool_instance = SearxSearchWrapper(searx_host=os.environ.get("SearXNG", "http://127.0.0.1:8080"))
-    return _search_tool_instance
-
-
-def get_embedding_model(language: str) -> "SentenceTransformer":
-    """根据语言延迟加载并返回一个 SentenceTransformer 模型。"""
-    from sentence_transformers import SentenceTransformer
-
-    if language.startswith('zh'):
-        model_name = 'BAAI/bge-small-zh'
-        model_local_dir = 'bge-small-zh'
-    else:
-        model_name = 'all-MiniLM-L6-v2'
-        model_local_dir = 'all-MiniLM-L6-v2'
-
-    model_path = f'../models/{model_local_dir}'
-
-    if not os.path.isdir(model_path):
-        logger.warning(f"本地模型路径 '{model_path}' 不存在, 将尝试从网络下载 '{model_name}'。")
-        logger.warning("请考虑运行 ./start.sh 脚本中的 hf download 命令来本地化模型, 以提高加载速度和稳定性。")
-        model_path = model_name
-    
-    logger.info(f"正在为语言 '{language}' 加载嵌入模型: {model_path}")
-    return SentenceTransformer(model_path)
+_search_tool_instance = SearxSearchWrapper(searx_host=os.environ.get("SearXNG", "http://127.0.0.1:8080"))
 
 
 def async_retry(retries=3, backoff_in_seconds=1):
@@ -288,7 +258,7 @@ async def planner_node(state: SearchAgentState) -> dict:
 
 @async_retry(retries=2, backoff_in_seconds=2)
 async def _search_with_retry(query: str):
-    return get_search_tool().results(query)
+    return _search_tool_instance.results(query)
 
 async def search_node(state: SearchAgentState) -> dict:
     queries = state['plan'].queries
@@ -529,14 +499,18 @@ async def should_continue_search(state: SearchAgentState) -> str:
         # 这比简单的词汇匹配(如Jaccard)更准确, 能更好地判断内容是否真的没有新意。
         similarity_threshold = 0.98
         
-        from sentence_transformers import util
-        
-        embedding_model = state['embedding_model']
-        # 1. 将新旧摘要编码为向量
-        embeddings = embedding_model.encode([prev_summary, current_summary], convert_to_tensor=True) # type: ignore
-        # 2. 计算余弦相似度
-        cosine_sim = util.pytorch_cos_sim(embeddings[0], embeddings[1]).item()
-        
+        cosine_sim = 0.0
+        try:
+            params = Embedding_PARAMS.copy()
+            params["input"] = [prev_summary, current_summary]
+            response = await litellm.aembedding(**params)
+            embedding_vectors = [item['embedding'] for item in response.data]
+            embedding1 = torch.tensor(embedding_vectors[0])
+            embedding2 = torch.tensor(embedding_vectors[1])
+            cosine_sim = util.pytorch_cos_sim(embedding1, embedding2).item()
+        except Exception as e:
+            logger.error(f"计算摘要相似度时出错: {e}。跳过停滞检测。")
+
         logger.info(f"新旧摘要的语义相似度: {cosine_sim:.4f}")
 
         if cosine_sim > similarity_threshold:
@@ -601,16 +575,6 @@ async def search(task: Task) -> Task:
     logger.info(f"开始\n{task.model_dump_json(indent=2, exclude_none=True)}")
     
     from langgraph.graph import StateGraph, END
-    from langdetect import detect, LangDetectException
-
-    # 根据任务目标检测语言, 并加载相应的嵌入模型
-    try:
-        lang = detect(task.goal)
-    except LangDetectException:
-        lang = 'zh'
-        logger.warning(f"无法检测任务 '{task.goal}' 的语言")
-    
-    embedding_model = get_embedding_model(lang)
     
     # 1. 定义工作流图 (StateGraph)
     workflow = StateGraph(SearchAgentState)
@@ -651,7 +615,6 @@ async def search(task: Task) -> Task:
     # 5. 初始化状态并运行图
     initial_state = SearchAgentState(
         task=task,                              # 核心: 传入的任务对象
-        embedding_model=embedding_model,        # 核心: 根据任务语言加载的嵌入模型
         current_focus=task.goal,                # 核心: 当前研究循环的焦点, 初始为任务目标
         final_report=None,                      # 最终报告, 初始为空
         plan=Plan(thought="", queries=[]),      # 当前的行动计划, 初始为空

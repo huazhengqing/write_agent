@@ -12,38 +12,41 @@ from utils.models import Task
 from flow import flow_write
 
 
+load_dotenv()
+
 def init_logger():
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
     logger.remove()
-    class InterceptHandler(logging.Handler):
-        def emit(self, record: logging.LogRecord):
-            try:
-                # 尝试获取对应的 Loguru 级别
-                level = logger.level(record.levelname).name
-            except ValueError:
-                level = record.levelno
-
-            # 找到调用栈的正确深度
-            frame, depth = logging.currentframe(), 2
-            while frame and frame.f_code.co_filename == logging.__file__:
-                frame = frame.f_back
-                depth += 1
-
-            logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
-
-    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
-    logging.getLogger("llama_index").setLevel(logging.DEBUG)
+    # class InterceptHandler(logging.Handler):
+    #     def emit(self, record: logging.LogRecord):
+    #         try:
+    #             # 尝试获取对应的 Loguru 级别
+    #             level = logger.level(record.levelname).name
+    #         except ValueError:
+    #             level = record.levelno
+    #         # 找到调用栈的正确深度
+    #         frame, depth = logging.currentframe(), 2
+    #         while frame and frame.f_code.co_filename == logging.__file__:
+    #             frame = frame.f_back
+    #             depth += 1
+    #         logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+    # logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+    # logging.getLogger("llama_index").setLevel(logging.DEBUG)
     logger.add(
         log_dir / "main.log",
         filter=lambda record: not record["extra"].get("run_id"), 
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         rotation="00:00",
-        level="DEBUG", # 将日志级别设为 DEBUG, 以确保能看到 llama_index 的详细日志
+        level="DEBUG", 
         enqueue=True,
         backtrace=True,
         diagnose=True,
     )
+
+
+init_logger()
+
 
 def sanitize_filename(name: str) -> str:
     s = re.sub(r'[\\/*?:"<>|]', "", name)
@@ -103,8 +106,6 @@ def flow_write_all(tasks_data: list):
 
 
 def main():
-    load_dotenv()
-    init_logger()
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "json_file",

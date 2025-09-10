@@ -74,7 +74,7 @@ USER_PROMPT = """
 
 ## 直接依赖项 (当前任务的直接输入)
 
-### 设计结果:
+### 设计方案:
 <dependent_design>
 {dependent_design}
 </dependent_design>
@@ -190,7 +190,7 @@ USER_PROMPT_SYNTHESIZE = """
 
 ## 直接依赖项 (当前任务的直接输入)
 
-### 设计结果:
+### 设计方案:
 <dependent_design>
 {dependent_design}
 </dependent_design>

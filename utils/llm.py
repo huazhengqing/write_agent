@@ -4,7 +4,8 @@ import collections
 import json
 import hashlib
 import os
-import threading
+import litellm
+from litellm.caching.caching import Cache
 from loguru import logger
 from typing import List, Dict, Any, Optional, Type, Callable
 from pydantic import BaseModel, ValidationError
@@ -36,9 +37,24 @@ LLM_PARAMS_reasoning = {
     "fallbacks": [
         {
             "model": "openai/deepseek-ai/DeepSeek-R1-0528",
-            "api_base": os.getenv("OPENAI_BASE_URL"),
-            "api_key": os.getenv("OPENAI_API_KEY"), 
+            "api_base": "https://api-inference.modelscope.cn/v1/",
+            "api_key": os.getenv("modelscope_API_KEY"), 
             "context_window": 163840,
+        }, 
+        {
+            "model": "gemini/gemini-2.5-flash-lite",
+            "api_key": os.getenv("GEMINI_API_KEY"), 
+            "context_window": 1048576,
+        }, 
+        {
+            "model": "groq/llama-3.1-8b-instant",
+            "api_key": os.getenv("GROQ_API_KEY"), 
+            "context_window": 131072,
+        }, 
+        {
+            "model": "groq/qwen/qwen3-32b",
+            "api_key": os.getenv("GROQ_API_KEY"), 
+            "context_window": 131072,
         }
         # "openrouter/deepseek/deepseek-r1-0528-qwen3-8b",
         # "openrouter/qwen/qwen3-32b",
@@ -65,12 +81,49 @@ LLM_PARAMS_fast= {
     "fallbacks": [
         {
             "model": "openai/deepseek-ai/DeepSeek-V3",
-            "api_base": os.getenv("OPENAI_BASE_URL"),
-            "api_key": os.getenv("OPENAI_API_KEY"),
+            "api_base": "https://api-inference.modelscope.cn/v1/",
+            "api_key": os.getenv("modelscope_API_KEY"), 
             "context_window": 163840,
+        }, 
+        {
+            "model": "gemini/gemini-2.5-flash-lite",
+            "api_key": os.getenv("GEMINI_API_KEY"), 
+            "context_window": 1048576,
+        }, 
+        {
+            "model": "groq/llama-3.1-8b-instant",
+            "api_key": os.getenv("GROQ_API_KEY"), 
+            "context_window": 131072,
+        }, 
+        {
+            "model": "groq/qwen/qwen3-32b",
+            "api_key": os.getenv("GROQ_API_KEY"), 
+            "context_window": 131072,
         }
     ]
 }
+
+Embedding_PARAMS = {
+    "model": "openai/BAAI/bge-m3",
+    "api_base": "https://api.siliconflow.cn/v1/",
+    "api_key": os.getenv("siliconflow_API_KEY"),
+    "dimensions": 1024, 
+    "caching": True,
+    "timeout": 300,
+    "num_retries": 3,
+    "respect_retry_after": True
+}
+
+Embedding_PARAMS_2 = {
+    "model": "gemini/gemini-embedding-001",  # 768,1536,3072
+    "api_key": os.getenv("GEMINI_API_KEY"),
+    "dimensions": 3072,   # 1536、3072
+    "caching": True,
+    "timeout": 300,
+    "num_retries": 3,
+    "respect_retry_after": True
+}
+
 
 def custom_get_cache_key(**kwargs):
     """
@@ -88,26 +141,9 @@ def custom_get_cache_key(**kwargs):
     return hashlib.sha256(key_string.encode("utf-8")).hexdigest()
 
 
-_litellm_setup_lock = threading.Lock()
-_litellm_initialized = False
+litellm.enable_json_schema_validation=True
+litellm.cache = Cache(type="disk", get_cache_key=custom_get_cache_key)
 
-def setup_litellm():
-    global _litellm_initialized
-    if _litellm_initialized:
-        return
-
-    with _litellm_setup_lock:
-        if _litellm_initialized:
-            return
-
-        import litellm
-        from litellm.caching.caching import Cache
-        
-        logger.info("正在延迟加载和配置 litellm...")
-        litellm.enable_json_schema_validation=True
-        litellm.cache = Cache(type="disk", get_cache_key=custom_get_cache_key)
-        _litellm_initialized = True
-        logger.info("litellm 加载和配置完成。")
 
 def get_llm_messages(SYSTEM_PROMPT: str, USER_PROMPT: str, context_dict_system: Dict[str, Any] = None, context_dict_user: Dict[str, Any] = None) -> list[dict]:
     if not SYSTEM_PROMPT and not USER_PROMPT:
@@ -164,26 +200,21 @@ def _clean_markdown_fences(content: str) -> str:
     """如果内容被Markdown代码块包裹, 则移除它们。"""
     if not content:
         return ""
-    
+
     text = content.strip()
-    
     # 检查是否以 ``` 开头
     if not text.startswith("```"):
         return text
-
     # 移除开头的 ```lang\n
     text = re.sub(r"^```[^\n]*\n?", "", text, count=1)
-    
     # 检查是否以 ``` 结尾
     if text.endswith("```"):
         text = text[:-3]
-        
     return text.strip()
 
 def _default_text_validator(content: str):
     if not content or len(content.strip()) < 20:
         raise ValueError("生成的内容为空或过短。")
-
 
 PROMPT_SELF_CORRECTION = """
 # 任务: 修正JSON输出
@@ -204,11 +235,7 @@ PROMPT_SELF_CORRECTION = """
 3.  禁止在 JSON 前后添加任何额外解释或 markdown 代码块。
 """
 
-
 async def llm_acompletion(llm_params: Dict[str, Any], response_model: Optional[Type[BaseModel]] = None, validator: Optional[Callable[[Any], None]] = None):
-    setup_litellm()
-    import litellm
-
     params_to_log = llm_params.copy()
     params_to_log.pop("messages", None)
     logger.info(f"LLM 参数:\n{json.dumps(params_to_log, indent=2, ensure_ascii=False, default=str)}")

@@ -31,7 +31,7 @@ async def atom(task: Task) -> Task:
     SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, module_name, "SYSTEM_PROMPT", "USER_PROMPT")
     context = await get_rag().get_context_base(task)
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
-    llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["reasoning"])
+    llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["classification"])
     message = await llm_acompletion(llm_params, response_model=AtomOutput)
     data = message.validated_data
     content = message.content

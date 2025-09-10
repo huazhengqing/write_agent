@@ -1,7 +1,6 @@
 # openrouter
 
 ## reasoning LLM
-
 ### 免费
 | 模型名称(Model Name)               | 创建时间(Created) | 上下文长度(Context) | 输入令牌费用(Input Tokens) | 输出令牌费用(Output Tokens) |
 |--------------------------------------|---------------------|-----------------------|------------------------------|-------------------------------|
@@ -16,7 +15,6 @@
 | microsoft/mai-ds-r1:free             | Apr 21, 2025        | 163,840               | $0/M                         | $0/M                          |
 | deepseek/deepseek-r1-distill-llama-70b:free | Jan 23, 2025   | 8,192                 | $0/M                         | $0/M                          |
 | deepseek/deepseek-r1:free            | Jan 20, 2025        | 163,840               | $0/M                         | $0/M                          |
-
 ### 价格表
 | 模型名称(Model Name)               | 创建日期(Created Date) | 上下文长度(Context Length) | 输入令牌价格(Input Tokens Price) | 输出令牌价格(Output Tokens Price) | 输入图片价格(Input Images Price) |
 |--------------------------------------|--------------------------|------------------------------|------------------------------------|-------------------------------------|------------------------------------|
@@ -56,7 +54,6 @@
 | anthropic/claude-opus-4              | May 22, 2025             | 200,000                      | $15/M                              | $75/M                               | $24/K                               |
 
 ## 非推理 LLM
-
 ### 免费
 | 模型名称(Model Name) | 创建日期(Created Date) | 上下文长度(Context Length) | 输入 tokens 成本(Input Cost) | 输出 tokens 成本(Output Cost) |
 |-------------------------|---------------------------|-------------------------------|--------------------------------|---------------------------------|
@@ -67,7 +64,6 @@
 | google/gemini-2.0-flash-exp:free | Dec 11, 2024        | 1,048,576                     | $0/M                           | $0/M                            |
 | meta-llama/llama-3.3-70b-instruct:free | Dec 6, 2024        | 65,536                        | $0/M                           | $0/M                            |
 | mistralai/mistral-nemo:free | Jul 19, 2024            | 131,072                       | $0/M                           | $0/M                            |
-
 ### 价格表
 | 模型名称(Model Name)               | 创建日期(Created Date) | 上下文长度(Context Length) | 输入令牌价格(Input Tokens Price) | 输出令牌价格(Output Tokens Price) | 输入图片价格(Input Images Price) | 输入音频价格(Input Audio Price) |
 |--------------------------------------|---------------------------|-------------------------------|-----------------------------------|------------------------------------|------------------------------------|------------------------------------|
@@ -130,3 +126,33 @@
 | x-ai/grok-3                          | Jun 10, 2025              | 131,072                       | $3/M                               | $15/M                              | -                                  | -                                  |
 | anthropic/claude-3.5-sonnet          | Oct 22, 2024              | 200,000                       | $3/M                               | $15/M                              | $4.80/K                             | -                                  |
 | openai/chatgpt-4o-latest             | Aug 14, 2024              | 128,000                       | $5/M                               | $15/M                              | $7.225/K                            | -                                  |
+
+
+# groq
+## 生产环境可用模型表
+| 模型ID                        | 开发者   | 上下文窗口（tokens） | 最大生成tokens上限 | 最大文件大小 |
+|-------------------------------|----------|----------------------|--------------------|--------------|
+| llama-3.1-8b-instant          | Meta     | 131,072              | 131,072            | -            |
+| llama-3.3-70b-versatile       | Meta     | 131,072              | 32,768             | -            |
+| meta-llama/llama-guard-4-12b  | Meta     | 131,072              | 1,024              | 20 MB        |
+| openai/gpt-oss-120b           | OpenAI   | 131,072              | 65,536             | -            |
+| openai/gpt-oss-20b            | OpenAI   | 131,072              | 65,536             | -            |
+| whisper-large-v3              | OpenAI   | -                    | -                  | 100 MB       |
+| whisper-large-v3-turbo        | OpenAI   | -                    | -                  | 100 MB       |
+## 预览模型表
+| 模型ID                                      | 开发者       | 上下文窗口（tokens） | 最大生成tokens上限 | 最大文件大小 |
+|---------------------------------------------|--------------|----------------------|--------------------|--------------|
+| meta-llama/llama-4-maverick-17b-128e-instruct | Meta         | 131,072              | 8,192              | 20 MB        |
+| meta-llama/llama-4-scout-17b-16e-instruct    | Meta         | 131,072              | 8,192              | 20 MB        |
+| meta-llama/llama-prompt-guard-2-22m          | Meta         | 512                  | 512                | -            |
+| meta-llama/llama-prompt-guard-2-86m          | Meta         | 512                  | 512                | -            |
+| moonshotai/kimi-k2-instruct-0905             | Moonshot AI  | 262,144              | 16,384             | -            |
+| playai-tts                                   | PlayAI       | 8,192                | 8,192              | -            |
+| playai-tts-arabic                            | PlayAI       | 8,192                | 8,192              | -            |
+| qwen/qwen3-32b                               | Alibaba Cloud | 131,072              | 40,960             | -            |
+
+
+
+
+
+

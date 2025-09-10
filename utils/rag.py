@@ -1,38 +1,82 @@
-#coding: utf8
 import os
 import json
 import hashlib
 import asyncio
+from datetime import datetime
 from loguru import logger
 from diskcache import Cache
-from datetime import datetime
-from typing import Dict, Any, List, Literal, Optional, Callable, Union, TYPE_CHECKING
+from typing import Dict, Any, List, Literal, Optional, Callable
+from qdrant_client import QdrantClient, AsyncQdrantClient
 from llama_index.llms.litellm import LiteLLM
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.embeddings.huggingface import HuggingFaceEmbedding
+from llama_index.graph_stores.memgraph import MemgraphGraphStore
+from llama_index.vector_stores.qdrant import QdrantVectorStore
+from llama_index.core import (
+    StorageContext, 
+    Document, 
+    VectorStoreIndex, 
+    KnowledgeGraphIndex
+)
+from llama_index.core.response_synthesizers import CompactAndRefine
+from llama_index.core.indices.prompt_helper import PromptHelper
+from llama_index.core.tools import FunctionTool
+from llama_index.core.base.response.schema import Response
+from llama_index.core.agent import ReActAgent
+from llama_index.core.memory import ChatMemoryBuffer
+from llama_index.core.prompts import PromptTemplate
+from llama_index.core.postprocessor import LLMRerank
+from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
+from llama_index.core.node_parser import SentenceSplitter, MarkdownNodeParser
 from utils.db import get_db
 from utils.models import Task
 from utils.prompt_loader import load_prompts
-from utils.llm import LLM_PARAMS_fast, LLM_PARAMS_reasoning, get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
-from llama_index.core.response_synthesizers import CompactAndRefine
-from llama_index.core.indices.prompt_helper import PromptHelper
+from utils.llm import (
+    LLM_TEMPERATURES,
+    LLM_PARAMS_reasoning, 
+    LLM_PARAMS_fast, 
+    Embedding_PARAMS, 
+    get_llm_messages, 
+    get_llm_params, 
+    llm_acompletion
+)
 
 
 class RAG:
     def __init__(self):
-        self._embed_model: Optional[Union[LiteLLMEmbedding, HuggingFaceEmbedding]] = None
-        self._qdrant_client: Optional[QdrantClient] = None
-        self._qdrant_aclient: Optional["AsyncQdrantClient"] = None
-        self._graph_store: Optional[MemgraphGraphStore] = None
-        self._agent_llm: Optional[LiteLLM] = None
-        self._extraction_llm: Optional[LiteLLM] = None
-
-        if TYPE_CHECKING:
-            from qdrant_client import QdrantClient, AsyncQdrantClient
-            from llama_index.graph_stores.memgraph import MemgraphGraphStore
-            from llama_index.core import StorageContext
-
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+
+        params = Embedding_PARAMS.copy()
+        model_name = params.pop('model')
+        api_base = params.pop('api_base')
+        api_key = params.pop('api_key')
+        self.embed_model = LiteLLMEmbedding(
+            model_name=model_name,
+            api_base=api_base,
+            api_key=api_key,
+            **params,
+        )
+        self.embed_model.get_text_embedding("test")
+
+        self.qdrant_client = QdrantClient(
+            host=os.getenv("qdrant_host", "localhost"),
+            port=int(os.getenv("qdrant_port", "6333")),
+        )
+
+        self.qdrant_aclient = AsyncQdrantClient(
+            host=os.getenv("qdrant_host", "localhost"),
+            port=int(os.getenv("qdrant_port", "6333")),
+        )
+
+        self.graph_store = MemgraphGraphStore(
+            url=os.getenv("memgraph_url", "bolt://localhost:7687"),
+            username=os.getenv("memgraph_username", "memgraph"),
+            password=os.getenv("memgraph_password", "memgraph"),
+        )
+
+        self.agent_llm: LiteLLM = LiteLLM(**LLM_PARAMS_reasoning)
+        self.extraction_llm: LiteLLM = LiteLLM(**LLM_PARAMS_fast)
+
         cache_base_dir = os.path.join(project_root, ".cache", "rag")
         os.makedirs(cache_base_dir, exist_ok=True)
         self.caches: Dict[str, Cache] = {
@@ -46,94 +90,7 @@ class RAG:
             'task_list': Cache(os.path.join(cache_base_dir, "task_list"), size_limit=int(32 * (1024**2))),
         }
 
-    @property
-    def embed_model(self) -> Union[LiteLLMEmbedding, HuggingFaceEmbedding]:
-        if self._embed_model is None:
-            logger.info("正在延迟加载 embed_model...")
-            embed_model_name = os.getenv("embed_model")
-            embed_BASE_URL = os.getenv("embed_BASE_URL")
-            embed_API_KEY = os.getenv("embed_API_KEY")
-            embed_dimensions = int(os.getenv("embed_dims", "1024"))
-            if embed_model_name and embed_BASE_URL and embed_API_KEY:
-                logger.info(f"使用远程嵌入模型: {embed_model_name}")
-                self._embed_model = LiteLLMEmbedding(
-                    model_name=embed_model_name,
-                    api_base=embed_BASE_URL,
-                    api_key=embed_API_KEY,
-                    kwargs={"dimensions": embed_dimensions},
-                )
-                self._embed_model.get_text_embedding("test")
-            else:
-                model_identifier = os.getenv("local_embed_model", "BAAI/bge-m3")
-                logger.info(f"使用本地嵌入模型: {model_identifier}")
-                model_folder_name = model_identifier.split("/")[-1]
-                project_root = os.path.abspath(
-                    os.path.join(os.path.dirname(__file__), "..")
-                )
-                local_model_path = os.path.join(
-                    project_root, "models", model_folder_name
-                )
-                if not os.path.isdir(local_model_path):
-                    raise FileNotFoundError(
-                        f"本地嵌入模型路径不存在: {local_model_path}. "
-                        "请确认模型已下载或配置了远程嵌入模型 API。"
-                    )
-                # import torch
-                # device = "cuda" if torch.cuda.is_available() else "cpu"
-                # self._embed_model = HuggingFaceEmbedding(model_name=local_model_path, device=device)
-        return self._embed_model
-
-    @property
-    def qdrant_client(self) -> "QdrantClient":
-        from qdrant_client import QdrantClient
-        if self._qdrant_client is None:
-            logger.info("正在延迟加载 qdrant_client...")
-            self._qdrant_client = QdrantClient(
-                host=os.getenv("qdrant_host", "localhost"),
-                port=int(os.getenv("qdrant_port", "6333")),
-            )
-        return self._qdrant_client
-
-    @property
-    def qdrant_aclient(self) -> "AsyncQdrantClient":
-        from qdrant_client import AsyncQdrantClient
-        if self._qdrant_aclient is None:
-            logger.info("正在延迟加载 qdrant_aclient...")
-            self._qdrant_aclient = AsyncQdrantClient(
-                host=os.getenv("qdrant_host", "localhost"),
-                port=int(os.getenv("qdrant_port", "6333")),
-            )
-        return self._qdrant_aclient
-
-    @property
-    def graph_store(self) -> "MemgraphGraphStore":
-        from llama_index.graph_stores.memgraph import MemgraphGraphStore
-        if self._graph_store is None:
-            logger.info("正在延迟加载 graph_store...")
-            self._graph_store = MemgraphGraphStore(
-                url=os.getenv("memgraph_url", "bolt://localhost:7687"),
-                username=os.getenv("memgraph_username", "memgraph"),
-                password=os.getenv("memgraph_password", "memgraph"),
-            )
-        return self._graph_store
-
-    @property
-    def agent_llm(self) -> LiteLLM:
-        if self._agent_llm is None:
-            logger.info("正在延迟加载 agent_llm...")
-            self._agent_llm = LiteLLM(**LLM_PARAMS_reasoning)
-        return self._agent_llm
-
-    @property
-    def extraction_llm(self) -> LiteLLM:
-        if self._extraction_llm is None:
-            logger.info("正在延迟加载 extraction_llm...")
-            self._extraction_llm = LiteLLM(**LLM_PARAMS_fast)
-        return self._extraction_llm
-
-    def _get_storage_context(self, run_id: str) -> "StorageContext":
-        from llama_index.vector_stores.qdrant import QdrantVectorStore
-        from llama_index.core import StorageContext
+    def _get_storage_context(self, run_id: str) -> StorageContext:
         vector_store = QdrantVectorStore(
             client=self.qdrant_client,
             aclient=self.qdrant_aclient,
@@ -143,8 +100,6 @@ class RAG:
             vector_store=vector_store,
             graph_store=self.graph_store
         )
-
-###############################################################################
 
     async def add(self, task: Task, task_type: str):
         db = get_db(run_id=task.run_id, category=task.category)
@@ -259,10 +214,6 @@ class RAG:
                 header_parts.append(task.length)
             header = " ".join(filter(None, header_parts))
             content = f"# 任务\n{header}\n\n{content}"
-
-        from llama_index.core import Document, StorageContext, VectorStoreIndex, KnowledgeGraphIndex
-        from llama_index.core.prompts import PromptTemplate
-        from llama_index.core.node_parser import SentenceSplitter, MarkdownNodeParser
 
         storage_context = self._get_storage_context(task.run_id)
         
@@ -544,8 +495,6 @@ class RAG:
             logger.warning("生成的探询计划为空或无效, 跳过搜索。")
             return ""
 
-        from llama_index.core import VectorStoreIndex
-        from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
         get_search_config, kg_gen_query_prompt = load_prompts(task.category, "rag_cn", "get_search_config", "kg_gen_query_prompt")
 
         config = get_search_config(task, inquiry_plan, search_type)
@@ -564,7 +513,6 @@ class RAG:
         logger.info(f"[{task.id}][{search_type}] 配置节点后处理器 (reranker)...")
         node_postprocessors = []
         if strategy['use_rerank']:
-            from llama_index.core.postprocessor import LLMRerank
             reranker = LLMRerank(
                 llm=self.agent_llm,
                 top_n=strategy['rerank_top_n'],
@@ -606,8 +554,6 @@ class RAG:
         logger.info(f"[{task.id}][{search_type}] 向量查询引擎构建完成。")
 
         logger.info(f"[{task.id}][{search_type}] 构建知识图谱查询引擎...")
-        from llama_index.core.prompts import PromptTemplate
-        from llama_index.core import KnowledgeGraphIndex
         kg_query_gen_prompt = PromptTemplate(kg_gen_query_prompt.format(kg_filters_str=config["kg_filters_str"]))
         kg_index = await asyncio.to_thread(
             KnowledgeGraphIndex.from_documents,
@@ -685,8 +631,6 @@ class RAG:
     async def _execute_react_agent(self, task: Task, vector_query_engine: Any, kg_query_engine: Any, config: Dict[str, Any]) -> str:
         logger.info(f"检索: ReActAgent 模型 \n{json.dumps(config, indent=2, ensure_ascii=False)}")
 
-        from llama_index.core.agent import ReActAgent
-        from llama_index.core.memory import ChatMemoryBuffer
         get_search_config, format_response_with_sorting, react_system_prompt = load_prompts(task.category, "rag_cn", "get_search_config", "format_response_with_sorting", "react_system_prompt")
 
         logger.info(f"[{task.id}] 创建 Agent 可用的工具 (Tools)...")
@@ -729,9 +673,6 @@ class RAG:
         """
         将一个查询引擎包装成一个 Agent 可用的、具备排序功能的工具 (FunctionTool)。
         """
-        from llama_index.core.tools import FunctionTool
-        from llama_index.core.base.response.schema import Response
-
         async def sorted_query(query_str: str) -> str:
             response: Response = await asyncio.to_thread(query_engine.query, query_str)
             return await asyncio.to_thread(formatter, response, sort_by)

@@ -24,10 +24,10 @@ Table: t_tasks
 - plan_reasoning: TEXT - 任务分解的推理过程
 - plan_reflection: TEXT - 任务分解结果的反思结果
 - plan_reflection_reasoning: TEXT - 任务分解结果的反思的推理过程
-- design: TEXT - 设计结果
-- design_reasoning: TEXT - 设计结果的推理过程
-- design_reflection: TEXT - 设计结果的反思结果
-- design_reflection_reasoning: TEXT -  设计结果的反思的推理过程
+- design: TEXT - 设计方案
+- design_reasoning: TEXT - 设计方案的推理过程
+- design_reflection: TEXT - 设计方案的反思结果
+- design_reflection_reasoning: TEXT -  设计方案的反思的推理过程
 - search: TEXT - 搜索结果
 - search_reasoning: TEXT - 搜索结果的推理过程
 - write: TEXT - 正文
@@ -413,7 +413,6 @@ def get_db(run_id: str, category: str) -> DB:
     with _lock:
         if run_id in _stores:
             return _stores[run_id]
-        
         db_path = os.path.join("output", category, f"{run_id}.db")
         store = DB(db_path=db_path)
         _stores[run_id] = store

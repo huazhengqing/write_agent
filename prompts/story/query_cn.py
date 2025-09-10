@@ -224,7 +224,7 @@ SYSTEM_PROMPT_search = """
 ## 结构与示例
 {
   "retrieval_mode": "simple",
-  "main_inquiry": "为设计[一场中世纪海战]获取必要的事实资料。",
+  "main_inquiry": "为设计[某个具体场景或设定]获取必要的事实资料。",
   "questions": {
     "关于[某种古代战船]的结构和武器配置, 已有哪些研究?": "high",
     "关于[某种导航仪器]的原理和使用方法是怎样的?": "high",
