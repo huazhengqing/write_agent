@@ -14,6 +14,7 @@ from flow import flow_write
 
 load_dotenv()
 
+
 def init_logger():
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
@@ -42,7 +43,6 @@ def init_logger():
         backtrace=True,
         diagnose=True,
     )
-
 
 init_logger()
 
@@ -80,7 +80,8 @@ def flow_write_all(tasks_data: list):
             "category": category,
             "language": language,
             "root_name": root_name,
-            "run_id": run_id
+            "run_id": run_id,
+            "day_wordcount_goal": task_info.get("day_wordcount_goal", 0)
         }
         task_args = {k: v for k, v in task_params.items() if v is not None}
         root_task = Task(**task_args)

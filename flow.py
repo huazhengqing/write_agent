@@ -5,6 +5,7 @@ from typing import Any, Dict, Callable
 from prefect import flow, task, get_run_logger
 from prefect.filesystems import LocalFileSystem
 from prefect.exceptions import ObjectNotFound
+from prefect.serializers import JSONSerializer
 from prefect.context import TaskRunContext
 from utils.models import Task
 from agents.atom import atom
@@ -41,19 +42,18 @@ def setup_prefect_storage() -> LocalFileSystem:
         logger.success(f"成功创建并保存了 Prefect 存储块 '{block_name}'。")
         return storage_block
 
-
 local_storage = setup_prefect_storage()
 
-day_wordcount_goal = 10000
+
+readable_json_serializer = JSONSerializer(dumps_kwargs={"indent": 2, "ensure_ascii": False})
+
 
 _SINK_IDS = {}
 def ensure_task_logger(run_id: str):
     if run_id in _SINK_IDS:
         return
-
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
-    
     sink_id = logger.add(
         log_dir / f"{run_id}.log",
         filter=lambda record: record["extra"].get("run_id") == run_id,
@@ -77,8 +77,8 @@ def get_cache_key(context: TaskRunContext, parameters: Dict[str, Any]) -> str:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/atom.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/atom.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_atom",
 )
@@ -91,8 +91,8 @@ async def task_atom(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_before_reflection.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_before_reflection.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_plan_before_reflection",
 )
@@ -109,8 +109,8 @@ async def task_plan_before_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_plan",
 )
@@ -123,8 +123,8 @@ async def task_plan(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_reflection.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_reflection.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_plan_reflection",
 )
@@ -137,8 +137,8 @@ async def task_plan_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_design.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_design.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_design",
 )
@@ -151,8 +151,8 @@ async def task_execute_design(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_design_reflection.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_design_reflection.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_design_reflection",
 )
@@ -165,8 +165,8 @@ async def task_execute_design_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_search.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_search.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_search",
 )
@@ -179,8 +179,8 @@ async def task_execute_search(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_before_reflection.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_before_reflection.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_write_before_reflection",
 )
@@ -193,8 +193,8 @@ async def task_execute_write_before_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_write",
 )
@@ -208,8 +208,8 @@ async def task_execute_write(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_reflection.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_reflection.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_write_reflection",
 )
@@ -223,8 +223,8 @@ async def task_execute_write_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_summary.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_summary.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_write_summary",
 )
@@ -238,8 +238,8 @@ async def task_execute_summary(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_design.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_design.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_aggregate_design",
 )
@@ -252,8 +252,8 @@ async def task_aggregate_design(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_search.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_search.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_aggregate_search",
 )
@@ -266,8 +266,8 @@ async def task_aggregate_search(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_summary.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_summary.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_aggregate_summary",
 )
@@ -280,8 +280,8 @@ async def task_aggregate_summary(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/store_{parameters[operation_name]}.json", 
-    result_serializer="json", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/store_{parameters[operation_name]}.json",
+    result_serializer=readable_json_serializer,
     retries=1,
     task_run_name="{task.run_id}_{task.id}_store_{operation_name}",
 )
@@ -307,11 +307,13 @@ async def flow_write(current_task: Task):
         if not current_task.id or not current_task.goal:
             raise ValueError("任务ID和目标不能为空。")
 
-        db = get_db(run_id=current_task.run_id, category=current_task.category)
-        word_count_24h = await asyncio.to_thread(db.get_word_count_last_24h)
-        if word_count_24h >= day_wordcount_goal:
-            logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停任务: {current_task.run_id}")
-            return
+        day_wordcount_goal = getattr(current_task, 'day_wordcount_goal', 0)
+        if day_wordcount_goal > 0:
+            db = get_db(run_id=current_task.run_id, category=current_task.category)
+            word_count_24h = await asyncio.to_thread(db.get_word_count_last_24h)
+            if word_count_24h >= day_wordcount_goal:
+                logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停任务: {current_task.run_id}")
+                return
 
         # 判断任务是否为原子任务
         task_result = await task_atom(current_task)
@@ -361,10 +363,12 @@ async def flow_write(current_task: Task):
             if task_result.sub_tasks:
                 logger.info(f"任务 '{current_task.id}' 分解为 {len(task_result.sub_tasks)} 个子任务, 开始递归处理。")
                 for sub_task in task_result.sub_tasks:
-                    word_count_24h = await asyncio.to_thread(db.get_word_count_last_24h)
-                    if word_count_24h >= day_wordcount_goal:
-                        logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停处理后续子任务: {sub_task.run_id}")
-                        return
+                    if day_wordcount_goal > 0:
+                        db = get_db(run_id=current_task.run_id, category=current_task.category)
+                        word_count_24h = await asyncio.to_thread(db.get_word_count_last_24h)
+                        if word_count_24h >= day_wordcount_goal:
+                            logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停处理后续子任务: {sub_task.run_id}")
+                            return
                     
                     await flow_write(sub_task)
                 

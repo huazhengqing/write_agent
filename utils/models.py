@@ -21,6 +21,7 @@ class Task(BaseModel):
     category: CategoryType = Field(..., description="任务类别 (例如 'story', 'book', 'report')")
     language: LanguageType = Field(..., description="任务语言 (例如 'cn', 'en')")
     root_name: str = Field(..., description="根任务的名字, 书名, 报告名")
+    day_wordcount_goal: Optional[int] = Field(0, description="每日字数目标, 0表示无限制")
 
     run_id: str = Field(..., description="整个流程运行的唯一ID, 用于隔离不同任务的记忆")
 
@@ -54,9 +55,3 @@ def get_preceding_sibling_ids(task_id: str) -> List[str]:
     if current_seq <= 1:
         return []
     return [f"{parent_id}.{i}" for i in range(1, current_seq)]
-
-
-
-
-
-

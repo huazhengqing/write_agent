@@ -60,6 +60,7 @@ def convert_plan_to_tasks(
         "language": parent_task.language,
         "root_name": parent_task.root_name,
         "run_id": parent_task.run_id,
+        "day_wordcount_goal": parent_task.day_wordcount_goal,
     }
     for plan_item in sub_task_outputs:
         new_task = Task(
