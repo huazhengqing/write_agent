@@ -110,7 +110,16 @@ class RAG:
                 self.caches['task_list'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_task, task)
             await asyncio.to_thread(db.add_result, task)
-        elif task_type == "task_plan_before_reflection":
+        # elif task_type == "task_plan_before_reflection":
+        #     if task.results.get("design_reflection"):
+        #         self.caches['dependent_design'].evict(tag=task.run_id)
+        #         await asyncio.to_thread(db.add_result, task)
+        #         await self.store_design(task, task.results.get("design_reflection"))
+        elif task_type == "task_design_hierarchy":
+            if task.results.get("design"):
+                self.caches['dependent_design'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+        elif task_type == "task_design_hierarchy_reflection":
             if task.results.get("design_reflection"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
@@ -125,29 +134,30 @@ class RAG:
                 self.caches['upper_search'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await asyncio.to_thread(db.add_sub_tasks, task)
-        elif task_type == "task_execute_design":
+        elif task_type == "task_design":
             if task.results.get("design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
-        elif task_type == "task_execute_design_reflection":
-            if task.results.get("design_reflection"):
-                self.caches['dependent_design'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await self.store_design(task, task.results.get("design_reflection"))
-        elif task_type == "task_execute_search":
+                await self.store_design(task, task.results.get("design"))
+        # elif task_type == "task_design_reflection":
+        #     if task.results.get("design_reflection"):
+        #         self.caches['dependent_design'].evict(tag=task.run_id)
+        #         await asyncio.to_thread(db.add_result, task)
+        #         await self.store_design(task, task.results.get("design_reflection"))
+        elif task_type == "task_search":
             if task.results.get("search"):
                 self.caches['dependent_search'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await self.store_search(task, task.results.get("search"))
-        elif task_type == "task_execute_write_before_reflection":
+        elif task_type == "task_write_before_reflection":
             if task.results.get("design_reflection"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await self.store_design(task, task.results.get("design_reflection"))
-        elif task_type == "task_execute_write":
+        elif task_type == "task_write":
             if task.results.get("write"):
                 await asyncio.to_thread(db.add_result, task)
-        elif task_type == "task_execute_write_reflection":
+        elif task_type == "task_write_reflection":
             write_reflection = task.results.get("write_reflection")
             if write_reflection:
                 self.caches['text_latest'].evict(tag=task.run_id)
@@ -164,7 +174,7 @@ class RAG:
                 content = f"## 任务\n{header}\n{timestamp}\n\n{write_reflection}"
                 await asyncio.to_thread(text_file_append, get_text_file_path(task), content)
                 await self.store_write(task, write_reflection)
-        elif task_type == "task_execute_summary":
+        elif task_type == "task_summary":
             if task.results.get("summary"):
                 self.caches['text_summary'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
@@ -586,7 +596,7 @@ class RAG:
             "run_id": task.run_id,
             "content_type": "design",
         }
-        kg_query_gen_prompt = PromptTemplate(kg_gen_query_prompt.partial_format(**kg_filter_context))
+        kg_query_gen_prompt = PromptTemplate(template=kg_gen_query_prompt).partial_format(**kg_filter_context)
         logger.info(f"[{task.id}]   - 加载知识图谱索引...")
         kg_index = await asyncio.to_thread(
             KnowledgeGraphIndex.from_documents,
@@ -752,7 +762,7 @@ class RAG:
             "run_id": task.run_id,
             "content_type": "write",
         }
-        kg_query_gen_prompt = PromptTemplate(kg_gen_query_prompt.partial_format(**kg_filter_context))
+        kg_query_gen_prompt = PromptTemplate(template=kg_gen_query_prompt).partial_format(**kg_filter_context)
         logger.info(f"[{task.id}]   - 加载知识图谱索引...")
         kg_index = await asyncio.to_thread(
             KnowledgeGraphIndex.from_documents,

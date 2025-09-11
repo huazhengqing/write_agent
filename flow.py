@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from agents import design_hierarchy, design_hierarchy_reflection
 from loguru import logger
 from typing import Any, Dict, Callable
 from prefect import flow, task, get_run_logger
@@ -7,7 +8,7 @@ from prefect.filesystems import LocalFileSystem
 from prefect.exceptions import ObjectNotFound
 from prefect.serializers import JSONSerializer
 from prefect.context import TaskRunContext
-from utils.models import Task
+from utils.models import Task, get_preceding_sibling_ids
 from agents.atom import atom
 from agents.plan_before_reflection import plan_before_reflection
 from agents.plan import plan
@@ -87,23 +88,23 @@ async def task_atom(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         return await atom(task)
 
-@task(
-    persist_result=True, 
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_before_reflection.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    task_run_name="{task.run_id}_{task.id}_plan_before_reflection",
-)
-async def task_plan_before_reflection(task: Task) -> Task:
-    if task.id == "1":
-        return task
-    if task.task_type != "write":
-        return task
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await plan_before_reflection(task)
+# @task(
+#     persist_result=True, 
+#     result_storage=local_storage,
+#     cache_key_fn=get_cache_key, 
+#     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_before_reflection.json",
+#     result_serializer=readable_json_serializer,
+#     retries=1,
+#     task_run_name="{task.run_id}_{task.id}_plan_before_reflection",
+# )
+# async def task_plan_before_reflection(task: Task) -> Task:
+#     if task.id == "1":
+#         return task
+#     if task.task_type != "write":
+#         return task
+#     ensure_task_logger(task.run_id)
+#     with logger.contextualize(run_id=task.run_id):
+#         return await plan_before_reflection(task)
 
 @task(
     persist_result=True, 
@@ -137,40 +138,68 @@ async def task_plan_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_design.json",
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design.json",
     result_serializer=readable_json_serializer,
     retries=1,
-    task_run_name="{task.run_id}_{task.id}_execute_design",
+    task_run_name="{task.run_id}_{task.id}_design",
 )
-async def task_execute_design(task: Task) -> Task:
+async def task_design(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await design(task)
 
-@task(
-    persist_result=True, 
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_design_reflection.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    task_run_name="{task.run_id}_{task.id}_execute_design_reflection",
-)
-async def task_execute_design_reflection(task: Task) -> Task:
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await design_reflection(task)
+# @task(
+#     persist_result=True, 
+#     result_storage=local_storage,
+#     cache_key_fn=get_cache_key, 
+#     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_reflection.json",
+#     result_serializer=readable_json_serializer,
+#     retries=1,
+#     task_run_name="{task.run_id}_{task.id}_design_reflection",
+# )
+# async def task_design_reflection(task: Task) -> Task:
+#     ensure_task_logger(task.run_id)
+#     with logger.contextualize(run_id=task.run_id):
+#         return await design_reflection(task)
 
 @task(
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_search.json",
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_hierarchy.json",
     result_serializer=readable_json_serializer,
     retries=1,
-    task_run_name="{task.run_id}_{task.id}_execute_search",
+    task_run_name="{task.run_id}_{task.id}_design_hierarchy",
 )
-async def task_execute_search(task: Task) -> Task:
+async def task_design_hierarchy(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await design_hierarchy(task)
+
+@task(
+    persist_result=True, 
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key, 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_hierarchy_reflection.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    task_run_name="{task.run_id}_{task.id}_design_hierarchy_reflection",
+)
+async def task_design_hierarchy_reflection(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await design_hierarchy_reflection(task)
+    
+@task(
+    persist_result=True, 
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key, 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/search.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    task_run_name="{task.run_id}_{task.id}_search",
+)
+async def task_search(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await search(task)
@@ -179,12 +208,12 @@ async def task_execute_search(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_before_reflection.json",
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write_before_reflection.json",
     result_serializer=readable_json_serializer,
     retries=1,
-    task_run_name="{task.run_id}_{task.id}_execute_write_before_reflection",
+    task_run_name="{task.run_id}_{task.id}_write_before_reflection",
 )
-async def task_execute_write_before_reflection(task: Task) -> Task:
+async def task_write_before_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await write_before_reflection(task)
@@ -193,12 +222,12 @@ async def task_execute_write_before_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write.json",
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write.json",
     result_serializer=readable_json_serializer,
     retries=1,
-    task_run_name="{task.run_id}_{task.id}_execute_write",
+    task_run_name="{task.run_id}_{task.id}_write",
 )
-async def task_execute_write(task: Task) -> Task:
+async def task_write(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         ret = await write(task)
@@ -208,12 +237,12 @@ async def task_execute_write(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_reflection.json",
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write_reflection.json",
     result_serializer=readable_json_serializer,
     retries=1,
-    task_run_name="{task.run_id}_{task.id}_execute_write_reflection",
+    task_run_name="{task.run_id}_{task.id}_write_reflection",
 )
-async def task_execute_write_reflection(task: Task) -> Task:
+async def task_write_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         ret = await write_reflection(task)
@@ -223,12 +252,12 @@ async def task_execute_write_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_summary.json",
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/summary.json",
     result_serializer=readable_json_serializer,
     retries=1,
-    task_run_name="{task.run_id}_{task.id}_execute_write_summary",
+    task_run_name="{task.run_id}_{task.id}_summary",
 )
-async def task_execute_summary(task: Task) -> Task:
+async def task_summary(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         ret = await summary(task)
@@ -322,38 +351,45 @@ async def flow_write(current_task: Task):
             logger.info(f"任务 '{current_task.id}' 是原子任务, 直接执行。")
             
             if task_result.task_type == "design":
-                task_result = await task_execute_design(task_result)
-                await task_store(task_result, "task_execute_design")
+                task_result = await task_design(task_result)
+                await task_store(task_result, "task_design")
                 
-                task_result = await task_execute_design_reflection(task_result)
-                await task_store(task_result, "task_execute_design_reflection")
+                # task_result = await task_design_reflection(task_result)
+                # await task_store(task_result, "task_design_reflection")
             elif task_result.task_type == "search":
-                task_result = await task_execute_search(task_result)
-                await task_store(task_result, "task_execute_search")
+                task_result = await task_search(task_result)
+                await task_store(task_result, "task_search")
             elif task_result.task_type == "write":
                 # 执行完整的写作流程: 设计反思 -> 写作 -> 写作反思 -> 总结
                 if not task_result.length:
                     raise ValueError("写作任务没有长度要求")
                 
-                task_result = await task_execute_write_before_reflection(task_result)
-                await task_store(task_result, "task_execute_write_before_reflection")
+                task_result = await task_write_before_reflection(task_result)
+                await task_store(task_result, "task_write_before_reflection")
 
-                task_result = await task_execute_write(task_result)
-                await task_store(task_result, "task_execute_write")
+                task_result = await task_write(task_result)
+                await task_store(task_result, "task_write")
 
-                task_result = await task_execute_write_reflection(task_result)
-                await task_store(task_result, "task_execute_write_reflection")
+                task_result = await task_write_reflection(task_result)
+                await task_store(task_result, "task_write_reflection")
 
-                task_result = await task_execute_summary(task_result)
-                await task_store(task_result, "task_execute_summary")
+                task_result = await task_summary(task_result)
+                await task_store(task_result, "task_summary")
             else:
                 raise ValueError(f"未知的原子任务类型: {task_result.task_type}")
         else:
             logger.info(f"任务 '{current_task.id}' 不是原子任务, 进行分解。")
 
-            task_result = await task_plan_before_reflection(task_result)
-            await task_store(task_result, "task_plan_before_reflection")
+            # task_result = await task_plan_before_reflection(task_result)
+            # await task_store(task_result, "task_plan_before_reflection")
 
+            if task_result.task_type == "write" and len(get_preceding_sibling_ids(task_result.id)) >= 1 :
+                task_result = await task_design_hierarchy(task_result)
+                await task_store(task_result, "task_design_hierarchy")
+
+                task_result = await task_design_hierarchy_reflection(task_result)
+                await task_store(task_result, "task_design_hierarchy_reflection")
+            
             task_result = await task_plan(task_result)
             await task_store(task_result, "task_plan")
 

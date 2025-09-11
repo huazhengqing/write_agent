@@ -15,18 +15,6 @@ class AtomOutput(BaseModel):
 
 
 async def atom(task: Task) -> Task:
-    if os.getenv("deployment_environment") == "test":
-        if task.task_type in ["design", "search"]:
-            module_path = f"prompts.{task.category}.atom_{task.task_type}_cn"
-            module = importlib.import_module(module_path)
-            test_output = getattr(module, "test_output")
-            data = AtomOutput.model_validate_json(test_output)
-            updated_task = task.model_copy(deep=True)
-            updated_task.results["atom"] = data.model_dump(exclude_none=True, exclude={'reasoning'})
-            updated_task.results["atom_reasoning"] = data.reasoning
-            updated_task.results["atom_result"] = data.atom_result
-            return updated_task
-
     module_name = f"atom_{task.task_type}_cn"
     SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, module_name, "SYSTEM_PROMPT", "USER_PROMPT")
     context = await get_rag().get_context_base(task)
@@ -42,4 +30,7 @@ async def atom(task: Task) -> Task:
     if data.goal_update and len(data.goal_update.strip()) > 10 and data.goal_update != task.goal:
         updated_task.goal = data.goal_update
         updated_task.results["goal_update"] = data.goal_update
+    if os.getenv("deployment_environment") == "test":
+        if task.task_type in ["design", "search"]:
+            updated_task.results["atom_result"] = "atom"
     return updated_task
