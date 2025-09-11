@@ -25,3 +25,38 @@ class Task(BaseModel):
     run_id: str = Field(..., description="整个流程运行的唯一ID, 用于隔离不同任务的记忆")
 
 
+def natural_sort_key(task_id: str) -> List[int]:
+    """为任务ID字符串提供健壮的自然排序键, 处理空或格式错误的ID。"""
+    if not task_id:
+        return []
+    try:
+        # 过滤掉拆分后可能产生的空字符串(如 '1.'), 并转换为整数列表
+        return [int(p) for p in task_id.split('.') if p]
+    except ValueError:
+        # 如果ID格式错误(包含非数字), 返回[]。
+        # 在排序中, 这会使无效ID排在最后。
+        return []
+
+
+def get_preceding_sibling_ids(task_id: str) -> List[str]:
+    """
+    根据任务ID, 生成其所有前序兄弟任务的ID列表。
+    例如, 对于 '1.2.3', 它会生成 ['1.2.1', '1.2.2']。
+    """
+    if '.' not in task_id:
+        return []
+    parts = task_id.split('.')
+    parent_id = ".".join(parts[:-1])
+    try:
+        current_seq = int(parts[-1])
+    except (ValueError, IndexError):
+        return []
+    if current_seq <= 1:
+        return []
+    return [f"{parent_id}.{i}" for i in range(1, current_seq)]
+
+
+
+
+
+

@@ -97,16 +97,16 @@ LLM_PARAMS_general = {
 }
 
 Embeddings = {
-    "bge": {
+    "bge-m3": {
         "model": "openai/BAAI/bge-m3",
         "api_base": "https://api.siliconflow.cn/v1/",
         "api_key": os.getenv("siliconflow_API_KEY"),
-        "dimensions": 1024,
+        # "dims": 1024,
     },
     "gemini": {
         "model": "gemini/gemini-embedding-001",
         "api_key": os.getenv("GEMINI_API_KEY"),
-        "dimensions": 1536,
+        # "dims": 3072,
     }
 }
 
@@ -118,7 +118,7 @@ Embedding_PARAMS_general = {
 }
 
 def get_embedding_params(
-        embedding: Literal['bge', 'gemini'] = 'bge',
+        embedding: Literal['bge-m3', 'gemini'] = 'bge-m3',
         **kwargs: Any
     ) -> Dict[str, Any]:
     embedding_params = Embeddings[embedding].copy()
@@ -143,6 +143,7 @@ def custom_get_cache_key(**kwargs):
 
 
 litellm.enable_json_schema_validation=True
+litellm.drop_params = True
 litellm.cache = Cache(type="disk", get_cache_key=custom_get_cache_key)
 
 

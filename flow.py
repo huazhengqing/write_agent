@@ -1,10 +1,8 @@
 import asyncio
-import importlib
 from pathlib import Path
 from loguru import logger
 from typing import Any, Dict, Callable
 from prefect import flow, task, get_run_logger
-from prefect.cache_policies import INPUTS
 from prefect.filesystems import LocalFileSystem
 from prefect.exceptions import ObjectNotFound
 from prefect.context import TaskRunContext
@@ -79,7 +77,8 @@ def get_cache_key(context: TaskRunContext, parameters: Dict[str, Any]) -> str:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/atom.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/atom.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_atom",
 )
@@ -92,7 +91,8 @@ async def task_atom(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_before_reflection.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_before_reflection.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_plan_before_reflection",
 )
@@ -109,7 +109,8 @@ async def task_plan_before_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_plan",
 )
@@ -122,7 +123,8 @@ async def task_plan(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_reflection.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_reflection.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_plan_reflection",
 )
@@ -135,7 +137,8 @@ async def task_plan_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_design.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_design.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_design",
 )
@@ -148,7 +151,8 @@ async def task_execute_design(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_design_reflection.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_design_reflection.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_design_reflection",
 )
@@ -161,7 +165,8 @@ async def task_execute_design_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_search.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_search.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_search",
 )
@@ -174,7 +179,8 @@ async def task_execute_search(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_before_reflection.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_before_reflection.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_write_before_reflection",
 )
@@ -187,7 +193,8 @@ async def task_execute_write_before_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_write",
 )
@@ -201,7 +208,8 @@ async def task_execute_write(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_reflection.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_reflection.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_write_reflection",
 )
@@ -215,7 +223,8 @@ async def task_execute_write_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_summary.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/execute_write_summary.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_execute_write_summary",
 )
@@ -229,7 +238,8 @@ async def task_execute_summary(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_design.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_design.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_aggregate_design",
 )
@@ -242,7 +252,8 @@ async def task_aggregate_design(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_search.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_search.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_aggregate_search",
 )
@@ -255,7 +266,8 @@ async def task_aggregate_search(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_summary.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_summary.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_aggregate_summary",
 )
@@ -268,7 +280,8 @@ async def task_aggregate_summary(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/store_{parameters[operation_name]}.pickle", 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/store_{parameters[operation_name]}.json", 
+    result_serializer="json", 
     retries=1,
     task_run_name="{task.run_id}_{task.id}_store_{operation_name}",
 )

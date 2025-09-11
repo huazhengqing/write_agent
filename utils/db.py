@@ -5,7 +5,29 @@ import json
 import collections
 import threading
 from typing import List, Optional, Dict
-from utils.models import Task
+from utils.models import Task, natural_sort_key
+
+
+
+def get_text_file_path(task: Task) -> str:
+    return os.path.join("output", task.category, f"{task.run_id}.txt")
+
+def text_file_append(file_path: str, content: str):
+    dir_path = os.path.dirname(file_path)
+    os.makedirs(dir_path, exist_ok=True)
+    with open(file_path, "a", encoding="utf-8") as f:
+        f.write(f"\n\n{content}")
+        f.flush()
+        os.fsync(f.fileno())
+
+def text_file_read(file_path: str) -> str:
+    if not os.path.exists(file_path):
+        return ""
+    with open(file_path, "r", encoding="utf-8") as f:
+        return f.read()
+
+
+###############################################################################
 
 
 """
@@ -109,19 +131,6 @@ class DB:
             """)
             self.conn.commit()
 
-    @staticmethod
-    def _natural_sort_key(task_id_str: str) -> List[int]:
-        """为任务ID字符串提供健壮的自然排序键, 处理空或格式错误的ID。"""
-        if not task_id_str:
-            return []
-        try:
-            # 过滤掉拆分后可能产生的空字符串(如 '1.'), 并转换为整数列表
-            return [int(p) for p in task_id_str.split('.') if p]
-        except ValueError:
-            # 如果ID格式错误(包含非数字), 返回[]。
-            # 在排序中, 这会使无效ID排在最后。
-            return []
-
     def add_task(self, task: Task):
         dependency = json.dumps(task.dependency, ensure_ascii=False)
         with self._lock:
@@ -201,45 +210,38 @@ class DB:
             )
             self.conn.commit()
 
-    def get_context_task_list(self, task: Task) -> str:
+    def get_task_list(self, task: Task) -> str:
         """
         高效获取任务上下文列表 (父任务链 + 兄弟任务), 仅查询必要的字段。
         """
         all_task_data = {}
         with self._lock:
-            # 1. 获取父任务链的 ID
             id_parts = task.id.split('.')
+            parent_chain_ids = []
             if len(id_parts) > 1:
                 parent_chain_ids = [".".join(id_parts[:i]) for i in range(1, len(id_parts))]
+            query_parts = []
+            params = []
+            if parent_chain_ids:
                 placeholders = ','.join(['?'] * len(parent_chain_ids))
-                query = f"SELECT id, hierarchical_position, goal, length FROM t_tasks WHERE id IN ({placeholders})"
-                self.cursor.execute(query, parent_chain_ids)
-                rows = self.cursor.fetchall()
-                for row in rows:
-                    all_task_data[row[0]] = (row[1], row[2], row[3])
-
-            # 2. 获取兄弟任务 (与当前任务同属一个父任务)
+                query_parts.append(f"id IN ({placeholders})")
+                params.extend(parent_chain_ids)
             if task.parent_id:
-                self.cursor.execute(
-                    "SELECT id, hierarchical_position, goal, length FROM t_tasks WHERE parent_id = ?",
-                    (task.parent_id,)
-                )
+                query_parts.append("parent_id = ?")
+                params.append(task.parent_id)
+            if query_parts:
+                query = f"SELECT id, hierarchical_position, task_type, goal, length FROM t_tasks WHERE {' OR '.join(query_parts)}"
+                self.cursor.execute(query, tuple(params))
                 rows = self.cursor.fetchall()
                 for row in rows:
-                    all_task_data[row[0]] = (row[1], row[2], row[3])
-        
-        all_task_data[task.id] = (task.hierarchical_position, task.goal, task.length)
-        sorted_ids = sorted(all_task_data.keys(), key=self._natural_sort_key)
+                    all_task_data[row[0]] = (row[1], row[2], row[3], row[4])
+        all_task_data[task.id] = (task.hierarchical_position, task.task_type, task.goal, task.length)
+        sorted_ids = sorted(all_task_data.keys(), key=natural_sort_key)
         output_lines = []
         for task_id in sorted_ids:
-            hierarchical_position, goal, length = all_task_data[task_id]
-            line = f"{task_id}"
-            if hierarchical_position:
-                line += f" {hierarchical_position}"
-            line += f" {goal}"
-            if length:
-                line += f" {length}"
-            output_lines.append(line)
+            hierarchical_position, task_type, goal, length = all_task_data[task_id]
+            line_parts = [task_id, hierarchical_position, task_type, goal, length]
+            output_lines.append(" ".join(filter(None, map(str, line_parts))))
         return "\n".join(output_lines)
 
     def get_dependent_design(self, task: Task) -> str:
@@ -269,7 +271,7 @@ class DB:
         if not rows:
             return ""
         # 按 task id 进行自然排序 (例如, '1.10' 会在 '1.2' 之后)
-        sorted_rows = sorted(rows, key=lambda row: self._natural_sort_key(row[0]))
+        sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = []
         for row in sorted_rows:
             content = row[2] if row[2] else row[1]
@@ -299,7 +301,7 @@ class DB:
             rows = self.cursor.fetchall()
         if not rows:
             return ""
-        sorted_rows = sorted(rows, key=lambda row: self._natural_sort_key(row[0]))
+        sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
         return "\n\n".join(content_list)
 
@@ -314,7 +316,7 @@ class DB:
         if not rows:
             return ""
 
-        sorted_rows = sorted(rows, key=lambda row: self._natural_sort_key(row[0]))
+        sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
         return "\n\n".join(content_list)
 
@@ -329,7 +331,7 @@ class DB:
         if not rows:
             return ""
 
-        sorted_rows = sorted(rows, key=lambda row: self._natural_sort_key(row[0]))
+        sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
         return "\n\n".join(content_list)
 
@@ -344,7 +346,7 @@ class DB:
         if not rows:
             return ""
 
-        sorted_rows = sorted(rows, key=lambda row: self._natural_sort_key(row[0]))
+        sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
         
         return "\n\n".join(content_list)

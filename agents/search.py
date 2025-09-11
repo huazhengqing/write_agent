@@ -3,13 +3,11 @@ import json
 import asyncio
 import functools
 from loguru import logger
-import torch
 import litellm
 from diskcache import Cache
 from pydantic import BaseModel, Field
 from typing import List, TypedDict, Optional, Any, TYPE_CHECKING
 from langchain_community.utilities import SearxSearchWrapper
-from sentence_transformers import SentenceTransformer, util
 from utils.models import Task
 from utils.prompt_loader import load_prompts
 from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES, get_embedding_params
@@ -71,7 +69,6 @@ class SearchAgentState(TypedDict):
 
 SEARCH_CACHE = Cache(os.path.join(".cache", 'search_cache'), size_limit=int(128 * 1024 * 1024))
 SCRAPE_CACHE = Cache(os.path.join(".cache", 'scrape_cache'), size_limit=int(128 * 1024 * 1024))
-_local_embedding_model: Optional[SentenceTransformer] = None
 
 _search_tool_instance = SearxSearchWrapper(searx_host=os.environ.get("SearXNG", "http://127.0.0.1:8080"))
 
@@ -479,6 +476,9 @@ async def should_continue_search(state: SearchAgentState) -> str:
       1. 轻量级的Jaccard相似度检查, 快速过滤掉几乎相同的总结。
       2. 如果不够相似, 则通过LLM进行更深层次的语义判断。
     """
+    import torch
+    from sentence_transformers import util
+
     # 条件3: 研究停滞检测
     prev_summary = state.get('previous_rolling_summary')
     current_summary = state.get('rolling_summary')

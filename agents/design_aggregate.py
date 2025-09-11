@@ -6,7 +6,7 @@ from utils.prompt_loader import load_prompts
 
 async def design_aggregate(task: Task) -> Task:
     SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "design_aggregate_cn", "SYSTEM_PROMPT", "USER_PROMPT")
-    context = await get_rag().get_context_aggregate_design(task)
+    context = await get_rag().get_aggregate_design(task)
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
     llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["creative"])
     message = await llm_acompletion(llm_params)
