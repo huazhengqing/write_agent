@@ -15,7 +15,7 @@ async def design_reflection(task: Task) -> Task:
         context = await get_rag().get_context(task)
         context["to_reflection"] = task.results.get("design")
         messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
-        llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["creative"])
+        llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["creative"])
         message = await llm_acompletion(llm_params)
         content = message.content
         reasoning = message.get("reasoning_content") or message.get("reasoning", "")

@@ -12,7 +12,7 @@ from langchain_community.utilities import SearxSearchWrapper
 from sentence_transformers import SentenceTransformer, util
 from utils.models import Task
 from utils.prompt_loader import load_prompts
-from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES, Embedding_PARAMS
+from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES, get_embedding_params
 from utils.rag import get_rag
 
 
@@ -208,18 +208,7 @@ PROMPT_STAGNATION_DETECTION = """
 
 ###############################################################################
 
-
 # 图节点
-
-async def get_structured_output_with_retry(messages: List[dict], response_model: BaseModel, temperature: float):
-    """
-    一个用于获取结构化输出的包装函数, 它会配置LLM使用工具调用, 
-    然后调用带有内置重试和验证逻辑的 `llm_acompletion`。
-    """
-    # `litellm` 的 `response_model` 参数会自动处理工具的创建和选择, 无需手动构建 `tools` 和 `tool_choice`
-    llm_params = get_llm_params(messages, temperature=temperature)
-    message = await llm_acompletion(llm_params, response_model=response_model)
-    return getattr(message, 'validated_data', None)
 
 async def planner_node(state: SearchAgentState) -> dict:
     """
@@ -244,9 +233,9 @@ async def planner_node(state: SearchAgentState) -> dict:
     context = await get_rag().get_context_base(task)
     context.update(context_dict)
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
-    plan = await get_structured_output_with_retry(messages, Plan, temperature=LLM_TEMPERATURES["reasoning"])
-    
-    # 如果解析失败, 创建一个空的 Plan 对象以避免下游节点出错
+    llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["reasoning"])
+    message = await llm_acompletion(llm_params, response_model=Plan)
+    plan = getattr(message, 'validated_data', None)
     if not plan:
         plan = Plan(thought="规划失败, 尝试终止当前研究。", queries=[])
 
@@ -377,8 +366,9 @@ async def information_processor_node(state: SearchAgentState) -> dict:
 
     # 调用 LLM
     messages = [{"role": "user", "content": prompt}]
-    processed_results = await get_structured_output_with_retry(messages, ProcessedResults, temperature=LLM_TEMPERATURES["reasoning"])
-
+    llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["reasoning"])
+    message = await llm_acompletion(llm_params, response_model=ProcessedResults)
+    processed_results = getattr(message, 'validated_data', None)
     if not processed_results or not processed_results.processed_contents:
         logger.warning("信息处理节点未能从LLM获得有效的处理结果。")
         return {}
@@ -433,7 +423,7 @@ async def rolling_summary_node(state: SearchAgentState) -> dict:
         new_information=new_info_str
     )
 
-    llm_params = get_llm_params([{"role": "user", "content": prompt}], temperature=LLM_TEMPERATURES["summarization"])
+    llm_params = get_llm_params("fast", [{"role": "user", "content": prompt}], temperature=LLM_TEMPERATURES["summarization"])
     message = await llm_acompletion(llm_params)
     summary = message.content
 
@@ -465,7 +455,7 @@ async def synthesize_node(state: SearchAgentState) -> dict:
     context = await get_rag().get_context_base(task)
     context.update(context_dict)
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
-    llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["synthesis"])
+    llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["synthesis"])
     message = await llm_acompletion(llm_params)
     final_report = message.content
 
@@ -501,7 +491,7 @@ async def should_continue_search(state: SearchAgentState) -> str:
         
         cosine_sim = 0.0
         try:
-            params = Embedding_PARAMS.copy()
+            params = get_embedding_params()
             params["input"] = [prev_summary, current_summary]
             response = await litellm.aembedding(**params)
             embedding_vectors = [item['embedding'] for item in response.data]
@@ -523,7 +513,7 @@ async def should_continue_search(state: SearchAgentState) -> str:
             prev_summary=prev_summary,
             current_summary=current_summary
         )
-        llm_params = get_llm_params([{"role": "user", "content": prompt}], temperature=LLM_TEMPERATURES["classification"])
+        llm_params = get_llm_params("fast", [{"role": "user", "content": prompt}], temperature=LLM_TEMPERATURES["classification"])
         
         def stagnation_validator(content: str):
             """验证LLM的响应是否为 'true' 或 'false'。"""

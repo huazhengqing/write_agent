@@ -33,11 +33,9 @@ from utils.models import Task
 from utils.prompt_loader import load_prompts
 from utils.llm import (
     LLM_TEMPERATURES,
-    LLM_PARAMS_reasoning, 
-    LLM_PARAMS_fast, 
-    Embedding_PARAMS, 
-    get_llm_messages, 
-    get_llm_params, 
+    get_embedding_params,
+    get_llm_messages,
+    get_llm_params,
     llm_acompletion
 )
 
@@ -46,14 +44,10 @@ class RAG:
     def __init__(self):
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
-        params = Embedding_PARAMS.copy()
+        params = get_embedding_params()
         model_name = params.pop('model')
-        api_base = params.pop('api_base')
-        api_key = params.pop('api_key')
         self.embed_model = LiteLLMEmbedding(
             model_name=model_name,
-            api_base=api_base,
-            api_key=api_key,
             **params,
         )
         self.embed_model.get_text_embedding("test")
@@ -74,8 +68,8 @@ class RAG:
             password=os.getenv("memgraph_password", "memgraph"),
         )
 
-        self.agent_llm: LiteLLM = LiteLLM(**LLM_PARAMS_reasoning)
-        self.extraction_llm: LiteLLM = LiteLLM(**LLM_PARAMS_fast)
+        self.agent_llm: LiteLLM = LiteLLM(**get_llm_params('reasoning'))
+        self.extraction_llm: LiteLLM = LiteLLM(**get_llm_params('fast'))
 
         cache_base_dir = os.path.join(project_root, ".cache", "rag")
         os.makedirs(cache_base_dir, exist_ok=True)
@@ -107,6 +101,7 @@ class RAG:
             if task.id == "1" or task.results.get("goal_update"):
                 self.caches['task_list'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_task, task)
+            await asyncio.to_thread(db.add_result, task)
         elif task_type == "task_plan_before_reflection":
             if task.results.get("design_reflection"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
@@ -468,7 +463,7 @@ class RAG:
         if task.task_type == 'write' and search_type == 'upper_design' and task.results["atom_result"] == "atom":
             SYSTEM_PROMPT = SYSTEM_PROMPT_design_for_write
         messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context_dict_user)
-        llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["reasoning"])
+        llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["reasoning"])
         message = await llm_acompletion(llm_params, response_model=InquiryPlan)
         inquiry_plan_obj = message.validated_data
         inquiry_plan = inquiry_plan_obj.model_dump()
@@ -623,8 +618,8 @@ class RAG:
             "formatted_vector_str": formatted_vector_str,
             "formatted_kg_str": formatted_kg_str,
         }
-        synthesis_messages = get_llm_messages(synthesis_system_prompt, synthesis_user_prompt, None, context_dict_user)
-        llm_params = get_llm_params(synthesis_messages, temperature=LLM_TEMPERATURES["synthesis"])
+        messages = get_llm_messages(synthesis_system_prompt, synthesis_user_prompt, None, context_dict_user)
+        llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["synthesis"])
         final_message = await llm_acompletion(llm_params)
         return final_message.content
 

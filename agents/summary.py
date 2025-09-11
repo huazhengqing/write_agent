@@ -14,7 +14,7 @@ async def summary(task: Task) -> Task:
         "text": task.results.get("write_reflection")
     }
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context_dict_user)
-    llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["summarization"])
+    llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["summarization"])
     message = await llm_acompletion(llm_params)
     content = message.content
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")

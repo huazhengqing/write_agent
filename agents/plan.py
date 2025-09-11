@@ -38,7 +38,7 @@ async def plan(task: Task) -> Task:
             context = await get_rag().get_context(task)
         messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
 
-    llm_params = get_llm_params(messages, temperature=LLM_TEMPERATURES["reasoning"])
+    llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["reasoning"])
     message = await llm_acompletion(llm_params, response_model=PlanOutput)
     data = message.validated_data
     content = message.content
