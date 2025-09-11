@@ -40,12 +40,11 @@ async def plan(task: Task) -> Task:
 
     llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["reasoning"])
     message = await llm_acompletion(llm_params, response_model=PlanOutput)
-    data = message.validated_data
-    content = message.content
+    data: PlanOutput = message.validated_data
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")
     updated_task = task.model_copy(deep=True)
     updated_task.sub_tasks = convert_plan_to_tasks(data.sub_tasks, updated_task)
-    updated_task.results["plan"] = content
+    updated_task.results["plan"] = data.model_dump(exclude_none=True, exclude={'reasoning'})
     updated_task.results["plan_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
     return updated_task
 

@@ -69,9 +69,14 @@ class RAG:
             password=os.getenv("memgraph_password", "memgraph"),
         )
 
-        self.llm_extract: LiteLLM = LiteLLM(**get_llm_params(llm='fast', temperature=LLM_TEMPERATURES["summarization"]))
-        self.llm_reasoning: LiteLLM = LiteLLM(**get_llm_params(llm='reasoning', temperature=LLM_TEMPERATURES["reasoning"]))
-        self.llm_synthesis: LiteLLM = LiteLLM(**get_llm_params(llm='reasoning', temperature=LLM_TEMPERATURES["synthesis"]))
+        self.llm_extract_params = get_llm_params(llm='fast', temperature=LLM_TEMPERATURES["summarization"])
+        self.llm_extract: LiteLLM = LiteLLM(**self.llm_extract_params)
+
+        self.llm_reasoning_params = get_llm_params(llm='reasoning', temperature=LLM_TEMPERATURES["reasoning"])
+        self.llm_reasoning: LiteLLM = LiteLLM(**self.llm_reasoning_params)
+
+        self.llm_synthesis_params = get_llm_params(llm='reasoning', temperature=LLM_TEMPERATURES["synthesis"])
+        self.llm_synthesis: LiteLLM = LiteLLM(**self.llm_synthesis_params)
 
         cache_base_dir = os.path.join(project_root, ".cache", "rag")
         os.makedirs(cache_base_dir, exist_ok=True)
@@ -557,8 +562,8 @@ class RAG:
         response_synthesizer = CompactAndRefine(
             llm=self.llm_synthesis,
             prompt_helper=PromptHelper(
-                context_window=self.llm_synthesis.context_window,
-                num_output=self.llm_synthesis.max_tokens,
+                context_window=self.llm_synthesis_params['context_window'],
+                num_output=self.llm_synthesis_params['max_tokens'],
                 chunk_overlap_ratio=0.2
             )
         )
@@ -716,8 +721,8 @@ class RAG:
         response_synthesizer = CompactAndRefine(
             llm=self.llm_synthesis,
             prompt_helper=PromptHelper(
-                context_window=self.llm_synthesis.context_window,
-                num_output=self.llm_synthesis.max_tokens,
+                context_window=self.llm_synthesis_params['context_window'],
+                num_output=self.llm_synthesis_params['max_tokens'],
                 chunk_overlap_ratio=0.2
             )
         )

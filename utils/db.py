@@ -170,9 +170,7 @@ class DB:
 
     def add_result(self, task: Task):
         update_fields = {
-            "plan": task.results.get("plan"),
             "plan_reasoning": task.results.get("plan_reasoning"),
-            "plan_reflection": task.results.get("plan_reflection"),
             "plan_reflection_reasoning": task.results.get("plan_reflection_reasoning"),
             "design": task.results.get("design"),
             "design_reasoning": task.results.get("design_reasoning"),
@@ -186,11 +184,17 @@ class DB:
             "write_reflection_reasoning": task.results.get("write_reflection_reasoning"),
             "summary": task.results.get("summary"),
             "summary_reasoning": task.results.get("summary_reasoning"),
-            "atom": task.results.get("atom"),
             "atom_reasoning": task.results.get("atom_reasoning"),
             "atom_result": task.results.get("atom_result"),
         }
-        
+        # 统一处理可能需要序列化的字段 (plan, plan_reflection, atom)
+        for field_name in ["plan", "plan_reflection", "atom"]:
+            data = task.results.get(field_name)
+            if isinstance(data, dict):
+                update_fields[field_name] = json.dumps(data, ensure_ascii=False)
+            else:
+                update_fields[field_name] = data
+
         # 过滤掉None值和空字符串
         fields_to_update = {k: v for k, v in update_fields.items() if v}
         if not fields_to_update:

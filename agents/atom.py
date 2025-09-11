@@ -22,8 +22,8 @@ async def atom(task: Task) -> Task:
             test_output = getattr(module, "test_output")
             data = AtomOutput.model_validate_json(test_output)
             updated_task = task.model_copy(deep=True)
-            updated_task.results["atom"] = test_output
-            updated_task.results["atom_reasoning"] = ""
+            updated_task.results["atom"] = data.model_dump(exclude_none=True, exclude={'reasoning'})
+            updated_task.results["atom_reasoning"] = data.reasoning
             updated_task.results["atom_result"] = data.atom_result
             return updated_task
 
@@ -34,10 +34,9 @@ async def atom(task: Task) -> Task:
     llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["classification"])
     message = await llm_acompletion(llm_params, response_model=AtomOutput)
     data = message.validated_data
-    content = message.content
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")
     updated_task = task.model_copy(deep=True)
-    updated_task.results["atom"] = content
+    updated_task.results["atom"] = data.model_dump(exclude_none=True, exclude={'reasoning'})
     updated_task.results["atom_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
     updated_task.results["atom_result"] = data.atom_result
     if data.goal_update and len(data.goal_update.strip()) > 10 and data.goal_update != task.goal:

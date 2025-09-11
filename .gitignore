@@ -32,6 +32,7 @@ searxng/
 *.pdf
 test_*.py
 *_test.py
+*temp*
 *debug*.py
 init.md
 *copy.py
