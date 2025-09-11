@@ -36,7 +36,7 @@ async def atom(task: Task) -> Task:
     data = message.validated_data
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")
     updated_task = task.model_copy(deep=True)
-    updated_task.results["atom"] = data.model_dump(exclude_none=True, exclude={'reasoning'})
+    updated_task.results["atom"] = data.model_dump(exclude_none=True, exclude={'reasoning', 'atom_result'})
     updated_task.results["atom_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
     updated_task.results["atom_result"] = data.atom_result
     if data.goal_update and len(data.goal_update.strip()) > 10 and data.goal_update != task.goal:
