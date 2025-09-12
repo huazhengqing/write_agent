@@ -15,7 +15,7 @@ SYSTEM_PROMPT = """
 - 相互独立, 完全穷尽: 子任务需完整覆盖父任务, 且相互独立 (无遗漏、无重叠)。
 - 聚焦具体: 子任务必须是具体的、可执行的搜索动作, 避免宽泛和模糊。
 - 逻辑清晰: 子任务间需有清晰的同层级逻辑顺序或依赖关系。
-- 依赖约束: `dependency` 字段仅包含同层级(兄弟节点)的任务ID。上层依赖是隐式的, 无需填写。
+- 依赖约束: `dependency` 字段仅包含同层级的`search`前置任务ID。上层依赖是隐式的, 无需填写。
 
 # 分解流程 (严格遵循) 
 - 产出: 至少2个 `search` 子任务。
@@ -53,20 +53,23 @@ SYSTEM_PROMPT = """
     "reasoning": "关于任务分解的详细思考过程。",
     "id": "1.3",
     "task_type": "search",
-    "goal": "父任务的原始目标",
+    "hierarchical_position": "全书",
+    "goal": "[父任务的原始目标]",
     "dependency": [],
     "sub_tasks": [
         {
             "id": "1.3.1",
             "task_type": "search",
-            "goal": "子任务目标A",
+            "hierarchical_position": "全书",
+            "goal": "[子任务A: Search]: [根据分解维度, 设定具体的搜索查询]",
             "dependency": [],
             "sub_tasks": []
         },
         {
             "id": "1.3.2",
             "task_type": "search",
-            "goal": "子任务目标B",
+            "hierarchical_position": "全书",
+            "goal": "[子任务B: Search]: [根据分解维度和前置任务结果, 设定具体的搜索查询]",
             "dependency": ["1.3.1"],
             "sub_tasks": []
         }

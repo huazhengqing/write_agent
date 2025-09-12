@@ -15,8 +15,7 @@ class AtomOutput(BaseModel):
 
 
 async def atom(task: Task) -> Task:
-    module_name = f"atom_{task.task_type}_cn"
-    SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, module_name, "SYSTEM_PROMPT", "USER_PROMPT")
+    SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, f"atom_{task.task_type}_cn", "SYSTEM_PROMPT", "USER_PROMPT")
     context = await get_rag().get_context_base(task)
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
     llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["classification"])

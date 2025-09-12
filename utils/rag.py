@@ -110,16 +110,7 @@ class RAG:
                 self.caches['task_list'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_task, task)
             await asyncio.to_thread(db.add_result, task)
-        # elif task_type == "task_plan_before_reflection":
-        #     if task.results.get("design_reflection"):
-        #         self.caches['dependent_design'].evict(tag=task.run_id)
-        #         await asyncio.to_thread(db.add_result, task)
-        #         await self.store_design(task, task.results.get("design_reflection"))
-        elif task_type == "task_design_hierarchy":
-            if task.results.get("design"):
-                self.caches['dependent_design'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-        elif task_type == "task_design_hierarchy_reflection":
+        elif task_type == "task_plan_before_reflection":
             if task.results.get("design_reflection"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
@@ -134,16 +125,37 @@ class RAG:
                 self.caches['upper_search'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await asyncio.to_thread(db.add_sub_tasks, task)
-        elif task_type == "task_design":
+        elif task_type in [
+            "task_design", 
+            "task_design_market", 
+            "task_design_title", 
+            "task_design_style", 
+            "task_design_review", 
+            "task_design_character", 
+            "task_design_system", 
+            "task_design_concept", 
+            "task_design_worldview", 
+            "task_design_plot",
+            "task_design_general", 
+        ]:
             if task.results.get("design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await self.store_design(task, task.results.get("design"))
-        # elif task_type == "task_design_reflection":
-        #     if task.results.get("design_reflection"):
-        #         self.caches['dependent_design'].evict(tag=task.run_id)
-        #         await asyncio.to_thread(db.add_result, task)
-        #         await self.store_design(task, task.results.get("design_reflection"))
+        elif task_type == "task_design_reflection":
+            if task.results.get("design_reflection"):
+                self.caches['dependent_design'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await self.store_design(task, task.results.get("design_reflection"))
+        elif task_type == "task_design_hierarchy":
+            if task.results.get("design"):
+                self.caches['dependent_design'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+        elif task_type == "task_design_hierarchy_reflection":
+            if task.results.get("design_reflection"):
+                self.caches['dependent_design'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await self.store_design(task, task.results.get("design_reflection"))
         elif task_type == "task_search":
             if task.results.get("search"):
                 self.caches['dependent_search'].evict(tag=task.run_id)

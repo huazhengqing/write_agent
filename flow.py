@@ -1,28 +1,23 @@
 import asyncio
 from pathlib import Path
-from agents import design_hierarchy, design_hierarchy_reflection
 from loguru import logger
-from typing import Any, Dict, Callable
+from typing import Any, Dict, Callable, Literal
 from prefect import flow, task, get_run_logger
 from prefect.filesystems import LocalFileSystem
 from prefect.exceptions import ObjectNotFound
 from prefect.serializers import JSONSerializer
 from prefect.context import TaskRunContext
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.pydantic_v1 import BaseModel, Field
+from langchain_openai import ChatOpenAI
 from utils.models import Task, get_preceding_sibling_ids
 from agents.atom import atom
-from agents.plan_before_reflection import plan_before_reflection
-from agents.plan import plan
-from agents.plan_reflection import plan_reflection
-from agents.design import design
-from agents.design_reflection import design_reflection
-from agents.design_aggregate import design_aggregate
-from agents.search import search
-from agents.search_aggregate import search_aggregate
-from agents.write_before_reflection import write_before_reflection
-from agents.write import write
-from agents.write_reflection import write_reflection
-from agents.summary import summary
-from agents.summary_aggregate import summary_aggregate
+from agents.plan import plan, plan_reflection
+from agents import route
+from agents.design import design, design_aggregate, design_hierarchy, design_hierarchy_reflection, design_reflection
+from agents.search import search, search_aggregate
+from agents.write import write, write_before_reflection, write_reflection
+from agents.summary import summary, summary_aggregate
 from utils.rag import get_rag
 from utils.db import get_db
 
@@ -138,29 +133,49 @@ async def task_plan_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design.json",
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/route.json",
     result_serializer=readable_json_serializer,
     retries=1,
-    task_run_name="{task.run_id}_{task.id}_design",
+    task_run_name="{task.run_id}_{task.id}_route",
 )
-async def task_design(task: Task) -> Task:
+async def task_route(task: Task) -> str:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return await design(task)
+        return await route(task)
 
-# @task(
-#     persist_result=True, 
-#     result_storage=local_storage,
-#     cache_key_fn=get_cache_key, 
-#     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_reflection.json",
-#     result_serializer=readable_json_serializer,
-#     retries=1,
-#     task_run_name="{task.run_id}_{task.id}_design_reflection",
-# )
-# async def task_design_reflection(task: Task) -> Task:
-#     ensure_task_logger(task.run_id)
-#     with logger.contextualize(run_id=task.run_id):
-#         return await design_reflection(task)
+
+def get_cache_key(context: TaskRunContext, parameters: Dict[str, Any]) -> str:
+    task: Task = parameters["task"]
+    operation_name: str = parameters.get("operation_name", "")
+    base_key = f"{task.run_id}_{task.id}_{context.task.name}"
+    return f"{base_key}_{operation_name}" if operation_name else base_key
+
+@task(
+    persist_result=True, 
+    result_storage=local_storage,
+    cache_key_fn=lambda context, parameters: f"{parameters['task'].run_id}_{parameters['task'].id}_design_{parameters['category']}",
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_{parameters[category]}.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    task_run_name="{task.run_id}_{task.id}_design_{category}",
+)
+async def task_design(task: Task, category: str) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await design(task, category)
+
+@task(
+    persist_result=True, 
+    result_storage=local_storage,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_reflection.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    task_run_name="{task.run_id}_{task.id}_design_reflection",
+)
+async def task_design_reflection(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await design_reflection(task)
 
 @task(
     persist_result=True, 
@@ -349,13 +364,10 @@ async def flow_write(current_task: Task):
         await task_store(task_result, "task_atom")
         if task_result.results.get("atom_result") == "atom": 
             logger.info(f"任务 '{current_task.id}' 是原子任务, 直接执行。")
-            
             if task_result.task_type == "design":
-                task_result = await task_design(task_result)
-                await task_store(task_result, "task_design")
-                
-                # task_result = await task_design_reflection(task_result)
-                # await task_store(task_result, "task_design_reflection")
+                category = await task_route(task_result)
+                task_result = await task_design(task_result, category=category)
+                await task_store(task_result, f"task_design_{category}")
             elif task_result.task_type == "search":
                 task_result = await task_search(task_result)
                 await task_store(task_result, "task_search")
@@ -383,7 +395,7 @@ async def flow_write(current_task: Task):
             # task_result = await task_plan_before_reflection(task_result)
             # await task_store(task_result, "task_plan_before_reflection")
 
-            if task_result.task_type == "write" and len(get_preceding_sibling_ids(task_result.id)) >= 1 :
+            if task_result.task_type == "write" and len(task_result.dependency) >= 1 and len(get_preceding_sibling_ids(task_result.id)) >= 1:
                 task_result = await task_design_hierarchy(task_result)
                 await task_store(task_result, "task_design_hierarchy")
 
@@ -399,6 +411,7 @@ async def flow_write(current_task: Task):
             if task_result.sub_tasks:
                 logger.info(f"任务 '{current_task.id}' 分解为 {len(task_result.sub_tasks)} 个子任务, 开始递归处理。")
                 for sub_task in task_result.sub_tasks:
+
                     if day_wordcount_goal > 0:
                         db = get_db(run_id=current_task.run_id, category=current_task.category)
                         word_count_24h = await asyncio.to_thread(db.get_word_count_last_24h)

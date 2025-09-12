@@ -148,8 +148,8 @@ litellm.cache = Cache(type="disk", get_cache_key=custom_get_cache_key)
 
 
 def get_llm_messages(
-        SYSTEM_PROMPT: str, 
-        USER_PROMPT: str, 
+        SYSTEM_PROMPT: str = None, 
+        USER_PROMPT: str = None, 
         context_dict_system: Dict[str, Any] = None, 
         context_dict_user: Dict[str, Any] = None
     ) -> list[dict]:

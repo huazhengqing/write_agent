@@ -16,7 +16,6 @@ class PlanNode(BaseModel):
     length: Optional[str] = Field(None, description="对于 'write' 类型的任务, 此任务的预估长度或字数。")
     sub_tasks: List['PlanNode'] = Field(default_factory=list, description="分解出的更深层次的子任务列表。")
 
-
 class PlanOutput(PlanNode):
     reasoning: Optional[str] = Field(None, description="关于任务分解的推理过程。")
     
@@ -77,3 +76,66 @@ def convert_plan_to_tasks(
             new_task.sub_tasks = convert_plan_to_tasks(plan_item.sub_tasks, new_task)
         tasks.append(new_task)
     return tasks
+
+async def plan_reflection(task: Task) -> Task:
+    updated_task = task.model_copy(deep=True)
+    if os.getenv("deployment_environment") == "test":
+        updated_task.results["plan_reflection"] = task.results["plan"]
+        updated_task.results["plan_reflection_reasoning"] = ""
+    else:
+        module_name = f"plan_{task.task_type}_reflection_cn"
+        SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, module_name, "SYSTEM_PROMPT", "USER_PROMPT")
+        if task.task_type == "search":
+            context = await get_rag().get_context_base(task)
+        else:
+            context = await get_rag().get_context(task)
+        context["to_reflection"] = task.results.get("plan")
+        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
+        llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["reasoning"])
+        message = await llm_acompletion(llm_params, response_model=PlanOutput)
+        data: PlanOutput = message.validated_data
+        reasoning = message.get("reasoning_content") or message.get("reasoning", "")
+        updated_task.sub_tasks = convert_plan_to_tasks(data.sub_tasks, updated_task)
+        updated_task.results["plan_reflection"] = data.model_dump(exclude_none=True, exclude={'reasoning'})
+        updated_task.results["plan_reflection_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
+    return updated_task
+
+async def plan_before_reflection(task: Task) -> Task:
+    updated_task = task.model_copy(deep=True)
+    if os.getenv("deployment_environment") == "test":
+        updated_task.results["design_reflection"] = ""
+        updated_task.results["design_reflection_reasoning"] = ""
+    else:
+        SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "design_batch_reflection_cn", "SYSTEM_PROMPT", "USER_PROMPT")
+        context = await get_rag().get_context(task)
+        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
+        llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["creative"])
+        message = await llm_acompletion(llm_params)
+        content = message.content
+        reasoning = message.get("reasoning_content") or message.get("reasoning", "")
+        updated_task.results["design_reflection"] = content
+        updated_task.results["design_reflection_reasoning"] = reasoning
+    return updated_task
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

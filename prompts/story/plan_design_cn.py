@@ -28,7 +28,7 @@ SYSTEM_PROMPT = """
 - 指令与内容分离: 任务目标是“做什么”, 非具体创作内容。
 - 一致性: 遵守并细化上级设计, 与同级设计逻辑风格协同。
 - 搜索先行: `design` 任务所需外部知识, 必须由同层级的 `search` 前置任务提供。
-- 依赖约束: `dependency` 字段仅包含同层级(兄弟节点)的任务ID。上层依赖是隐式的, 无需填写。
+- 依赖约束: `dependency` 字段仅包含同层级的`design`/`search`前置任务ID。上层依赖是隐式的, 无需填写。
 - 目标聚焦: 子任务 `goal` 必须明确、具体, 服务于父任务。
 
 # 工作流程:
@@ -66,28 +66,29 @@ SYSTEM_PROMPT = """
     "reasoning": "关于任务分解的详细思考过程。",
     "id": "1.8",
     "task_type": "design",
-    "goal": "父任务的原始目标",
+    "hierarchical_position": "全书",
+    "goal": "[父任务的原始目标]",
     "dependency": ["1.7"],
     "sub_tasks": [
         {
             "id": "1.8.1",
             "task_type": "search",
-            "goal": "资料搜集: ...",
+            "goal": "[子任务A: Search]: [为设计任务提供外部信息支持]",
             "dependency": [],
             "sub_tasks": []
         },
         {
             "id": "1.8.2",
             "task_type": "design",
-            "goal": "方面A设计: 根据[资料搜集成果] ...",
+            "goal": "[子任务B: Design]: [根据分解维度和搜索结果, 设计方面A]",
             "dependency": ["1.8.1"],
             "sub_tasks": []
         },
         {
             "id": "1.8.3",
             "task_type": "design",
-            "goal": "方面B设计: ...",
-            "dependency": ["1.8.1", "1.8.2"],
+            "goal": "[子任务C: Design]: [根据分解维度, 设计方面B]",
+            "dependency": [],
             "sub_tasks": []
         }
     ]
