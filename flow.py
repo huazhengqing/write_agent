@@ -13,8 +13,8 @@ from langchain_openai import ChatOpenAI
 from utils.models import Task, get_preceding_sibling_ids
 from agents.atom import atom
 from agents.plan import plan, plan_reflection
-from agents import route
-from agents.design import design, design_aggregate, design_hierarchy, design_hierarchy_reflection, design_reflection
+from agents import hierarchy, route
+from agents.design import design, design_aggregate, design_reflection
 from agents.search import search, search_aggregate
 from agents.write import write, write_before_reflection, write_reflection
 from agents.summary import summary, summary_aggregate
@@ -181,29 +181,29 @@ async def task_design_reflection(task: Task) -> Task:
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_hierarchy.json",
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/hierarchy.json",
     result_serializer=readable_json_serializer,
     retries=1,
-    task_run_name="{task.run_id}_{task.id}_design_hierarchy",
+    task_run_name="{task.run_id}_{task.id}_hierarchy",
 )
-async def task_design_hierarchy(task: Task) -> Task:
+async def task_hierarchy(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return await design_hierarchy(task)
+        return await hierarchy(task)
 
 @task(
     persist_result=True, 
     result_storage=local_storage,
     cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_hierarchy_reflection.json",
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/hierarchy_reflection.json",
     result_serializer=readable_json_serializer,
     retries=1,
-    task_run_name="{task.run_id}_{task.id}_design_hierarchy_reflection",
+    task_run_name="{task.run_id}_{task.id}_hierarchy_reflection",
 )
-async def task_design_hierarchy_reflection(task: Task) -> Task:
+async def task_hierarchy_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return await design_hierarchy_reflection(task)
+        return await hierarchy.hierarchy_reflection(task)
     
 @task(
     persist_result=True, 
@@ -396,11 +396,11 @@ async def flow_write(current_task: Task):
             # await task_store(task_result, "task_plan_before_reflection")
 
             if task_result.task_type == "write" and len(task_result.dependency) >= 1 and len(get_preceding_sibling_ids(task_result.id)) >= 1:
-                task_result = await task_design_hierarchy(task_result)
-                await task_store(task_result, "task_design_hierarchy")
+                task_result = await task_hierarchy(task_result)
+                await task_store(task_result, "task_hierarchy")
 
-                task_result = await task_design_hierarchy_reflection(task_result)
-                await task_store(task_result, "task_design_hierarchy_reflection")
+                task_result = await task_hierarchy_reflection(task_result)
+                await task_store(task_result, "task_hierarchy_reflection")
             
             task_result = await task_plan(task_result)
             await task_store(task_result, "task_plan")

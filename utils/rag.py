@@ -147,11 +147,11 @@ class RAG:
                 self.caches['dependent_design'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await self.store_design(task, task.results.get("design_reflection"))
-        elif task_type == "task_design_hierarchy":
+        elif task_type == "task_hierarchy":
             if task.results.get("design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
-        elif task_type == "task_design_hierarchy_reflection":
+        elif task_type == "task_hierarchy_reflection":
             if task.results.get("design_reflection"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
