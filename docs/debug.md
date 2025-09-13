@@ -112,8 +112,7 @@ Sentence-BERT 实现「风格统一」, 贴合平台调性。
 这个设计成果可以被主规划流程采纳，丰富故事的层次和趣味性。
 
 
-如何使用 LlamaIndex Hub 中的 `SerperTool`？请提供一个简单的示例。
-请为 `Tavily AI` 的集成提供一个基于 LlamaIndex 的 `FunctionTool` 封装示例代码。
+
 
 
 

@@ -5,6 +5,7 @@ from llama_index.core.agent import ReActAgent
 from llama_index.llms.litellm import LiteLLM
 from llama_index.tools.tavily_research import TavilyToolSpec
 from utils.models import Task
+from agents.tools.web_scraper import get_web_scraper_tool
 from utils.prompt_loader import load_prompts
 from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
 from utils.rag import get_rag
@@ -21,10 +22,12 @@ async def search(task: Task) -> Task:
     context["goal"] = task.goal
     system_prompt = SYSTEM_PROMPT.format_map(defaultdict(str, context))
     tavily_tools = TavilyToolSpec(api_key=tavily_api_key).to_tool_list()
+    scraper_tool = get_web_scraper_tool()
+    all_tools = tavily_tools + [scraper_tool]
     llm_params = get_llm_params(llm='reasoning', temperature=LLM_TEMPERATURES["reasoning"])
     llm = LiteLLM(**llm_params)
     agent = ReActAgent.from_tools(
-        tools=tavily_tools,
+        tools=all_tools,
         llm=llm,
         system_prompt=system_prompt,
         verbose=True
