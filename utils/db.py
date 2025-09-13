@@ -62,6 +62,10 @@ Table: t_tasks
 - atom_reasoning: TEXT - 判断原子任务的推理过程
 - atom_result: TEXT - 判断原子任务的结果 ('atom' 或 'complex')
 - created_at: TIMESTAMP - 记录创建时的时间戳。
+- review_design: TEXT - 设计评审结果
+- review_design_reasoning: TEXT - 设计评审的推理过程
+- review_write: TEXT - 正文评审结果
+- review_write_reasoning: TEXT - 正文评审的推理过程
 - updated_at: TIMESTAMP - 记录最后更新时的时间戳。
 """
 
@@ -109,6 +113,10 @@ class DB:
                 atom_reasoning TEXT,
                 atom_result TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                review_design TEXT,
+                review_design_reasoning TEXT,
+                review_write TEXT,
+                review_write_reasoning TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             """)
@@ -186,6 +194,10 @@ class DB:
             "summary_reasoning": task.results.get("summary_reasoning"),
             "atom_reasoning": task.results.get("atom_reasoning"),
             "atom_result": task.results.get("atom_result"),
+            "review_design": task.results.get("review_design"),
+            "review_design_reasoning": task.results.get("review_design_reasoning"),
+            "review_write": task.results.get("review_write"),
+            "review_write_reasoning": task.results.get("review_write_reasoning"),
         }
         # 统一处理可能需要序列化的字段 (plan, plan_reflection, atom)
         for field_name in ["plan", "plan_reflection", "atom"]:
@@ -405,6 +417,24 @@ class DB:
             if not rows:
                 return 0
             return sum(len(row[0]) for row in rows)
+
+    def get_write_text(self, task: Task) -> str:
+        with self._lock:
+            self.cursor.execute(
+                """
+                SELECT id, write 
+                FROM t_tasks 
+                WHERE (id = ? OR id LIKE ?) 
+                AND write IS NOT NULL AND write != ''
+                """,
+                (task.id, f"{task.id}.%")
+            )
+            rows = self.cursor.fetchall()
+        if not rows:
+            return ""
+        sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
+        content_list = [row[1] for row in sorted_rows if row[1]]
+        return "\n\n".join(content_list)
 
     def close(self):
         with self._lock:

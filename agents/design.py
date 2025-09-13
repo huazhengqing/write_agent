@@ -10,27 +10,30 @@ async def design(task: Task, category: str) -> Task:
         "market": "design_market_cn",
         "title": "design_title_cn",
         "style": "design_style_cn",
-        "review": "design_review_cn",
-        "character": "design_character_cn",
-        "system": "design_system_cn",
-        "concept": "design_concept_cn",
-        "worldview": "design_worldview_cn",
-        "plot": "design_plot_cn",
+        "character": "design_cn",
+        "system": "design_cn",
+        "concept": "design_cn",
+        "worldview": "design_cn",
+        "plot": "design_cn",
+        "scene_atmosphere": "design_scene_atmosphere_cn",
+        "faction_culture": "design_faction_culture_cn",
+        "power_system": "design_power_system_rules_cn",
+        "narrative_pacing": "design_narrative_pacing_cn",
+        "thematic_imagery": "design_thematic_imagery_cn",
+        "hierarchy": "hierarchy_cn",
+        "trend_integration": "design_trend_integration_cn",
         "general": "design_cn",
     }
     prompt_file = prompt_file_map.get(category, "design_cn")
     temperature = LLM_TEMPERATURES["creative"]
-    if category == "review":
-        temperature = LLM_TEMPERATURES["reasoning"]
     SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, prompt_file, "SYSTEM_PROMPT", "USER_PROMPT")
     context = await get_rag().get_context(task)
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
     llm_params = get_llm_params(messages=messages, temperature=temperature)
     message = await llm_acompletion(llm_params)
-    content = message.content
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")
     updated_task = task.model_copy(deep=True)
-    updated_task.results["design"] = content
+    updated_task.results["design"] = message.content
     updated_task.results["design_reasoning"] = reasoning
     return updated_task
 

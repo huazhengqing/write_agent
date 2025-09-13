@@ -9,7 +9,7 @@ from pathlib import Path
 from loguru import logger
 from dotenv import load_dotenv
 from utils.models import Task
-from flow import flow_write
+from flow_story import flow_write_story
 
 
 load_dotenv()
@@ -53,7 +53,7 @@ def sanitize_filename(name: str) -> str:
     return s[:100]
 
 
-def flow_write_all(tasks_data: list):
+def write_all(tasks_data: list):
     logger.info(f"接收到 {len(tasks_data)} 个任务, 准备并行处理...")
     flow_runs = []
     for task_info in tasks_data:
@@ -85,7 +85,7 @@ def flow_write_all(tasks_data: list):
         }
         task_args = {k: v for k, v in task_params.items() if v is not None}
         root_task = Task(**task_args)
-        flow_runs.append(flow_write(current_task=root_task))
+        flow_runs.append(flow_write_story(current_task=root_task))
 
     logger.info(f"即将并行启动 {len(flow_runs)} 个流程...")
     if flow_runs:
@@ -122,7 +122,7 @@ def main():
     tasks_data = data.get("tasks")
     if not tasks_data:
         return
-    flow_write_all(tasks_data)
+    write_all(tasks_data)
 
 
 if __name__ == "__main__":

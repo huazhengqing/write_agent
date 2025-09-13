@@ -1,17 +1,8 @@
 import os
-import importlib
-from typing import Optional, Literal
-from pydantic import BaseModel, Field
-from utils.models import Task
+from utils.models import AtomOutput, Task
 from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
 from utils.rag import get_rag
 from utils.prompt_loader import load_prompts
-
-
-class AtomOutput(BaseModel):
-    reasoning: Optional[str] = Field(None, description="关于任务是原子还是复杂的推理过程。")
-    goal_update: Optional[str] = Field(None, description="在分析了任务后, 对原始目标的优化或澄清。如果LLM认为不需要修改, 则此字段可以省略。")
-    atom_result: Literal['atom', 'complex'] = Field(description="判断任务是否为原子任务的结果, 值必须是 'atom' 或 'complex'。")
 
 
 async def atom(task: Task) -> Task:
@@ -26,6 +17,8 @@ async def atom(task: Task) -> Task:
     updated_task.results["atom"] = data.model_dump(exclude_none=True, exclude={'reasoning', 'atom_result'})
     updated_task.results["atom_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
     updated_task.results["atom_result"] = data.atom_result
+    if hasattr(data, 'complex_reasons') and data.complex_reasons:
+        updated_task.results["complex_reasons"] = data.complex_reasons
     if data.goal_update and len(data.goal_update.strip()) > 10 and data.goal_update != task.goal:
         updated_task.goal = data.goal_update
         updated_task.results["goal_update"] = data.goal_update

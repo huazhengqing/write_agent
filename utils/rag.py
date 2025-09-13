@@ -110,11 +110,6 @@ class RAG:
                 self.caches['task_list'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_task, task)
             await asyncio.to_thread(db.add_result, task)
-        elif task_type == "task_plan_before_reflection":
-            if task.results.get("design_reflection"):
-                self.caches['dependent_design'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await self.store_design(task, task.results.get("design_reflection"))
         elif task_type == "task_plan":
             if task.results.get("plan"):
                 await asyncio.to_thread(db.add_result, task)
@@ -125,6 +120,16 @@ class RAG:
                 self.caches['upper_search'].evict(tag=task.run_id)
                 await asyncio.to_thread(db.add_result, task)
                 await asyncio.to_thread(db.add_sub_tasks, task)
+        elif task_type == "review_design":
+            if task.results.get("review_design"):
+                self.caches['dependent_design'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await self.store_design(task, task.results.get("review_design"))
+        elif task_type == "review_write":
+            if task.results.get("review_write"):
+                self.caches['dependent_design'].evict(tag=task.run_id)
+                await asyncio.to_thread(db.add_result, task)
+                await self.store_design(task, task.results.get("review_write"))
         elif task_type in [
             "task_design", 
             "task_design_market", 
