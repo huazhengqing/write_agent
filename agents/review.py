@@ -1,5 +1,5 @@
 import os
-from utils.db import get_db
+from utils.sqlite import get_db
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
 from utils.rag import get_rag

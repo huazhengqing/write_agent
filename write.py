@@ -1,59 +1,16 @@
-import re
 import sys
 import json
 import asyncio
 import hashlib
-import logging
-import os
 import argparse
-from pathlib import Path
 from loguru import logger
-from dotenv import load_dotenv
+from utils.file import sanitize_filename
+from utils.log import init_logger_by_runid
 from utils.models import Task
-
-load_dotenv()
-prefect_home_path = os.getenv("PREFECT_HOME")
-if prefect_home_path:
-    Path(prefect_home_path).mkdir(parents=True, exist_ok=True)
-from flow_story_write import flow_story_write
+from write_story import flow_write_story
 
 
-def init_logger():
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
-    logger.remove()
-    class InterceptHandler(logging.Handler):
-        def emit(self, record: logging.LogRecord):
-            try:
-                level = logger.level(record.levelname).name
-            except ValueError:
-                level = record.levelno
-            # 找到调用栈的正确深度
-            frame, depth = logging.currentframe(), 2
-            while frame and frame.f_code.co_filename == logging.__file__:
-                frame = frame.f_back
-                depth += 1
-            logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
-    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
-    logging.getLogger("llama_index").setLevel(logging.DEBUG)
-    logger.add(
-        log_dir / "main.log",
-        filter=lambda record: not record["extra"].get("run_id"), 
-        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
-        rotation="00:00",
-        level="DEBUG", 
-        enqueue=True,
-        backtrace=True,
-        diagnose=True,
-    )
-
-init_logger()
-
-
-def sanitize_filename(name: str) -> str:
-    s = re.sub(r'[\\/*?:"<>|]', "", name)
-    s = s.replace(" ", "_")
-    return s[:100]
+init_logger_by_runid("write")
 
 
 def write_all(tasks_data: list):
@@ -88,7 +45,8 @@ def write_all(tasks_data: list):
         }
         task_args = {k: v for k, v in task_params.items() if v is not None}
         root_task = Task(**task_args)
-        flow_runs.append(flow_story_write(current_task=root_task))
+        if root_task.category == "story":
+            flow_runs.append(flow_write_story(current_task=root_task))
 
     logger.info(f"即将并行启动 {len(flow_runs)} 个流程...")
     if flow_runs:

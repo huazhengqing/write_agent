@@ -1,14 +1,10 @@
 import asyncio
 from pathlib import Path
-from agents import route
-from loguru import logger
 from typing import Any, Dict, Callable, Literal
-from prefect import flow, task
-from prefect.context import TaskRunContext
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.pydantic_v1 import BaseModel, Field
-from langchain_openai import ChatOpenAI
-from utils.models import Task, get_preceding_sibling_ids
+from loguru import logger
+from utils.log import ensure_task_logger
+from utils.prefect_utils import get_cache_key, local_storage, readable_json_serializer
+from utils.models import Task
 from agents.atom import atom
 from agents.plan import plan, plan_reflection
 from agents.design import design, design_aggregate, design_reflection
@@ -17,39 +13,11 @@ from agents.write import write, write_before_reflection, write_reflection
 from agents.summary import summary, summary_aggregate
 from agents.hierarchy import hierarchy, hierarchy_reflection
 from agents.review import review_design, review_write
+from agents import route
 from utils.rag import get_rag
-from utils.db import get_db
-from utils.prefect_utils import setup_prefect_storage, readable_json_serializer
+from utils.sqlite import get_db
+from prefect import flow, task
 
-
-local_storage = setup_prefect_storage()
-
-
-_SINK_IDS = {}
-def ensure_task_logger(run_id: str):
-    if run_id in _SINK_IDS:
-        return
-    log_dir = Path("logs")
-    log_dir.mkdir(exist_ok=True)
-    sink_id = logger.add(
-        log_dir / f"{run_id}.log",
-        filter=lambda record: record["extra"].get("run_id") == run_id,
-        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
-        level="INFO",
-        enqueue=True,
-        backtrace=True,
-        diagnose=True,
-    )
-    _SINK_IDS[run_id] = sink_id
-
-
-def get_cache_key(context: TaskRunContext, parameters: Dict[str, Any]) -> str:
-    task: Task = parameters["task"]
-    task_name = context.task.name.removeprefix("task_")
-    extra_params = {k: v for k, v in parameters.items() if k != 'task'}
-    extra_key = "_".join(str(v) for k, v in sorted(extra_params.items()))
-    base_key = f"{task.run_id}_{task.id}_{task_name}"
-    return f"{base_key}_{extra_key}" if extra_key else base_key
 
 @task(
     persist_result=True, 
@@ -327,10 +295,10 @@ async def task_store(task: Task, operation_name: str) -> bool:
 @flow(
     persist_result=False, 
     result_storage=local_storage,
-    name="flow_story_write", 
-    flow_run_name="{current_task.run_id}_flow_story_write_{current_task.id}",
+    name="flow_write_story", 
+    flow_run_name="{current_task.run_id}_flow_write_story_{current_task.id}",
 )
-async def flow_story_write(current_task: Task):
+async def flow_write_story(current_task: Task):
     ensure_task_logger(current_task.run_id)
     with logger.contextualize(run_id=current_task.run_id):
         logger.info(f"开始处理任务: {current_task.run_id} {current_task.id} {current_task.task_type} {current_task.goal}")
@@ -338,7 +306,7 @@ async def flow_story_write(current_task: Task):
         if not current_task.id or not current_task.goal:
             raise ValueError("任务ID和目标不能为空。")
         if current_task.task_type == "write":
-            if not task_result.length:
+            if not current_task.length:
                 raise ValueError("写作任务没有长度要求")
 
         day_wordcount_goal = getattr(current_task, 'day_wordcount_goal', 0)
@@ -349,7 +317,7 @@ async def flow_story_write(current_task: Task):
                 logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停任务: {current_task.run_id}")
                 return
 
-        logger.info(f"判断原子任务='{task_result.id}' ")
+        logger.info(f"判断原子任务='{current_task.id}' ")
         task_result = await task_atom(current_task)
         await task_store(task_result, "task_atom")
         if task_result.results.get("atom_result") == "atom": 
@@ -424,7 +392,7 @@ async def flow_story_write(current_task: Task):
                             logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停处理后续子任务: {sub_task.run_id}")
                             return
                     
-                    await flow_story_write(sub_task)
+                    await flow_write_story(sub_task)
                 
                 if task_result.task_type == "write":
                     keywords_to_skip_review = ["全书", "卷", "幕", "段落", "场景"]

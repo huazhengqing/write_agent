@@ -5,10 +5,17 @@ import json
 import hashlib
 import os
 import litellm
+from dotenv import load_dotenv
 from litellm.caching.caching import Cache
 from loguru import logger
-from typing import List, Dict, Any, Literal, Optional, Type, Callable
+from typing import List, Dict, Any, Literal, Optional, Type, Callable, Union
 from pydantic import BaseModel, ValidationError
+from llama_index.core.agent import ReActAgent
+from llama_index.llms.litellm import LiteLLM
+from utils.agent_tools import agent_tavily_tools, get_web_scraper_tool
+
+
+load_dotenv()
 
 
 LLM_TEMPERATURES = {
@@ -206,7 +213,7 @@ def _format_message_content(content: str) -> str:
         return _format_json_content(content)
     return content
 
-def _clean_markdown_fences(content: str) -> str:
+def clean_markdown_fences(content: str) -> str:
     """如果内容被Markdown代码块包裹, 则移除它们。"""
     if not content:
         return ""
@@ -252,14 +259,12 @@ async def llm_acompletion(
     params_to_log = llm_params.copy()
     params_to_log.pop("messages", None)
     logger.info(f"LLM 参数:\n{json.dumps(params_to_log, indent=2, ensure_ascii=False, default=str)}")
-
     llm_params_for_api = llm_params.copy()
     if response_model:
         llm_params_for_api["response_format"] = {
             "type": "json_object",
             "schema": response_model.model_json_schema()
         }
-
     max_retries = 5
     for attempt in range(max_retries):
         system_prompt = ""
@@ -274,47 +279,39 @@ async def llm_acompletion(
             logger.info(f"系统提示词:\n{system_prompt}")
         if user_prompt:
             logger.info(f"用户提示词:\n{user_prompt}")
-
         raw_output_for_correction = None
         try:
             response = await litellm.acompletion(**llm_params_for_api)
-
             if not response.choices or not response.choices[0].message:
                 raise ValueError("LLM响应中缺少 choices 或 message。")
-
             message = response.choices[0].message
-
             if response_model:
                 validated_data = None
                 # 优先从 tool_calls 解析
                 if message.tool_calls:
                     tool_call = message.tool_calls[0]
-                    raw_output_for_correction = _clean_markdown_fences(tool_call.function.arguments)
+                    raw_output_for_correction = clean_markdown_fences(tool_call.function.arguments)
                     if hasattr(tool_call.function, "parsed_arguments") and tool_call.function.parsed_arguments:
                         parsed_args = tool_call.function.parsed_arguments
                     else:
                         parsed_args = json.loads(raw_output_for_correction)
                     validated_data = response_model(**parsed_args)
                 elif message.content:
-                    raw_output_for_correction = _clean_markdown_fences(message.content)
+                    raw_output_for_correction = clean_markdown_fences(message.content)
                     validated_data = response_model.model_validate_json(raw_output_for_correction)
-
                 if validated_data:
                     message.validated_data = validated_data
                 else:
                     raise ValueError("LLM响应既无tool_calls也无有效content可供解析。")
             else:
-                message.content = _clean_markdown_fences(message.content)
+                message.content = clean_markdown_fences(message.content)
                 active_validator = validator or _default_text_validator
                 active_validator(message.content)
-
             reasoning = message.get("reasoning_content") or message.get("reasoning", "")
             if reasoning:
                 logger.info(f"推理过程:\n{reasoning}")
-
             logger.info(f"返回内容 (尝试 {attempt + 1}):\n{_format_message_content(message.content)}")
             return message
-
         except Exception as e:
             logger.warning(f"LLM调用或验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
             if attempt < max_retries - 1:
@@ -323,7 +320,6 @@ async def llm_acompletion(
                     litellm.cache.delete(key=cache_key)
                 except Exception as cache_e:
                     logger.error(f"删除缓存条目失败: {cache_e}")
-
                 # 针对JSON解析/验证错误的自我修正逻辑
                 if response_model and isinstance(e, (ValidationError, json.JSONDecodeError)) and raw_output_for_correction:
                     logger.info("检测到JSON错误, 下次尝试将进行自我修正...")
@@ -333,7 +329,6 @@ async def llm_acompletion(
                         if msg["role"] == "user":
                             original_user_content = msg.get("content", "")
                             break
-                    
                     correction_prompt = PROMPT_SELF_CORRECTION.format(
                         error=str(e), 
                         raw_output=raw_output_for_correction,
@@ -343,10 +338,53 @@ async def llm_acompletion(
                     llm_params_for_api["messages"] = system_message + [{"role": "user", "content": correction_prompt}]
                 else:
                     llm_params_for_api["messages"] = llm_params["messages"]
-
                 logger.info("正在准备重试...")
             else:
                 logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
                 raise
-
     raise RuntimeError("llm_acompletion 在所有重试后失败, 这是一个不应出现的情况。")
+
+
+async def call_agent(
+    system_prompt: str,
+    user_prompt: str,
+    tools: List[Any] = agent_tavily_tools + [get_web_scraper_tool()],
+    llm_type: Literal['reasoning', 'fast'] = 'reasoning',
+    temperature: Optional[float] = None,
+    response_model: Optional[Type[BaseModel]] = None,
+    max_retries: int = 3,
+) -> Optional[Union[BaseModel, str]]:
+    llm_params = get_llm_params(llm=llm_type, temperature=temperature)
+    llm = LiteLLM(**llm_params)
+    agent = ReActAgent.from_tools(
+        tools=tools,
+        llm=llm, 
+        system_prompt=system_prompt,
+        verbose=True
+    ) 
+    raw_output = ""
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Agent开始执行任务 (尝试 {attempt + 1}/{max_retries})...")
+            if attempt == 0: # 仅在第一次尝试时记录提示词
+                logger.info(f"系统提示词:\n{system_prompt}")
+                logger.info(f"用户提示词:\n{user_prompt}")
+            response = await agent.achat(user_prompt)
+            raw_output = str(response)
+            if response_model:
+                cleaned_json = clean_markdown_fences(raw_output)
+                validated_data = response_model.model_validate_json(cleaned_json)
+                logger.success("Agent输出成功通过Pydantic模型验证。")
+                return validated_data
+            else:
+                cleaned_output = clean_markdown_fences(raw_output)
+                _default_text_validator(cleaned_output)
+                logger.success("Agent执行完成并生成了有效文本。")
+                return cleaned_output
+        except (ValidationError, json.JSONDecodeError, ValueError) as e:
+            logger.warning(f"Agent输出解析或验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+            if attempt >= max_retries - 1:
+                logger.error(f"Agent在多次重试后仍然失败。\n原始输出:\n{raw_output}")
+                return None
+        logger.info("准备重试...")
+    return None

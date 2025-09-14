@@ -28,7 +28,8 @@ from llama_index.core.prompts import PromptTemplate
 from llama_index.core.postprocessor import LLMRerank
 from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
 from llama_index.core.node_parser import SentenceSplitter, MarkdownNodeParser
-from utils.db import get_db, get_text_file_path, text_file_append, text_file_read
+from utils.sqlite import get_db
+from utils.file import get_text_file_path, text_file_append, text_file_read
 from utils.models import Task, get_sibling_ids_up_to_current, natural_sort_key
 from utils.prompt_loader import load_prompts
 from utils.llm import (
