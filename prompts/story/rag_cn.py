@@ -18,10 +18,7 @@ kg_gen_query_prompt = """
 1.  强制过滤 (最重要!):
     - 查询必须包含 `WHERE` 子句。
     - `WHERE` 子句必须对查询路径中的 每一个节点 都应用以下所有属性过滤条件。
-    - 假设一个节点变量是 `n`, 那么过滤条件必须是:
-        - `n.run_id = '{run_id}'`
-        - `n.content_type = '{content_type}'`
-        - `n.status = 'active'`
+    - 假设一个节点变量是 `n`, 那么过滤条件必须是: `n.status = 'active'`
 2.  Schema遵从: 仅使用 Schema 中定义的节点标签和关系类型。
 3.  字符串安全: 在Cypher查询中, 所有字符串值都必须是有效的。如果从用户问题中提取的实体名称包含双引号(`"`), 必须用反斜杠(`\`)进行转义(例如, `\"`)以防止语法错误。
 4.  单行输出: Cypher 查询必须是单行文本, 无换行。
@@ -30,7 +27,7 @@ kg_gen_query_prompt = """
 
 # 示例
 - 用户问题: '角色"龙傲天"和"赵日天"是什么关系?'
-- Cypher 查询: MATCH (a:角色 {{name: "龙傲天"}})-[r]-(b:角色 {{name: "赵日天"}}) WHERE a.run_id = '{run_id}' AND a.content_type = '{content_type}' AND a.status = 'active' AND b.run_id = '{run_id}' AND b.content_type = '{content_type}' AND b.status = 'active' RETURN type(r)
+- Cypher 查询: MATCH (a:角色 {{name: "龙傲天"}})-[r]-(b:角色 {{name: "赵日天"}}) WHERE a.status = 'active' AND b.status = 'active' RETURN type(r)
 
 # 指令
 现在, 请为上述用户问题生成 Cypher 查询语句。

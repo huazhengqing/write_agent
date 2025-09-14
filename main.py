@@ -4,15 +4,18 @@ import json
 import asyncio
 import hashlib
 import logging
+import os
 import argparse
 from pathlib import Path
 from loguru import logger
 from dotenv import load_dotenv
 from utils.models import Task
-from flow_story_write import flow_story_write
-
 
 load_dotenv()
+prefect_home_path = os.getenv("PREFECT_HOME")
+if prefect_home_path:
+    Path(prefect_home_path).mkdir(parents=True, exist_ok=True)
+from flow_story_write import flow_story_write
 
 
 def init_logger():

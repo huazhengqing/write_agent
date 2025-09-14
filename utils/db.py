@@ -271,16 +271,16 @@ class DB:
         except ValueError:
             return ""
 
-        # 生成需要查询的兄弟任务ID列表
-        # 例如, 当前是 1.5, 则查询 1.1, 1.2, 1.3, 1.4
-        dependent_ids = [f"{task.parent_id}.{i}" for i in range(1, current_seq)]
+        # 生成需要查询的兄弟任务及当前任务自身的ID列表
+        # 例如, 当前是 1.5, 则查询 1.1, 1.2, 1.3, 1.4, 1.5
+        dependent_ids = [f"{task.parent_id}.{i}" for i in range(1, current_seq + 1)]
         if not dependent_ids:
             return ""
 
         with self._lock:
             placeholders = ','.join(['?'] * len(dependent_ids))
             self.cursor.execute(
-                f"SELECT id, design, design_reflection FROM t_tasks WHERE id IN ({placeholders})",
+                f"SELECT id, design, design_reflection, review_design, review_write FROM t_tasks WHERE id IN ({placeholders})",
                 tuple(dependent_ids)
             )
             rows = self.cursor.fetchall()
@@ -290,7 +290,19 @@ class DB:
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = []
         for row in sorted_rows:
-            content = row[2] if row[2] else row[1]
+            # 逻辑：组合多个设计相关字段
+            # 1. 设计内容: design_reflection 优先于 design
+            # 2. 设计评审: review_design
+            # 3. 正文评审: review_write
+            parts = []
+            design_content = row[2] or row[1]  # design_reflection or design
+            if design_content:
+                parts.append(design_content)
+            if row[3]:  # review_design
+                parts.append(row[3])
+            if row[4]:  # review_write
+                parts.append(row[4])
+            content = "\n\n".join(parts)
             if content:
                 content_list.append(content)
         return "\n\n".join(content_list)
@@ -324,7 +336,7 @@ class DB:
     def get_subtask_design(self, parent_id: str) -> str:
         with self._lock:
             self.cursor.execute(
-                "SELECT id, design FROM t_tasks WHERE parent_id = ? AND task_type = 'design'",
+                "SELECT id, design, design_reflection, review_design, review_write FROM t_tasks WHERE parent_id = ? AND task_type = 'design'",
                 (parent_id,)
             )
             rows = self.cursor.fetchall()
@@ -333,7 +345,23 @@ class DB:
             return ""
 
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
-        content_list = [row[1] for row in sorted_rows if row[1]]
+        content_list = []
+        for row in sorted_rows:
+            # 逻辑：组合多个设计相关字段
+            # 1. 设计内容: design_reflection 优先于 design
+            # 2. 设计评审: review_design
+            # 3. 正文评审: review_write
+            parts = []
+            design_content = row[2] or row[1]  # design_reflection or design
+            if design_content:
+                parts.append(design_content)
+            if row[3]:  # review_design
+                parts.append(row[3])
+            if row[4]:  # review_write
+                parts.append(row[4])
+            content = "\n\n".join(parts)
+            if content:
+                content_list.append(content)
         return "\n\n".join(content_list)
 
     def get_subtask_search(self, parent_id: str) -> str:

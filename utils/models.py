@@ -102,13 +102,14 @@ def natural_sort_key(task_id: str) -> List[int]:
         return []
 
 
-def get_preceding_sibling_ids(task_id: str) -> List[str]:
+def get_sibling_ids_up_to_current(task_id: str) -> List[str]:
     """
-    根据任务ID, 生成其所有前序兄弟任务的ID列表。
-    例如, 对于 '1.2.3', 它会生成 ['1.2.1', '1.2.2']。
+    根据任务ID, 生成从第一个兄弟任务到其自身的所有兄弟任务的ID列表。
+    例如, 对于 '1.2.3', 它会生成 ['1.2.1', '1.2.2', '1.2.3']。
     """
     if '.' not in task_id:
-        return []
+        # 如果没有'.', 说明是根任务或顶级任务, 返回它自己
+        return [task_id]
     parts = task_id.split('.')
     parent_id = ".".join(parts[:-1])
     try:
@@ -116,5 +117,5 @@ def get_preceding_sibling_ids(task_id: str) -> List[str]:
     except (ValueError, IndexError):
         return []
     if current_seq <= 1:
-        return []
-    return [f"{parent_id}.{i}" for i in range(1, current_seq)]
+        return [task_id]
+    return [f"{parent_id}.{i}" for i in range(1, current_seq + 1)]

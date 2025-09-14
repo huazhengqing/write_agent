@@ -8,6 +8,7 @@ from markdown import markdown
 from sentence_transformers import SentenceTransformer
 import diskcache as dc
 import os
+import re
 import hashlib
 import nltk
 from nltk.tokenize import sent_tokenize
@@ -49,6 +50,7 @@ class KeywordExtractorEn:
 
         project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
         cache_dir = os.path.join(project_root, ".cache", "keyword_extractor_zh")
+        cache_dir = os.path.join(project_root, ".cache", "keyword_extractor_en")
         os.makedirs(cache_dir, exist_ok=True)
         self.cache = dc.Cache(cache_dir, size_limit=1024 * 1024 * 300)
 

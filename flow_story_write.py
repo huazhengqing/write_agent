@@ -3,10 +3,7 @@ from pathlib import Path
 from agents import route
 from loguru import logger
 from typing import Any, Dict, Callable, Literal
-from prefect import flow, task, get_run_logger
-from prefect.filesystems import LocalFileSystem
-from prefect.exceptions import ObjectNotFound
-from prefect.serializers import JSONSerializer
+from prefect import flow, task
 from prefect.context import TaskRunContext
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.pydantic_v1 import BaseModel, Field
@@ -22,28 +19,10 @@ from agents.hierarchy import hierarchy, hierarchy_reflection
 from agents.review import review_design, review_write
 from utils.rag import get_rag
 from utils.db import get_db
+from utils.prefect_utils import setup_prefect_storage, readable_json_serializer
 
-
-def setup_prefect_storage() -> LocalFileSystem:
-    block_name = "write-storage"
-    project_dir = Path(__file__).parent.resolve()
-    storage_path = project_dir / ".prefect" / "storage"
-    try:
-        storage_block = LocalFileSystem.load(block_name)
-        logger.info(f"成功加载已存在的 Prefect 存储块 '{block_name}'。")
-        return storage_block
-    except (ObjectNotFound, ValueError):
-        logger.info(f"Prefect 存储块 '{block_name}' 不存在, 正在创建...")
-        storage_path.mkdir(parents=True, exist_ok=True)
-        storage_block = LocalFileSystem(basepath=str(storage_path))
-        storage_block.save(name=block_name, overwrite=True)
-        logger.success(f"成功创建并保存了 Prefect 存储块 '{block_name}'。")
-        return storage_block
 
 local_storage = setup_prefect_storage()
-
-
-readable_json_serializer = JSONSerializer(dumps_kwargs={"indent": 2, "ensure_ascii": False})
 
 
 _SINK_IDS = {}
