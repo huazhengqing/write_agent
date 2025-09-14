@@ -348,10 +348,10 @@ async def task_store(task: Task, operation_name: str) -> bool:
 @flow(
     persist_result=False, 
     result_storage=local_storage,
-    name="flow_write_story", 
-    flow_run_name="{current_task.run_id}_flow_write_story_{current_task.id}",
+    name="flow_story_write", 
+    flow_run_name="{current_task.run_id}_flow_story_write_{current_task.id}",
 )
-async def flow_write_story(current_task: Task):
+async def flow_story_write(current_task: Task):
     ensure_task_logger(current_task.run_id)
     with logger.contextualize(run_id=current_task.run_id):
         logger.info(f"开始处理任务: {current_task.run_id} {current_task.id} {current_task.task_type} {current_task.goal}")
@@ -385,21 +385,28 @@ async def flow_write_story(current_task: Task):
                 task_result = await task_search(task_result)
                 await task_store(task_result, "task_search")
             elif task_result.task_type == "write":
-                logger.info(f"设计反思: write 任务='{current_task.id}'")
+                logger.info(f"执行: 设计反思: write 任务='{current_task.id}'")
                 task_result = await task_write_before_reflection(task_result)
                 await task_store(task_result, "task_write_before_reflection")
 
-                logger.info(f"写作初稿: write 任务='{current_task.id}'")
+                logger.info(f"执行: 写作初稿: write 任务='{current_task.id}'")
                 task_result = await task_write(task_result)
                 await task_store(task_result, "task_write")
 
-                logger.info(f"反思初稿: write 任务='{current_task.id}'")
+                logger.info(f"执行: 反思初稿: write 任务='{current_task.id}'")
                 task_result = await task_write_reflection(task_result)
                 await task_store(task_result, "task_write_reflection")
 
-                logger.info(f"正文摘要: write 任务='{current_task.id}'")
+                logger.info(f"执行: 正文摘要: write 任务='{current_task.id}'")
                 task_result = await task_summary(task_result)
                 await task_store(task_result, "task_summary")
+                
+                keywords_to_skip_review = ["全书", "卷", "幕", "段落", "场景"]
+                position = task_result.hierarchical_position
+                if position and "章" in position and not any(keyword in position for keyword in keywords_to_skip_review):
+                    logger.info(f"执行: 审查正文: write 任务='{task_result.id}' ")
+                    task_result = await task_review_write(task_result)
+                    await task_store(task_result, "task_review_write")
             else:
                 raise ValueError(f"未知的原子任务类型: {task_result.task_type}")
         else:
@@ -438,7 +445,7 @@ async def flow_write_story(current_task: Task):
                             logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停处理后续子任务: {sub_task.run_id}")
                             return
                     
-                    await flow_write_story(sub_task)
+                    await flow_story_write(sub_task)
                 
                 if task_result.task_type == "write":
                     keywords_to_skip_review = ["全书", "卷", "幕", "段落", "场景"]

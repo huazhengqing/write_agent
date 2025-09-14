@@ -9,7 +9,7 @@ from pathlib import Path
 from loguru import logger
 from dotenv import load_dotenv
 from utils.models import Task
-from flow_story import flow_write_story
+from flow_story_write import flow_story_write
 
 
 load_dotenv()
@@ -85,7 +85,7 @@ def write_all(tasks_data: list):
         }
         task_args = {k: v for k, v in task_params.items() if v is not None}
         root_task = Task(**task_args)
-        flow_runs.append(flow_write_story(current_task=root_task))
+        flow_runs.append(flow_story_write(current_task=root_task))
 
     logger.info(f"即将并行启动 {len(flow_runs)} 个流程...")
     if flow_runs:
