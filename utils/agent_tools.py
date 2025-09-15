@@ -412,7 +412,9 @@ def get_web_scraper_tool() -> FunctionTool:
         )
     )
 
+
 ###############################################################################
+
 
 web_search_tools = [
     get_web_search_tool(),
@@ -420,7 +422,9 @@ web_search_tools = [
     get_web_scraper_tool(),
 ]
 
+
 ###############################################################################
+
 
 # if __name__ == "__main__":
     # test_query = "地球有多大"

@@ -4,6 +4,7 @@ import hashlib
 import asyncio
 import re
 from datetime import datetime
+import sys
 import threading
 from loguru import logger
 from diskcache import Cache
@@ -28,6 +29,7 @@ from llama_index.core.prompts import PromptTemplate
 from llama_index.core.postprocessor import LLMRerank
 from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
 from llama_index.core.node_parser import SentenceSplitter, MarkdownNodeParser
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.sqlite import get_db
 from utils.file import get_text_file_path, text_file_append, text_file_read
 from utils.models import Task, get_sibling_ids_up_to_current, natural_sort_key

@@ -5,6 +5,7 @@ import json
 import hashlib
 import asyncio
 import os
+import sys
 import litellm
 from dotenv import load_dotenv
 from litellm.caching.caching import Cache
@@ -14,7 +15,9 @@ from pydantic import BaseModel, ValidationError
 from llama_index.core.agent.workflow import ReActAgent
 from llama_index.core.workflow import Context
 from llama_index.llms.litellm import LiteLLM
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.agent_tools import web_search_tools
+
 
 load_dotenv()
 
@@ -135,7 +138,6 @@ def get_embedding_params(
 
 def custom_get_cache_key(**kwargs):
     """
-    自定义缓存键生成逻辑。
     仅根据 "messages" 和 "temperature" 生成缓存键。
     """
     messages = kwargs.get("messages", [])
@@ -351,44 +353,100 @@ async def call_agent(
     tools: List[Any] = web_search_tools,
     llm_type: Literal['reasoning', 'fast'] = 'reasoning',
     temperature: Optional[float] = None,
-    response_model: Optional[Type[BaseModel]] = None,
-    max_retries: int = 1,
+    response_model: Optional[Type[BaseModel]] = None
 ) -> Optional[Union[BaseModel, str]]:
-
     llm_params = get_llm_params(llm=llm_type, temperature=temperature)
     llm = LiteLLM(**llm_params)
-    # 遵循官方示例，直接实例化 ReActAgent
     agent = ReActAgent(
         tools=tools,
         llm=llm,
         system_prompt=system_prompt,
         verbose=True
     ) 
-    raw_output = ""
-    for attempt in range(max_retries):
-        try:
-            logger.info(f"Agent开始执行任务 (尝试 {attempt + 1}/{max_retries})...")
-            if attempt == 0:
-                logger.info(f"系统提示词:\n{system_prompt}")
-                logger.info(f"用户提示词:\n{user_prompt}")
-            ctx = Context(agent)
-            handler = agent.run(user_prompt, ctx=ctx)
-            response = await handler
-            raw_output = response.response.content
-            if response_model:
-                cleaned_json = clean_markdown_fences(raw_output)
-                validated_data = response_model.model_validate_json(cleaned_json)
-                logger.success("Agent输出成功通过Pydantic模型验证。")
-                return validated_data
-            else:
-                cleaned_output = clean_markdown_fences(raw_output)
-                _default_text_validator(cleaned_output)
-                logger.success("Agent执行完成并生成了有效文本。")
-                return cleaned_output
-        except (ValidationError, json.JSONDecodeError, ValueError) as e:
-            logger.warning(f"Agent输出解析或验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-            if attempt >= max_retries - 1:
-                logger.error(f"Agent在多次重试后仍然失败。\n原始输出:\n{raw_output}")
-                return None
-        logger.info("准备重试...")
-    return None
+    logger.info(f"系统提示词:\n{system_prompt}")
+    logger.info(f"用户提示词:\n{user_prompt}")
+    ctx = Context(agent)
+    response = await agent.run(user_prompt, ctx=ctx)
+    raw_output = response.response.content
+    if response_model:
+        cleaned_json = clean_markdown_fences(raw_output)
+        validated_data = response_model.model_validate_json(cleaned_json)
+        logger.success("Agent输出成功通过Pydantic模型验证。")
+        return validated_data
+    else:
+        cleaned_output = clean_markdown_fences(raw_output)
+        _default_text_validator(cleaned_output)
+        logger.success("Agent执行完成并生成了有效文本。")
+        return cleaned_output
+    
+
+if __name__ == "__main__":
+    import asyncio
+    from utils.log import init_logger
+    from pydantic import BaseModel, Field
+    from typing import List, Optional
+
+    init_logger("test_agent")
+
+    async def main():
+        logger.info("开始测试 call_agent...")
+
+        # 测试 1: 简单文本生成 (不使用工具)
+        system_prompt_1 = "你是一个乐于助人的助手。"
+        user_prompt_1 = "你好，请介绍一下你自己。"
+        logger.info("--- 测试 1: 简单文本生成 ---")
+        result_1 = await call_agent(
+            system_prompt=system_prompt_1,
+            user_prompt=user_prompt_1,
+        )
+        if result_1:
+            logger.success(f"测试 1 成功，结果:\n{result_1}")
+        else:
+            logger.error("测试 1 失败。")
+
+        # 测试 2: 使用 web_search 工具
+        system_prompt_2 = "你是一个研究助理，擅长使用网络搜索工具来回答问题。"
+        user_prompt_2 = "请搜索一下'大型语言模型在代码生成方面的最新进展'，并给我一个简短的总结。"
+        logger.info("\n--- 测试 2: 使用 web_search 工具 ---")
+        result_2 = await call_agent(
+            system_prompt=system_prompt_2,
+            user_prompt=user_prompt_2,
+        )
+        if result_2:
+            logger.success(f"测试 2 成功，结果:\n{result_2}")
+        else:
+            logger.error("测试 2 失败。")
+
+        # 测试 3: 使用 targeted_search 工具
+        system_prompt_3 = "你是一个市场分析师，需要从特定平台获取信息。"
+        user_prompt_3 = "请在知乎和B站上搜索关于'AI写作助手'的讨论，总结用户的主要观点。"
+        logger.info("\n--- 测试 3: 使用 targeted_search 工具 ---")
+        result_3 = await call_agent(
+            system_prompt=system_prompt_3,
+            user_prompt=user_prompt_3,
+        )
+        if result_3:
+            logger.success(f"测试 3 成功，结果:\n{result_3}")
+        else:
+            logger.error("测试 3 失败。")
+
+        # 测试 4: 使用 Pydantic 模型进行结构化输出
+        class SearchSummary(BaseModel):
+            topic: str = Field(description="搜索的主题")
+            key_points: List[str] = Field(description="总结的关键点列表")
+            source_urls: Optional[List[str]] = Field(None, description="信息来源的URL列表")
+
+        system_prompt_4 = "你是一个信息提取助手。你的任务是根据用户请求进行网络搜索，并以JSON格式返回结构化的摘要。"
+        user_prompt_4 = "搜索'什么是RAG（检索增强生成）'，并提供3个关键点和至少一个来源URL。"
+        logger.info("\n--- 测试 4: 结构化输出 (Pydantic) ---")
+        result_4 = await call_agent(
+            system_prompt=system_prompt_4,
+            user_prompt=user_prompt_4,
+            response_model=SearchSummary,
+        )
+        if result_4:
+            logger.success(f"测试 4 成功，结果:\n{result_4.model_dump_json(indent=2, ensure_ascii=False)}")
+        else:
+            logger.error("测试 4 失败。")
+
+    asyncio.run(main())
