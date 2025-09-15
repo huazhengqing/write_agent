@@ -92,7 +92,7 @@ PLATFORM_RESEARCH_SYSTEM_PROMPT = """
     result_storage=local_storage,
     result_storage_key="story/market/search_platform_{parameters[platform]}.json",
     result_serializer=readable_json_serializer,
-    retries=2,
+    retries=1,
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
@@ -113,7 +113,7 @@ async def search_platform(platform: str) -> Optional[str]:
 
 @task(
     name="save_to_md",
-    retries=2,
+    retries=1,
     retry_delay_seconds=10,
 )
 async def save_to_md(platform: str, md_content: Optional[str]) -> Optional[str]:
@@ -143,7 +143,7 @@ async def search_platform_all(platforms: List[str]):
         source=filepath_futures
     )
     for future in store_futures:
-        await future.wait()
+        await future.result()
     logger.info(f"已完成对 {len(platforms)} 个平台基础信息的更新流程。")
 
 

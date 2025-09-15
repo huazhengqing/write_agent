@@ -3,6 +3,7 @@ import re
 import collections
 import json
 import hashlib
+import asyncio
 import os
 import litellm
 from dotenv import load_dotenv
@@ -10,7 +11,8 @@ from litellm.caching.caching import Cache
 from loguru import logger
 from typing import List, Dict, Any, Literal, Optional, Type, Callable, Union
 from pydantic import BaseModel, ValidationError
-from llama_index.core.agent import ReActAgent
+from llama_index.core.agent.workflow import ReActAgent
+from llama_index.core.workflow import Context
 from llama_index.llms.litellm import LiteLLM
 from utils.agent_tools import web_search_tools
 
@@ -350,13 +352,15 @@ async def call_agent(
     llm_type: Literal['reasoning', 'fast'] = 'reasoning',
     temperature: Optional[float] = None,
     response_model: Optional[Type[BaseModel]] = None,
-    max_retries: int = 3,
+    max_retries: int = 1,
 ) -> Optional[Union[BaseModel, str]]:
+
     llm_params = get_llm_params(llm=llm_type, temperature=temperature)
     llm = LiteLLM(**llm_params)
-    agent = ReActAgent.from_tools(
+    # 遵循官方示例，直接实例化 ReActAgent
+    agent = ReActAgent(
         tools=tools,
-        llm=llm, 
+        llm=llm,
         system_prompt=system_prompt,
         verbose=True
     ) 
@@ -364,11 +368,13 @@ async def call_agent(
     for attempt in range(max_retries):
         try:
             logger.info(f"Agent开始执行任务 (尝试 {attempt + 1}/{max_retries})...")
-            if attempt == 0: # 仅在第一次尝试时记录提示词
+            if attempt == 0:
                 logger.info(f"系统提示词:\n{system_prompt}")
                 logger.info(f"用户提示词:\n{user_prompt}")
-            response = await agent.achat(user_prompt)
-            raw_output = str(response)
+            ctx = Context(agent)
+            handler = agent.run(user_prompt, ctx=ctx)
+            response = await handler
+            raw_output = response.response.content
             if response_model:
                 cleaned_json = clean_markdown_fences(raw_output)
                 validated_data = response_model.model_validate_json(cleaned_json)

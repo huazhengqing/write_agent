@@ -1,15 +1,15 @@
 import os
+import sys
 import httpx
-import json
-import asyncio
 from loguru import logger
-from typing import List, Optional
+from typing import List, Optional, Callable, Any, Tuple
 from dotenv import load_dotenv
-from playwright.async_api import async_playwright
-from duckduckgo_search import DDGS
+from playwright.sync_api import sync_playwright
+from ddgs import DDGS
 from diskcache import Cache
 from llama_index.core.tools import FunctionTool
 import trafilatura
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.file import cache_dir
 
 
@@ -20,64 +20,73 @@ scraper_cache_dir = cache_dir / "web_scraper"
 scraper_cache_dir.mkdir(parents=True, exist_ok=True)
 scraper_cache = Cache(str(scraper_cache_dir), expire=60 * 60 * 24 * 7)
 
-###############################################################################
 
-async def async_web_search(query: str, max_results: int = 10) -> str:
-    """
-    执行网络搜索，优先使用本地 SearXNG，失败则回退到 DuckDuckGo。
-    """
-    # 策略一: 尝试本地 SearXNG
-    logger.info(f"策略一: 正在使用 SearXNG (本地) 执行聚合搜索: '{query}'")
-    try:
-        async with httpx.AsyncClient() as client:
-            params = {"q": query, "format": "json"}
-            response = await client.get(SEARXNG_BASE_URL, params=params, timeout=15.0)
-            response.raise_for_status()
-            data = response.json()
-        results = data.get("results", [])
-        if not results:
-            # 抛出异常以触发回退逻辑
-            raise ValueError("SearXNG returned no results")
-        results = results[:max_results]
-        formatted_results = []
-        for i, result in enumerate(results):
-            title = result.get('title')
-            href = result.get('url')
-            body = result.get('content', '').strip()
-            formatted_results.append(f"搜索结果 {i+1}:\n标题: {title}\n链接: {href}\n摘要: {body}")
-        final_output = "\n\n---\n\n".join(formatted_results)
-        logger.success(f"SearXNG 搜索成功，返回 {len(results)} 条结果。")
-        return final_output
-    except Exception as e:
-        logger.warning(f"SearXNG 搜索失败: {e}。将回退到 DuckDuckGo。")
+def _search_with_searxng(query: str, max_results: int) -> str:
+    with httpx.Client(follow_redirects=True) as client:
+        data = {"q": query, "format": "json"}
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'X-Real-IP': '127.0.0.1'
+        }
+        search_url = SEARXNG_BASE_URL.rstrip('/')
+        if not search_url.endswith('/search'):
+            search_url += '/search'
+        response = client.post(search_url, data=data, headers=headers, timeout=15.0)
+        response.raise_for_status()
+        data = response.json()
+    results = data.get("results", [])
+    if not results:
+        raise ValueError("SearXNG 返回了空结果")
+    results = results[:max_results]
+    formatted_results = []
+    for i, result in enumerate(results):
+        title = result.get('title')
+        href = result.get('url')
+        body = result.get('content', '').strip()
+        formatted_results.append(f"搜索结果 {i+1}:\n标题: {title}\n链接: {href}\n摘要: {body}")
+    return "\n\n---\n\n".join(formatted_results)
 
-    # 策略二: 回退到 DuckDuckGo
-    logger.info(f"策略二: 正在使用 DuckDuckGo 执行搜索: '{query}'")
-    try:
-        # 使用 duckduckgo-search 异步接口
-        async with DDGS() as ddgs:
-            # ddgs.text 返回一个异步生成器
-            results = [r async for r in ddgs.text(query, max_results=max_results)]
-        if not results:
-            logger.error(f"所有搜索引擎（SearXNG, DuckDuckGo）对 '{query}' 的搜索均未找到任何结果。")
-            return f"搜索 '{query}' 未找到任何结果。"
-        formatted_results = []
-        for i, result in enumerate(results):
-            title = result.get('title')
-            href = result.get('href')
-            body = result.get('body', '').strip()
-            formatted_results.append(f"搜索结果 {i+1}:\n标题: {title}\n链接: {href}\n摘要: {body}")
-        final_output = "\n\n---\n\n".join(formatted_results)
-        logger.success(f"DuckDuckGo 搜索成功，返回 {len(results)} 条结果。")
-        return final_output
-    except Exception as e:
-        error_msg = f"所有搜索策略均失败。SearXNG 失败后，DuckDuckGo 搜索也发生错误: {e}"
-        logger.error(error_msg)
-        return error_msg
+def _search_with_ddg(query: str, max_results: int) -> str:
+    params = {
+        "query": query,
+        "max_results": max_results,
+    }
+    with DDGS() as ddg:
+        results = list(ddg.text(**params))
+    if not results:
+        raise ValueError("DuckDuckGo 返回了空结果")
+    formatted_results = []
+    for i, result in enumerate(results):
+        title = result.get('title')
+        href = result.get('href')
+        body = result.get('body', '').strip()
+        formatted_results.append(f"搜索结果 {i+1}:\n标题: {title}\n链接: {href}\n摘要: {body}")
+    return "\n\n---\n\n".join(formatted_results)
+
+def web_search(query: str, max_results: int = 10) -> str:
+    search_strategies: List[Tuple[str, Callable[[str, int], str]]] = [
+        ("SearXNG", _search_with_searxng),
+        ("DuckDuckGo", _search_with_ddg),
+    ]
+    last_exception = None
+    for name, strategy_func in search_strategies:
+        try:
+            logger.info(f"搜索策略: 正在尝试使用 {name} 执行搜索: '{query}'")
+            search_results = strategy_func(query, max_results)
+            if search_results:
+                logger.success(f"{name} 搜索成功。")
+                return search_results
+        except Exception as e:
+            last_exception = e
+            logger.warning(f"使用 {name} 搜索失败: {e}")
+            continue
+    error_msg = f"所有搜索策略均失败。查询: '{query}'。最后错误: {last_exception}"
+    logger.error(error_msg)
+    raise RuntimeError(error_msg) from last_exception
 
 def get_web_search_tool() -> FunctionTool:
     return FunctionTool.from_defaults(
-        fn=async_web_search,
+        fn=web_search,
         name="web_search",
         description=(
             "功能: 执行通用网络搜索，返回搜索结果列表（标题、链接、摘要）。\n"
@@ -247,20 +256,17 @@ platform_site_map = {
     "G2": "g2.com",
 }
 
-async def targeted_search(query: str, platforms: Optional[List[str]] = None, sites: Optional[List[str]] = None) -> str:
+def targeted_search(query: str, platforms: Optional[List[str]] = None, sites: Optional[List[str]] = None) -> str:
     logger.info(f"执行定向搜索: '{query}', 平台: {platforms}, 网站: {sites}")
     all_sites = set(sites or [])
     if platforms:
         for p_user in platforms:
             matched_sites_for_p = set()
-            # 1. 检查是否为显式定义的分类
             if p_user in platform_categories:
                 for platform_name in platform_categories[p_user]:
                     site = platform_site_map.get(platform_name)
                     if site:
                         matched_sites_for_p.add(site)
-            
-            # 2. 同时也对平台名进行子字符串匹配 (例如 '起点' 匹配 '起点中文网')
             for p_key, site in platform_site_map.items():
                 if p_user in p_key:
                     matched_sites_for_p.add(site)
@@ -270,23 +276,18 @@ async def targeted_search(query: str, platforms: Optional[List[str]] = None, sit
             else:
                 logger.warning(f"未找到与 '{p_user}' 匹配的平台或分类，将被忽略。")
     if not all_sites:
-        # 如果没有指定平台或网站，就退化为通用搜索
         search_query = query
         logger.info(f"未指定平台或网站，执行通用搜索: '{search_query}'")
     else:
         site_query_part = " OR ".join([f"site:{s}" for s in all_sites])
         search_query = f"({site_query_part}) {query}"
         logger.info(f"执行站内搜索: '{search_query}'")
-    try:
-        search_data = await async_web_search(query=search_query, max_results=5)
-        logger.success(f"定向搜索成功。")
-        return search_data
-    except Exception as e:
-        logger.error(f"定向搜索时发生错误: {e}")
-        return f"定向搜索失败: {e}"
+
+    search_data = web_search(query=search_query, max_results=5)
+    logger.success(f"定向搜索成功。")
+    return search_data
 
 def get_targeted_search_tool() -> FunctionTool:
-    """创建并返回一个定向搜索工具。"""
     return FunctionTool.from_defaults(
         fn=targeted_search,
         name="targeted_search",
@@ -311,102 +312,95 @@ def get_targeted_search_tool() -> FunctionTool:
 
 ###############################################################################
 
-async def scrape_and_extract(url: str) -> str:
-    """
-    智能抓取网页正文。优先使用静态抓取，失败则回退到动态渲染。
-    1. 检查缓存。
-    2. 尝试用 httpx + trafilatura 进行快速静态抓取。
-    3. 如果静态抓取内容太少，则使用 Playwright + trafilatura 进行动态渲染抓取。
-    4. 对成功抓取的内容进行截断和缓存。
-    """
+def _scrape_static(url: str) -> Optional[str]:
+    with httpx.Client(follow_redirects=True, timeout=20.0) as client:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = client.get(url, headers=headers)
+        response.raise_for_status()
+        html_content = response.text
+    if not html_content:
+        logger.warning(f"静态抓取未能获取到 HTML 内容: {url}")
+        return None
+    logger.info(f"静态抓取成功获取 HTML 内容，长度: {len(html_content)} chars。")
+    page_text = trafilatura.extract(
+        html_content,
+        include_comments=False,
+        include_tables=False
+    )
+    if page_text and len(page_text.strip()) > 200:
+        logger.success(f"静态抓取后 Trafilatura 成功提取内容，长度: {len(page_text)} chars。")
+        return page_text
+    else:
+        logger.warning(f"静态抓取内容过少 (长度: {len(page_text.strip()) if page_text else 0})")
+        logger.info(f"Trafilatura 提取失败。HTML 内容前 500 字符: \n{html_content[:500]}")
+        return None
+
+def _scrape_dynamic(url: str) -> Optional[str]:
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(url, timeout=45000, wait_until="domcontentloaded")
+        page.wait_for_timeout(3000) 
+        html_content = page.content()
+        browser.close()
+    if not html_content:
+        raise RuntimeError(f"Playwright for URL '{url}' 未能获取到任何 HTML 内容。")
+    logger.info(f"动态抓取成功获取 HTML 内容，长度: {len(html_content)} chars。")
+    page_text = trafilatura.extract(
+        html_content,
+        include_comments=False,
+        include_tables=False
+    )
+    if page_text and len(page_text.strip()) > 50:
+        logger.success(f"动态抓取后 Trafilatura 成功提取内容，长度: {len(page_text)} chars。")
+        return page_text
+    else:
+        logger.warning(f"动态渲染抓取后，Trafilatura 仍未能提取到有效内容，将返回原始HTML作为后备。 URL: {url}")
+        return html_content
+
+def scrape_and_extract(url: str) -> str:
     cached_content = scraper_cache.get(url)
     if cached_content:
         logger.info(f"缓存命中: 从缓存加载 URL: {url}")
         return cached_content
-
     logger.info(f"缓存未命中: 开始抓取 URL: {url}")
-    page_text = None
-    
-    # 策略一: 快速静态抓取 (httpx + trafilatura)
-    try:
-        logger.info(f"尝试静态抓取: {url}")
-        async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            }
-            response = await client.get(url, headers=headers)
-            response.raise_for_status()
-            html_content = response.text
-        
-        if html_content:
-            page_text = await asyncio.to_thread(
-                trafilatura.extract,
-                html_content,
-                include_comments=False,
-                include_tables=False,
-                no_fallback=True
-            )
-            if page_text and len(page_text.strip()) > 200:
-                logger.success(f"静态抓取成功，内容长度: {len(page_text)} chars。")
-            else:
-                logger.warning(f"静态抓取内容过少 (长度: {len(page_text.strip()) if page_text else 0})，将尝试动态渲染。")
-                page_text = None
-        else:
-            logger.warning(f"静态抓取未能获取到 HTML 内容: {url}")
-
-    except Exception as e:
-        logger.warning(f"静态抓取失败: {e}。将尝试动态渲染。")
-
-    # 策略二: 动态渲染抓取 (Playwright + trafilatura)
-    if not page_text:
+    scrape_strategies: List[Tuple[str, Callable[[str], Optional[str]]]] = [
+        ("静态抓取", _scrape_static),
+        ("动态渲染抓取", _scrape_dynamic),
+    ]
+    scraped_text = None
+    last_exception = None
+    for name, strategy_func in scrape_strategies:
         try:
-            logger.info(f"尝试动态渲染抓取: {url}")
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(headless=True)
-                page = await browser.new_page()
-                await page.goto(url, timeout=45000, wait_until="domcontentloaded")
-                await asyncio.sleep(3)
-                html_content = await page.content()
-                await browser.close()
-            
-            if not html_content:
-                logger.error(f"Playwright for URL '{url}' 未能获取到 HTML 内容。")
-                return f"错误: 抓取工具未能从URL '{url}' 获取到任何 HTML 内容。"
-
-            page_text = await asyncio.to_thread(
-                trafilatura.extract,
-                html_content,
-                include_comments=False,
-                include_tables=False,
-                no_fallback=True
-            )
-            if not (page_text and len(page_text.strip()) > 50):
-                logger.error(f"动态渲染抓取后，Trafilatura 仍未能提取到有效内容: {url}")
-                return f"错误: 抓取工具未能从URL '{url}' 提取到有效内容。该页面可能是空的或不含文本。"
-            logger.success(f"动态渲染抓取成功，内容长度: {len(page_text)} chars。")
+            logger.info(f"抓取策略: 正在尝试 {name}: {url}")
+            scraped_text = strategy_func(url)
+            if scraped_text:
+                logger.success(f"{name} 成功，内容长度: {len(scraped_text)} chars。")
+                break
         except Exception as e:
-            error_msg = f"使用 Playwright 动态渲染抓取时发生意外错误: {e}"
-            logger.error(error_msg)
-            return error_msg
-
-    # 内容后处理、截断和缓存
-    if page_text:
+            last_exception = e
+            logger.warning(f"策略 '{name}' 失败: {e}")
+            continue
+    if scraped_text:
         max_length = 16000
-        if len(page_text) > max_length:
-            logger.warning(f"抓取的内容过长 ({len(page_text)} > {max_length})，将进行智能截断。")
-            end_pos = page_text.rfind('。', 0, max_length)
+        if len(scraped_text) > max_length:
+            logger.warning(f"抓取的内容过长 ({len(scraped_text)} > {max_length})，将进行智能截断。")
+            end_pos = scraped_text.rfind('。', 0, max_length)
             if end_pos == -1:
-                end_pos = page_text.rfind('.', 0, max_length)
-            page_text = page_text[:end_pos + 1] if end_pos != -1 else page_text[:max_length]
-        scraper_cache.set(url, page_text)
+                end_pos = scraped_text.rfind('.', 0, max_length)
+            final_text = scraped_text[:end_pos + 1] if end_pos != -1 else scraped_text[:max_length]
+        else:
+            final_text = scraped_text
+        scraper_cache.set(url, final_text)
         logger.success(f"已将 URL '{url}' 的抓取结果存入缓存。")
-        return page_text
-    
-    logger.error(f"所有抓取策略均失败: {url}")
-    return f"错误: 所有抓取策略均未能从URL '{url}' 提取到内容。"
+        return final_text
+    error_msg = f"错误: 所有抓取策略均未能从URL '{url}' 提取到有效内容。最后错误: {last_exception}"
+    logger.error(error_msg)
+    return ""
 
 def get_web_scraper_tool() -> FunctionTool:
-    """创建并返回一个网页抓取工具。"""
     return FunctionTool.from_defaults(
         fn=scrape_and_extract,
         name="web_scraper",
@@ -414,7 +408,7 @@ def get_web_scraper_tool() -> FunctionTool:
             "功能: 抓取并提取指定URL网页的正文内容。\n"
             "使用时机: 通过 `web_search` 或 `targeted_search` 获得网页URL后，用此工具读取其详细内容。\n"
             "参数: `url` (str, 必需) - 完整的网页地址。\n"
-            "失败处理: 如果返回错误或空内容，说明该URL无法访问或无有效内容。**禁止重试**，应放弃该URL，寻找其他信息源。"
+            "失败处理: 如果工具执行失败并抛出异常，说明该URL无法访问或无有效内容。**禁止重试**，应放弃该URL，寻找其他信息源。"
         )
     )
 
@@ -425,3 +419,35 @@ web_search_tools = [
     get_targeted_search_tool(),
     get_web_scraper_tool(),
 ]
+
+###############################################################################
+
+# if __name__ == "__main__":
+    # test_query = "地球有多大"
+    
+    # results = _search_with_searxng(test_query, 5)
+    # logger.success("searxng 搜索测试成功！")
+    # print("\n--- 搜索结果 ---\n")
+    # print(results)
+
+    # results = _search_with_ddg(test_query, 5)
+    # logger.success("ddg 搜索测试成功！")
+    # print("\n--- 搜索结果 ---\n")
+    # print(results)
+
+
+    # test_url = "https://docs.searxng.org/admin/installation-docker.html"
+
+    # scraped_content = _scrape_static(test_url)
+    # if scraped_content:
+    #     logger.success("静态抓取成功！")
+    #     print(scraped_content)
+    # else:
+    #     logger.warning("静态抓取未能提取到有效内容。")
+
+    # scraped_content = _scrape_dynamic(test_url)
+    # if scraped_content:
+    #     logger.success("动态抓取成功！")
+    #     print(scraped_content)
+    # else:
+    #     logger.warning("动态抓取未能提取到有效内容。")

@@ -1,8 +1,8 @@
 services:
-
   prefect:
     image: prefecthq/prefect:3-latest
     container_name: prefect
+    restart: unless-stopped
     command: prefect server start --host 0.0.0.0
     ports:
       - "4200:4200"
@@ -10,48 +10,25 @@ services:
       - PREFECT_HOME=/root/.prefect
     volumes:
       - prefect-data:/root/.prefect
-    restart: unless-stopped
-
-  redis:
-    container_name: redis
-    image: docker.io/valkey/valkey:8-alpine
-    command: valkey-server --save 30 1 --loglevel warning
-    restart: unless-stopped
-    networks:
-      - searxng
-    volumes:
-      - valkey-data2:/data
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "1m"
-        max-file: "1"
-
   searxng:
-    image: docker.io/searxng/searxng:latest
+    image: searxng/searxng:latest
     container_name: searxng
     restart: unless-stopped
-    networks:
-      - searxng
     ports:
-      - "127.0.0.1:8080:8080"
+      - "8080:8080"
     volumes:
-      - ./searxng:/etc/searxng:rw
-      - searxng-data:/var/cache/searxng:rw
-    environment:
-      # - SEARXNG_BASE_URL=https://${SEARXNG_HOSTNAME:-localhost}/
-      - SEARXNG_BASE_URL=http://127.0.0.1:8080/
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "1m"
-        max-file: "1"
-
-networks:
-  searxng:
+      - searxng-config:/etc/searxng/
+      - searxng-data:/var/cache/searxng/
+    # 可选：添加环境变量（如需要自定义配置）
+    # environment:
+    #   - SEARXNG_SETTINGS_PATH=/etc/searxng/settings.yml
 
 volumes:
   prefect-data:
-  valkey-data2:
+  searxng-config:
   searxng-data:
 
+
+
+
+ 

@@ -1,4 +1,5 @@
 # 这是自动生成的顶级依赖文件。请在此处管理你的直接依赖项。
+ddgs
 kuzu
 httpx
 pytest
@@ -16,7 +17,6 @@ python-dotenv
 pytest-asyncio
 pysqlite3-binary
 litellm[caching]
-duckduckgo-search
 sentence_transformers
 llama-index-llms-litellm
 llama-index-graph-stores-kuzu
