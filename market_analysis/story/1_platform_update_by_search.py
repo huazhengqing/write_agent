@@ -3,12 +3,10 @@ import os
 from typing import List, Optional
 from loguru import logger
 from datetime import datetime
-from llama_index.core import Document
-from llama_index.core.node_parser import MarkdownNodeParser
 from utils.agent_tools import get_market_tools
 from utils.llm import call_agent
 from utils.log import init_logger
-from market_analysis.story.common import story_platforms_cn, story_output_dir, index
+from market_analysis.story.common import story_platforms_cn, story_output_dir, task_store
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
 
@@ -112,30 +110,42 @@ async def search_platform(platform: str) -> Optional[str]:
         logger.error(f"为平台 '{platform}' 生成报告失败。")
         return None
     logger.success(f"Agent为 '{platform}' 完成了报告生成，报告长度: {len(md_content)}。")
+    return md_content
+
+@task(
+    name="save_to_md",
+    retries=2,
+    retry_delay_seconds=10,
+)
+async def save_to_md(platform: str, md_content: Optional[str]) -> Optional[str]:
+    if not md_content:
+        logger.warning(f"内容为空，跳过为平台 '{platform}' 保存Markdown文件。")
+        return None
     platform_filename_md = f"{platform.replace(' ', '_')}.md"
     file_path_md = story_output_dir / platform_filename_md
     await asyncio.to_thread(file_path_md.write_text, md_content, encoding="utf-8")
     logger.success(f"{platform} 平台基础信息已保存为Markdown文件: {file_path_md}")
-    doc = Document(
-        text=md_content,
-        metadata={
-            "platform": platform,
-            "type": "platform_profile",
-            "source": str(file_path_md.resolve()), 
-            "date": datetime.now().strftime("%Y-%m-%d")
-        }
-    )
-    md_parser = MarkdownNodeParser(include_metadata=True)
-    nodes = md_parser.get_nodes_from_documents([doc])
-    await asyncio.to_thread(index.insert_nodes, nodes)
-    logger.success(f"{platform} 平台基础信息 (Markdown格式) 已存入向量数据库。")
-    return md_content
+    return str(file_path_md.resolve())
 
 
 @flow(name="search_platform_all")
 async def search_platform_all(platforms: List[str]):
     logger.info(f"开始更新 {len(platforms)} 个平台的的基础信息...")
-    await search_platform.map(platforms)
+    report_futures = search_platform.map(platforms)
+    
+    filepath_futures = save_to_md.map(
+        platform=platforms,
+        md_content=report_futures
+    )
+    
+    task_store.map(
+        content=report_futures,
+        doc_type="platform_profile",
+        content_format="markdown",
+        platform=platforms,
+        source=filepath_futures
+    )
+    logger.info(f"已完成对 {len(platforms)} 个平台基础信息的更新流程。")
 
 
 if __name__ == "__main__":

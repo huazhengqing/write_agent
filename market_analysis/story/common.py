@@ -2,10 +2,11 @@ import json
 import asyncio
 import chromadb
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict, Any
 from llama_index.core import VectorStoreIndex, StorageContext, Document
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from datetime import datetime
+from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
 from llama_index.core.tools import FunctionTool
@@ -271,20 +272,28 @@ async def task_new_author_opportunity(platform: str) -> str:
     retries=2,
     retry_delay_seconds=10
 )
-async def task_store(content: str, doc_type: str, platform: str, genre: str = "na") -> bool:
-    metadata = {"platform": platform}
-    if genre != "na":
-        metadata["genre"] = genre
+async def task_store(content: str, doc_type: str, content_format: str = "text", **metadata: Any) -> bool:
     if not content or not content.strip() or "生成报告时出错" in content:
         logger.warning(f"内容为空或包含错误，跳过存入向量库。类型: {doc_type}, 元数据: {metadata}")
         return False
-    logger.info(f"正在将类型为 '{doc_type}' 的报告存入向量库...")
-    final_metadata = {"type": doc_type, "date": datetime.now().strftime("%Y-%m-%d")}
-    final_metadata.update(metadata)
+    logger.info(f"正在将类型为 '{doc_type}' (格式: {content_format}) 的报告存入向量库...")
+    final_metadata = metadata.copy()
+    final_metadata["type"] = doc_type
+    final_metadata["date"] = datetime.now().strftime("%Y-%m-%d")
     doc = Document(text=content, metadata=final_metadata)
-    await asyncio.to_thread(index.insert, doc)
+    if content_format == "markdown":
+        md_parser = MarkdownNodeParser(include_metadata=True)
+        nodes = md_parser.get_nodes_from_documents([doc])
+        await asyncio.to_thread(index.insert_nodes, nodes)
+    elif content_format == "json":
+        await asyncio.to_thread(index.insert, doc)
+    else:
+        parser = SentenceSplitter(include_metadata=True)
+        nodes = parser.get_nodes_from_documents([doc])
+        await asyncio.to_thread(index.insert_nodes, nodes)
     logger.success(f"类型为 '{doc_type}' 的报告已成功存入向量库。元数据: {final_metadata}")
     return True
 
 
 ###############################################################################
+

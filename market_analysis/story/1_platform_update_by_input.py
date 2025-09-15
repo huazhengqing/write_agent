@@ -46,3 +46,5 @@ if __name__ == "__main__":
     index.insert_nodes(all_nodes, show_progress=True)
     
     logger.success(f"成功处理 {len(documents)} 个平台文件并存入向量数据库。")
+
+

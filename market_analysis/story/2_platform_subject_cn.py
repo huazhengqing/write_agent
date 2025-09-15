@@ -207,15 +207,15 @@ async def task_choose_best_opportunity(platform_reports: Dict[str, str], platfor
 @flow(name="platform_subject")
 async def platform_subject(platforms_to_scan: list[str]):
     logger.info("加载平台档案...")
-    profile_futures = await task_load_platform_profile.map(platforms_to_scan)
+    profile_futures = task_load_platform_profile.map(platforms_to_scan)
     platform_profiles = {}
     for future in profile_futures:
         platform, content = await future.result()
         platform_profiles[platform] = content
 
     logger.info("启动广域扫描...")
-    scan_futures = await task_platform_briefing.map(platforms_to_scan)
-    opportunity_futures = await task_new_author_opportunity.map(platforms_to_scan)
+    scan_futures = task_platform_briefing.map(platforms_to_scan)
+    opportunity_futures = task_new_author_opportunity.map(platforms_to_scan)
 
     platform_reports = {}
     new_author_reports = {}
@@ -224,10 +224,11 @@ async def platform_subject(platforms_to_scan: list[str]):
             scan_future = scan_futures[i]
             report = await scan_future.result()
             platform_reports[platform_name] = report
-            await task_store.submit(
+            await task_store(
                 content=report,
                 doc_type="broad_scan_report",
-                platform=platform_name
+                platform=platform_name,
+                content_format="markdown"
             )
         except Exception as e:
             logger.error(f"扫描平台 '{platform_name}' 失败: {e}")
@@ -237,10 +238,11 @@ async def platform_subject(platforms_to_scan: list[str]):
         try:
             opportunity_report = await opportunity_futures[i].result()
             new_author_reports[platform_name] = opportunity_report
-            await task_store.submit(
+            await task_store(
                 content=opportunity_report,
                 doc_type="new_author_opportunity_report",
-                platform=platform_name
+                platform=platform_name,
+                content_format="markdown"
             )
         except Exception as e:
             logger.error(f"评估平台 '{platform_name}' 新人机会失败: {e}")
@@ -259,7 +261,7 @@ async def platform_subject(platforms_to_scan: list[str]):
         logger.error("没有可用的市场动态简报，无法解析题材。")
         parse_genre_futures = []
     else:
-        parse_genre_futures = await task_parse_genres_from_report.map(
+        parse_genre_futures = task_parse_genres_from_report.map(
             platform=list(platform_reports.keys()),
             report=list(platform_reports.values())
         )
@@ -278,7 +280,7 @@ async def platform_subject(platforms_to_scan: list[str]):
         logger.error("未能从任何平台报告中解析出热门题材，无法进行外部趋势分析。将跳过此步骤。")
         external_trend_reports = {}
     else:
-        trend_futures = await task_analyze_external_trends.map(
+        trend_futures = task_analyze_external_trends.map(
             platform=[p for p, g in platform_genre_pairs],
             genre=[g for p, g in platform_genre_pairs]
         )
@@ -287,11 +289,12 @@ async def platform_subject(platforms_to_scan: list[str]):
             try:
                 platform, genre, trend_report = await future.result()
                 external_trend_reports[f"{platform}-{genre}"] = trend_report
-                await task_store.submit(
+                await task_store(
                     content=trend_report,
                     doc_type="external_trend_report",
                     platform=platform,
-                    genre=genre
+                    genre=genre,
+                    content_format="markdown"
                 )
             except Exception as e:
                 logger.error(f"分析外部趋势失败: {e}")
@@ -302,10 +305,11 @@ async def platform_subject(platforms_to_scan: list[str]):
         logger.warning("未能从决策任务中获得有效结果，工作流终止。")
         return
 
-    await task_store.submit(
+    await task_store(
         content=initial_decision.model_dump_json(indent=2, ensure_ascii=False),
         doc_type="market_analysis_result",
-        platform="summary"
+        platform="summary",
+        content_format="json"
     )
 
     logger.info("--- 初步市场机会决策报告 (JSON) ---")
