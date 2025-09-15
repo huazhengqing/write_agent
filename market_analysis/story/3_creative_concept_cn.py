@@ -184,7 +184,7 @@ NOVEL_CONCEPT_SYSTEM_PROMPT = """
     - **知识库挖掘**: 使用 `story_market_vector` 查询相关历史创意和报告，复用成功范式，避免失败模式。
     - **竞品分析**: 使用 `web_scraper` 等工具分析1-2个竞品，明确差异化策略（做得更好、不同，或开创新品类）。
     - **规避套路**: 使用 `forum_discussion_search` 在知乎、龙空等社区搜索并剔除过时套路和“毒点”。
-    - **融合灵感**: 使用 `social_media_trends_search` 在B站等平台搜索相关视觉、观点元素并融入创意。
+    - **融合灵感**: 使用 `targeted_search` 在B站等平台搜索相关视觉、观点元素并融入创意 (例如: `targeted_search(platforms=['B站'], query='[题材名] 视觉灵感')`)。
 4.  **撰写文档**: 严格按照“输出结构”撰写详细的小说创意文档。
 
 # 输出结构 (Markdown)
@@ -271,7 +271,7 @@ NOVEL_CONCEPT_USER_PROMPT = """
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,  # 7 天过期 (秒)
+    cache_expiration=604800,
 )
 async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionResult:
     logger.info("在多个深度分析报告中进行最终决策...")
@@ -299,7 +299,7 @@ async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionRes
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,  # 7 天过期 (秒)
+    cache_expiration=604800,
 )
 async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: str, broad_scan_report: str, opportunity_report: str) -> Optional[str]:
     logger.info(f"对【{platform} - {genre}】启动深度分析...")
@@ -337,7 +337,7 @@ async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: s
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,  # 7 天过期 (秒)
+    cache_expiration=604800,
 )
 async def task_generate_opportunities(market_report: str, genre: str) -> Optional[str]:
     logger.info("启动创意脑暴，生成小说选题...")
@@ -372,7 +372,7 @@ async def task_generate_opportunities(market_report: str, genre: str) -> Optiona
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,  # 7 天过期 (秒)
+    cache_expiration=604800,
 )
 async def task_generate_novel_concept(opportunities_report: str, platform: str, genre: str) -> Optional[str]:
     logger.info("深化选题，生成详细小说创意...")
@@ -413,7 +413,7 @@ async def task_generate_novel_concept(opportunities_report: str, platform: str, 
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,  # 7 天过期 (秒)
+    cache_expiration=604800,
 )
 async def task_save_markdown(platform: str, genre: str, deep_dive_report: str, final_opportunities: str, detailed_concept: str) -> bool:
     logger.info(f"生成【{platform} - {genre}】的汇总 Markdown 文件...")

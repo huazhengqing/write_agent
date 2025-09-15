@@ -18,12 +18,9 @@ pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/
 echo "从 requirements.txt 安装依赖..."
 pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
+echo "安装 Playwright 浏览器及其系统依赖..."
+python -m playwright install-deps
+python -m playwright install chromium
+
 # 访问 PyTorch 官网 (https://pytorch.org/) 获取最适合您 CUDA 版本的安装命令
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
-
-# echo "安装 Playwright 浏览器..."
-# PLAYWRIGHT_CHROMIUM_PATH="$HOME/.cache/ms-playwright/chromium-"
-# python -m playwright install-deps
-# python -m playwright install chromium
-
-

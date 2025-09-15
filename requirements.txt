@@ -1,3 +1,4 @@
+kuzu
 httpx
 pytest
 openai
@@ -10,14 +11,14 @@ diskcache
 playwright
 llama-index
 trafilatura
-kuzu
 kuzu-explorer
 python-dotenv
 pytest-asyncio
 pysqlite3-binary
 litellm[caching]
+duckduckgo-search
 sentence_transformers
-llama-index-vector-stores-chroma
 llama-index-llms-litellm
-llama-index-embeddings-litellm
 llama-index-graph-stores-kuzu
+llama-index-embeddings-litellm
+llama-index-vector-stores-chroma

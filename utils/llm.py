@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Literal, Optional, Type, Callable, Union
 from pydantic import BaseModel, ValidationError
 from llama_index.core.agent import ReActAgent
 from llama_index.llms.litellm import LiteLLM
-from utils.agent_tools import agent_tavily_tools, get_web_scraper_tool
+from utils.agent_tools import web_search_tools
 
 load_dotenv()
 
@@ -346,7 +346,7 @@ async def llm_acompletion(
 async def call_agent(
     system_prompt: str,
     user_prompt: str,
-    tools: List[Any] = agent_tavily_tools + [get_web_scraper_tool()],
+    tools: List[Any] = web_search_tools,
     llm_type: Literal['reasoning', 'fast'] = 'reasoning',
     temperature: Optional[float] = None,
     response_model: Optional[Type[BaseModel]] = None,

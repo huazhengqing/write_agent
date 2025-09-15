@@ -2,13 +2,11 @@ import asyncio
 import os
 from typing import List, Optional
 from loguru import logger
-from datetime import datetime
-from utils.agent_tools import get_market_tools
-from utils.llm import call_agent
-from utils.log import init_logger
 from market_analysis.story.common import platforms_cn, output_market_dir, task_store
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
+from utils.llm import call_agent
+from utils.log import init_logger
 
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 
@@ -95,7 +93,7 @@ PLATFORM_RESEARCH_SYSTEM_PROMPT = """
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,  # 7 天过期 (秒)
+    cache_expiration=604800,
 )
 async def search_platform(platform: str) -> Optional[str]:
     logger.info(f"为平台 '{platform}' 生成平台档案报告...")
@@ -132,12 +130,10 @@ async def save_to_md(platform: str, md_content: Optional[str]) -> Optional[str]:
 async def search_platform_all(platforms: List[str]):
     logger.info(f"开始更新 {len(platforms)} 个平台的的基础信息...")
     report_futures = search_platform.map(platforms)
-    
     filepath_futures = save_to_md.map(
         platform=platforms,
         md_content=report_futures
     )
-    
     task_store.map(
         content=report_futures,
         doc_type="platform_profile",
@@ -149,4 +145,5 @@ async def search_platform_all(platforms: List[str]):
 
 
 if __name__ == "__main__":
+    platforms_cn = ["番茄小说", "起点中文网", "飞卢小说网", "晋江文学城", "七猫免费小说", "纵横中文网", "17K小说网", "刺猬猫", "掌阅"]
     asyncio.run(search_platform_all(platforms_cn))

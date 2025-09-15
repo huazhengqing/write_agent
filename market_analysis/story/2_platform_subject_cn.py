@@ -39,7 +39,7 @@ ANALYZE_EXTERNAL_TRENDS_SYSTEM_PROMPT = """
 
 # 工作流程
 1.  研究: 使用 `social_media_trends_search` 等工具，主动搜索与【{genre}】题材相关的外部趋势。
-    - 跨界热点: 在B站、微博、抖音、小红书等社交媒体上，搜索与该题材相关的“热门话题”、“流行文化”、“影视游戏IP”、“出圈meme”。
+    - 跨界热点: 在B站、微博、抖音、小红书等社交媒体上，搜索与该题材相关的“热门话题”、“流行文化”、“影视游戏IP”、“出圈meme”。(示例: `targeted_search(platforms=['B站', '抖音'], query='{genre} 热门话题')`)
     - 增长潜力: 搜索该题材关键词的近期热度指数（如百度指数、微信指数），评估其大众化潜力。
     - 核心讨论: 浏览相关话题下的高赞评论和讨论，了解大众对该题材的核心看法和期待。
 2.  总结: 将你的发现综合成一份简明的Markdown报告。
@@ -127,7 +127,7 @@ CHOOSE_OPPORTUNITY_USER_PROMPT = """
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,  # 7 天过期 (秒)
+    cache_expiration=604800,
 )
 async def task_analyze_external_trends(platform: str, genre: str) -> tuple[str, str, str]:
     logger.info(f"为【{platform} - {genre}】分析外部趋势...")
@@ -154,7 +154,7 @@ async def task_analyze_external_trends(platform: str, genre: str) -> tuple[str, 
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,  # 7 天过期 (秒)
+    cache_expiration=604800,
 )
 async def task_parse_genres_from_report(platform: str, report: str) -> tuple[str, List[str]]:
     logger.info(f"为平台 '{platform}' 的报告解析热门题材...")
@@ -176,7 +176,7 @@ async def task_parse_genres_from_report(platform: str, report: str) -> tuple[str
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,  # 7 天过期 (秒)
+    cache_expiration=604800,
 )
 async def task_choose_best_opportunity(platform_reports: Dict[str, str], platform_profiles: Dict[str, str], new_author_reports: Dict[str, str], external_trend_reports: Dict[str, str]) -> Optional[MarketAnalysisResult]:
     logger.info("决策最佳市场机会...")

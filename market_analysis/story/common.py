@@ -1,9 +1,8 @@
 import json
 import asyncio
 import chromadb
-from pathlib import Path
 from typing import List, Optional, Tuple, Dict, Any
-from llama_index.core import VectorStoreIndex, StorageContext, Document
+from llama_index.core import VectorStoreIndex, Document
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from datetime import datetime
 from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
@@ -11,15 +10,12 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
 from llama_index.core.tools import FunctionTool
 from loguru import logger
-from utils.agent_tools import agent_tavily_tools, get_web_scraper_tool, get_social_media_trends_tool, get_forum_discussions_tool
-from utils.llm import call_agent, get_embedding_params
-from utils.prefect_utils import local_storage, readable_json_serializer, generate_readable_cache_key
-from utils.file import input_dir, output_dir, chroma_dir
+from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import task
+from utils.agent_tools import web_search_tools
+from utils.llm import call_agent, get_embedding_params
+from utils.file import input_dir, output_dir, chroma_dir
 
-
-platforms_cn = ["番茄小说", "起点中文网", "飞卢小说网", "晋江文学城", "七猫免费小说", "纵横中文网", "17K小说网", "刺猬猫", "掌阅"]
-platforms_en = []
 
 input_platform_dir = input_dir / "story" / "platform"
 input_platform_dir.mkdir(parents=True, exist_ok=True)
@@ -41,9 +37,6 @@ chroma_collection = db.get_or_create_collection(chroma_collection_market_name)
 vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
 
 index = VectorStoreIndex.from_vector_store(vector_store, embed_model=embed_model)
-
-
-###############################################################################
 
 
 BROAD_SCAN_SYSTEM_PROMPT = """
@@ -97,9 +90,6 @@ ASSESS_NEW_AUTHOR_OPPORTUNITY_SYSTEM_PROMPT = """
 """
 
 
-###############################################################################
-
-
 async def story_market_vector(
         query: str, 
         document_type: Optional[str] = None, 
@@ -146,37 +136,31 @@ async def story_market_vector(
 
 def get_story_market_search_tool() -> FunctionTool:
     tool_description = (
-        "在内部知识库（向量数据库）中搜索已归档的报告和创意。这是进行研究时的首选工具，应在进行外部网络搜索之前使用。\n"
+        "功能: 在内部知识库（向量数据库）中搜索已归档的报告和创意。这是研究时的首选工具，应在进行外部网络搜索之前使用。\n"
         "知识库内容:\n"
-        "- 平台档案 (platform_profile): 各个平台的背景、用户特征、商业模式、作者政策等静态信息。\n"
-        "- 市场分析报告 (deep_dive_report): 针对特定平台和题材的深度市场分析报告，包含核心标签、爽点、用户画像、新兴机会等。\n"
-        "- 小说创意 (novel_concept): 详细的小说创意，包含一句话简介、故事梗概、人物设定、世界观、升级体系、爽点设计、风险评估等。\n"
+        "- `platform_profile`: 平台静态信息（背景、用户、商业模式、作者政策）。\n"
+        "- `deep_dive_report`: 特定平台和题材的深度市场分析（核心标签、爽点、用户画像、新兴机会）。\n"
+        "- `novel_concept`: 详细的小说创意（梗概、人设、世界观、爽点设计、风险评估）。\n"
         "使用指南:\n"
-        "1.  **优先过滤**: 当你知道要找的文档类型时，必须使用 `document_type` 参数进行过滤，以获得最精确的结果。\n"
-        "2.  **结合查询**: `query` 参数应提供具体的关键词或问题。\n"
-        "3.  **解读结果**: 返回内容包含元数据（如平台、题材、日期）和文本内容。请利用元数据判断信息的相关性和时效性。\n"
-        "4.  **空结果处理**: 如果返回“在内部知识库中未找到相关信息”，则意味着内部没有相关数据，此时你才应该考虑使用 `web_scraper` 或其他搜索工具进行外部研究。\n"
-        "参数说明:\n"
-        "- `query` (必需, 字符串): 核心搜索查询，例如 '新人作者机会' 或 '创新的世界观设定'。\n"
-        "- `document_type` (可选, 字符串): 文档类型，可选值为 'platform_profile', 'deep_dive_report', 'novel_concept'。\n"
-        "- `platform` (可选, 字符串): 平台名称，例如 '番茄小说'。\n"
-        "- `genre` (可选, 字符串): 题材名称，例如 '都市脑洞'。\n"
+        "1. **精确过滤**: 优先使用 `document_type` 参数以获得最精确的结果。\n"
+        "2. **具体查询**: `query` 参数应提供具体的关键词或问题。\n"
+        "3. **结果解读**: 返回内容包含元数据（平台、题材、日期），用于判断信息的相关性和时效性。\n"
+        "4. **空结果处理**: 如果返回“未找到相关信息”，则内部无数据，此时才应使用外部搜索工具。\n"
+        "参数:\n"
+        "- `query` (必需, str): 核心搜索查询。例如: '新人作者机会', '创新的世界观设定'。\n"
+        "- `document_type` (可选, str): 文档类型。可选值: 'platform_profile', 'deep_dive_report', 'novel_concept'。\n"
+        "- `platform` (可选, str): 平台名称。例如: '番茄小说'。\n"
+        "- `genre` (可选, str): 题材名称。例如: '都市脑洞'。\n"
         "使用示例:\n"
-        "- 示例1 (精确查找): 查找最新的关于'番茄小说'的深度分析报告 -> `story_market_vector(query='最新用户趋势', document_type='deep_dive_report', platform='番茄小说')`\n"
-        "- 示例2 (类型查找): 查找所有关于'科幻'题材的小说创意 -> `story_market_vector(query='创新的世界观设定', document_type='novel_concept', genre='科幻')`\n"
-        "- 示例3 (模糊搜索): 搜索关于'主角人设'的所有信息 -> `story_market_vector(query='主角人设创新')`"
+        "- 精确查找最新的番茄小说深度分析报告: `story_market_vector(query='最新用户趋势', document_type='deep_dive_report', platform='番茄小说')`\n"
+        "- 查找所有科幻题材的小说创意: `story_market_vector(query='创新的世界观设定', document_type='novel_concept', genre='科幻')`\n"
+        "- 模糊搜索主角人设相关信息: `story_market_vector(query='主角人设创新')`"
     )
     return FunctionTool.from_defaults(fn=story_market_vector, name="story_market_vector", description=tool_description)
 
 
-###############################################################################
-
-
 def get_market_tools() -> List[FunctionTool]:
-    return agent_tavily_tools + [get_web_scraper_tool(), get_social_media_trends_tool(), get_forum_discussions_tool(), get_story_market_search_tool()]
-
-
-###############################################################################
+    return web_search_tools + [get_story_market_search_tool()]
 
 
 @task(
@@ -187,7 +171,7 @@ def get_market_tools() -> List[FunctionTool]:
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,  # 7 天过期 (秒)
+    cache_expiration=604800,
 )
 async def task_load_platform_profile(platform: str) -> Tuple[str, str]:
     logger.info(f"正在从向量库加载平台 '{platform}' 的基础信息...")
@@ -216,7 +200,7 @@ async def task_load_platform_profile(platform: str) -> Tuple[str, str]:
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,  # 7 天过期 (秒)
+    cache_expiration=604800,
 )
 async def task_platform_briefing(platform: str) -> str:
     logger.info(f"为平台 '{platform}' 生成市场动态简报...")
@@ -244,7 +228,7 @@ async def task_platform_briefing(platform: str) -> str:
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,  # 7 天过期 (秒)
+    cache_expiration=604800,
 )
 async def task_new_author_opportunity(platform: str) -> str:
     logger.info(f"为平台 '{platform}' 生成新人机会评估报告...")
@@ -269,7 +253,7 @@ async def task_new_author_opportunity(platform: str) -> str:
     persist_result=True,
     result_storage=local_storage,
     result_serializer=readable_json_serializer,
-    cache_expiration=604800,  # 7 天过期 (秒)
+    cache_expiration=604800,
     retries=2,
     retry_delay_seconds=10
 )
@@ -295,6 +279,4 @@ async def task_store(content: str, doc_type: str, content_format: str = "text", 
     logger.success(f"类型为 '{doc_type}' 的报告已成功存入向量库。元数据: {final_metadata}")
     return True
 
-
-###############################################################################
 
