@@ -10,17 +10,17 @@
 #     exit 1
 # fi
 
-if [ ! -d "venv" ]; then
-    echo "❌ 错误: 找不到 'venv' 目录。请先运行 ./start.sh 来创建环境。"
-    exit 1
-fi
-
 # echo "🐳 启动 Docker 服务..."
 # docker-compose up -d
 # if [ $? -ne 0 ]; then
 #     echo "❌ 错误: 启动 Docker 服务失败。"
 #     exit 1
 # fi
+
+if [ ! -d "venv" ]; then
+    echo "❌ 错误: 找不到 'venv' 目录。请先运行 ./start.sh 来创建环境。"
+    exit 1
+fi
 
 echo "🐍 激活虚拟环境..."
 source venv/bin/activate
