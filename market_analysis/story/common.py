@@ -181,21 +181,21 @@ def get_market_tools() -> List[FunctionTool]:
     name="load_platform_profile",
     persist_result=True,
     result_storage=local_storage,
-    result_storage_key="story/market/common/platform_profile_{parameters[platform]}.json",
+    result_storage_key="story/market/common/load_platform_profile_{parameters[platform]}.json",
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
+    cache_expiration=604800,  # 7 天过期 (秒)
 )
 async def task_load_platform_profile(platform: str) -> Tuple[str, str]:
     logger.info(f"正在从向量库加载平台 '{platform}' 的基础信息...")
-    retriever = index.as_retriever(similarity_top_k=1)
     profile_content = f"# {platform} 平台档案\n\n未在知识库中找到该平台的基础信息。"
     try:
         filters = MetadataFilters(filters=[
             ExactMatchFilter(key="type", value="platform_profile"),
             ExactMatchFilter(key="platform", value=platform)
         ])
-        retriever.filters = filters
+        retriever = index.as_retriever(similarity_top_k=1, filters=filters)
         results = await retriever.aretrieve(f"{platform} 平台档案")
         if results:
             profile_content = results[0].get_content()
@@ -207,15 +207,16 @@ async def task_load_platform_profile(platform: str) -> Tuple[str, str]:
         profile_content = f"# {platform} 平台档案\n\n加载基础信息时出错: {e}"
     return platform, profile_content
 
-@task(name="broad_scan_platform",
+@task(name="platform_briefing",
     persist_result=True,
     result_storage=local_storage,
-    result_storage_key="story/market/common/broad_scan_{parameters[platform]}.json",
+    result_storage_key="story/market/common/platform_briefing_{parameters[platform]}.json",
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
+    cache_expiration=604800,  # 7 天过期 (秒)
 )
-async def task_broad_scan_platform(platform: str) -> str:
+async def task_platform_briefing(platform: str) -> str:
     logger.info(f"为平台 '{platform}' 生成市场动态简报...")
     system_prompt = BROAD_SCAN_SYSTEM_PROMPT.format(platform=platform)
     user_prompt = f"请开始为平台 '{platform}' 生成市场动态简报。"
@@ -233,15 +234,17 @@ async def task_broad_scan_platform(platform: str) -> str:
         logger.error(error_msg)
         return f"## {platform} 平台市场动态简报\n\n生成报告时出错: {error_msg}"
 
-@task(name="assess_new_author_opportunity",
+@task(
+    name="new_author_opportunity",
     persist_result=True,
     result_storage=local_storage,
     result_storage_key="story/market/common/new_author_opportunity_{parameters[platform]}.json",
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
+    cache_expiration=604800,  # 7 天过期 (秒)
 )
-async def task_assess_new_author_opportunity(platform: str) -> str:
+async def task_new_author_opportunity(platform: str) -> str:
     logger.info(f"为平台 '{platform}' 生成新人机会评估报告...")
     system_prompt = ASSESS_NEW_AUTHOR_OPPORTUNITY_SYSTEM_PROMPT.format(platform=platform)
     user_prompt = f"请开始为平台 '{platform}' 生成新人机会评估报告。"
@@ -260,14 +263,15 @@ async def task_assess_new_author_opportunity(platform: str) -> str:
         return f"## {platform} 平台新人机会评估报告\n\n生成报告时出错: {error_msg}"
 
 @task(
-    name="store_report_in_vector_db",
+    name="task_store",
     persist_result=True,
     result_storage=local_storage,
     result_serializer=readable_json_serializer,
+    cache_expiration=604800,  # 7 天过期 (秒)
     retries=2,
     retry_delay_seconds=10
 )
-async def task_store_report_in_vector_db(content: str, doc_type: str, platform: str, genre: str = "na") -> bool:
+async def task_store(content: str, doc_type: str, platform: str, genre: str = "na") -> bool:
     metadata = {"platform": platform}
     if genre != "na":
         metadata["genre"] = genre

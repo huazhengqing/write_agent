@@ -93,10 +93,11 @@ PLATFORM_RESEARCH_SYSTEM_PROMPT = """
     name="search_platform",
     persist_result=True,
     result_storage=local_storage,
-    result_storage_key="story/platform/search_platform_{parameters[platform]}.json",
+    result_storage_key="story/market/search_platform_{parameters[platform]}.json",
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
+    cache_expiration=604800,  # 7 天过期 (秒)
 )
 async def search_platform(platform: str) -> Optional[str]:
     logger.info(f"为平台 '{platform}' 生成平台档案报告...")
@@ -131,7 +132,7 @@ async def search_platform(platform: str) -> Optional[str]:
     return md_content
 
 
-@flow(name="update_platform_profiles_by_search")
+@flow(name="search_platform_all")
 async def search_platform_all(platforms: List[str]):
     logger.info(f"开始更新 {len(platforms)} 个平台的的基础信息...")
     await search_platform.map(platforms)

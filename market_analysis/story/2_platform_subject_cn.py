@@ -6,7 +6,7 @@ from loguru import logger
 from datetime import datetime
 from llama_index.core import Document
 from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
-from market_analysis.story.common import index, task_load_platform_profile, task_broad_scan_platform, task_assess_new_author_opportunity, get_market_tools, task_store_report_in_vector_db
+from market_analysis.story.common import index, task_load_platform_profile, task_platform_briefing, task_new_author_opportunity, get_market_tools, task_store
 from utils.llm import call_agent, llm_acompletion, get_llm_params, get_llm_messages
 from utils.log import init_logger
 from utils.prefect_utils import local_storage, readable_json_serializer, generate_readable_cache_key
@@ -126,7 +126,8 @@ CHOOSE_OPPORTUNITY_USER_PROMPT = """
     result_storage_key="story/market/platform_subject/external_trends_{parameters[platform]}_{parameters[genre]}.json",
     result_serializer=readable_json_serializer,
     retries=2,
-    retry_delay_seconds=10
+    retry_delay_seconds=10,
+    cache_expiration=604800,  # 7 天过期 (秒)
 )
 async def task_analyze_external_trends(platform: str, genre: str) -> tuple[str, str, str]:
     logger.info(f"为【{platform} - {genre}】分析外部趋势...")
@@ -152,7 +153,8 @@ async def task_analyze_external_trends(platform: str, genre: str) -> tuple[str, 
     result_storage=local_storage,
     result_serializer=readable_json_serializer,
     retries=2,
-    retry_delay_seconds=10
+    retry_delay_seconds=10,
+    cache_expiration=604800,  # 7 天过期 (秒)
 )
 async def task_parse_genres_from_report(platform: str, report: str) -> tuple[str, List[str]]:
     logger.info(f"为平台 '{platform}' 的报告解析热门题材...")
@@ -173,7 +175,8 @@ async def task_parse_genres_from_report(platform: str, report: str) -> tuple[str
     result_storage=local_storage,
     result_serializer=readable_json_serializer,
     retries=2,
-    retry_delay_seconds=10
+    retry_delay_seconds=10,
+    cache_expiration=604800,  # 7 天过期 (秒)
 )
 async def task_choose_best_opportunity(platform_reports: Dict[str, str], platform_profiles: Dict[str, str], new_author_reports: Dict[str, str], external_trend_reports: Dict[str, str]) -> Optional[MarketAnalysisResult]:
     logger.info("决策最佳市场机会...")
@@ -211,8 +214,8 @@ async def platform_subject(platforms_to_scan: list[str]):
         platform_profiles[platform] = content
 
     logger.info("启动广域扫描...")
-    scan_futures = await task_broad_scan_platform.map(platforms_to_scan)
-    opportunity_futures = await task_assess_new_author_opportunity.map(platforms_to_scan)
+    scan_futures = await task_platform_briefing.map(platforms_to_scan)
+    opportunity_futures = await task_new_author_opportunity.map(platforms_to_scan)
 
     platform_reports = {}
     new_author_reports = {}
@@ -221,7 +224,7 @@ async def platform_subject(platforms_to_scan: list[str]):
             scan_future = scan_futures[i]
             report = await scan_future.result()
             platform_reports[platform_name] = report
-            await task_store_report_in_vector_db.submit(
+            await task_store.submit(
                 content=report,
                 doc_type="broad_scan_report",
                 platform=platform_name
@@ -234,7 +237,7 @@ async def platform_subject(platforms_to_scan: list[str]):
         try:
             opportunity_report = await opportunity_futures[i].result()
             new_author_reports[platform_name] = opportunity_report
-            await task_store_report_in_vector_db.submit(
+            await task_store.submit(
                 content=opportunity_report,
                 doc_type="new_author_opportunity_report",
                 platform=platform_name
@@ -284,7 +287,7 @@ async def platform_subject(platforms_to_scan: list[str]):
             try:
                 platform, genre, trend_report = await future.result()
                 external_trend_reports[f"{platform}-{genre}"] = trend_report
-                await task_store_report_in_vector_db.submit(
+                await task_store.submit(
                     content=trend_report,
                     doc_type="external_trend_report",
                     platform=platform,
@@ -299,7 +302,7 @@ async def platform_subject(platforms_to_scan: list[str]):
         logger.warning("未能从决策任务中获得有效结果，工作流终止。")
         return
 
-    await task_store_report_in_vector_db.submit(
+    await task_store.submit(
         content=initial_decision.model_dump_json(indent=2, ensure_ascii=False),
         doc_type="market_analysis_result",
         platform="summary"

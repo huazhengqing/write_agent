@@ -7,7 +7,7 @@ from loguru import logger
 from datetime import datetime
 from llama_index.core import Document
 from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
-from market_analysis.story.common import index, story_output_dir, task_broad_scan_platform, task_assess_new_author_opportunity, task_load_platform_profile, get_market_tools, task_store_report_in_vector_db
+from market_analysis.story.common import index, story_output_dir, task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, get_market_tools, task_store
 from utils.llm import call_agent, get_llm_messages, get_llm_params, llm_acompletion
 from utils.log import init_logger
 from utils.prefect_utils import local_storage, readable_json_serializer, generate_readable_cache_key
@@ -23,44 +23,53 @@ class Candidate(BaseModel):
 class FinalDecision(BaseModel):
     platform: str = Field(description="最终选择的平台")
     genre: str = Field(description="最终选择的题材")
-    reasoning: str = Field(description="做出该选择的详细理由，并解释为什么放弃另一个选项。")
+    reasoning: str = Field(description="做出该选择的详细理由，并解释为什么它优于其他主要竞争选项。")
+
+class RankedConcept(BaseModel):
+    rank: int = Field(description="机会排名，1为最佳。")
+    platform: str = Field(description="平台名称。")
+    genre: str = Field(description="题材大类。")
+    brief_reasoning: str = Field(description="对该选项排名的简要理由，点出其核心优劣势。")
+
+class FinalDecisionResult(BaseModel):
+    final_choice: FinalDecision = Field(description="根据综合排序最终选定的最佳方案。")
+    ranking: List[RankedConcept] = Field(description="所有候选方案的完整排名列表。")
 
 FINAL_DECISION_SYSTEM_PROMPT_JSON = """
 # 角色
 你是一位顶尖的网文总编，拥有敏锐的市场嗅觉和战略眼光。
 
 # 任务
-你收到了两份关于不同“平台-题材”的深度分析报告。你的任务是仔细比较这两份报告，并做出最终的、唯一的决策，选择其中一个作为我们接下来要全力投入的方向。你的输出必须是一个结构化的JSON对象。
+你收到了多份（N份）关于不同“平台-题材”的深度分析报告。你的任务是：
+1.  对所有报告代表的机会进行综合评估和排序。
+2.  选出排名第一的最佳机会作为最终决策。
+3.  以一个结构化的JSON对象输出你的完整分析和决策。
 
 # 决策维度
-1.  **潜力上限 (Ceiling)**: 哪个方向的天花板更高？考虑其题材的受众广度、付费潜力、IP衍生可能性以及是否踩在“新兴机会与蓝海方向”上。
-2.  **成功概率 (Probability)**: 哪个方向的成功确定性更高？考虑其与平台调性的契合度、竞争激烈程度、以及我们规避“常见毒点”的难易度。
-3.  **创新价值 (Innovation)**: 哪个方向更具创新性，更能带来差异化优势，避免陷入红海竞争？
-4.  **执行难度 (Execution)**: 哪个方向的实际创作门槛更低，对作者的要求更友好？
+1.  潜力上限 (Ceiling): 哪个方向的天花板更高？考虑其题材的受众广度、付费潜力、IP衍生可能性以及是否踩在“新兴机会与蓝海方向”上。
+2.  成功概率 (Probability): 哪个方向的成功确定性更高？考虑其与平台调性的契合度、竞争激烈程度、以及我们规避“常见毒点”的难易度。
+3.  创新价值 (Innovation): 哪个方向更具创新性，更能带来差异化优势，避免陷入红海竞争？
+4.  执行难度 (Execution): 哪个方向的实际创作门槛更低，对作者的要求更友好？
 
 # 工作流程
-1.  **通读报告**: 完整阅读两份深度分析报告，理解每个选项的优劣势。
-2.  **对比分析**: 在脑中根据上述“决策维度”对两个选项进行打分和比较。
-3.  **最终决策**: 做出你的最终选择，并准备好详细的理由。
-4.  **格式化输出**: 将你的决策和理由严格按照Pydantic模型的JSON格式输出。
+1.  通读报告: 完整阅读所有深度分析报告，理解每个选项的优劣势。
+2.  评估与排序: 在脑中根据上述“决策维度”对所有选项进行打分和比较，形成一个从优到劣的完整排序列表。
+3.  最终决策: 确定排名第一的选项，并为其撰写详细的决策理由，说明它为何优于其他主要竞争者。
+4.  格式化输出: 将你的最终决策和完整的排序列表，严格按照Pydantic模型的JSON格式输出。
 
 # 输出要求
 - 严格按照 Pydantic 模型的格式，仅输出一个完整的、有效的 JSON 对象。
 - 禁止在 JSON 前后添加任何额外解释、注释或 markdown 代码块。
 - JSON 结构必须符合以下定义:
-  - `platform` (string): 最终选择的平台名称。
-  - `genre` (string): 最终选择的题材名称。
-  - `reasoning` (string): 详细阐述做出该选择的理由，并解释为什么放弃另一个选项。
-"""
-
-FINAL_DECISION_USER_PROMPT = """
-# 深度分析报告 A: 【{report_a_platform}】 - 【{report_a_genre}】
-{report_a_content}
-
----
-
-# 深度分析报告 B: 【{report_b_platform}】 - 【{report_b_genre}】
-{report_b_content}
+  - `final_choice` (object): 最终选定的最佳方案。
+    - `platform` (string): 最终选择的平台名称。
+    - `genre` (string): 最终选择的题材名称。
+    - `reasoning` (string): 详细阐述做出该选择的理由，并解释为什么它优于其他主要竞争选项。
+  - `ranking` (array of objects): 所有候选方案的完整排名列表，按排名从高到低排序。
+    - `rank` (integer): 机会排名，1为最佳。
+    - `platform` (string): 平台名称。
+    - `genre` (string): 题材大类。
+    - `brief_reasoning` (string): 对该选项排名的简要理由，点出其核心优劣势。
 """
 
 
@@ -113,6 +122,7 @@ DEEP_DIVE_SYSTEM_PROMPT = """
 - 跨界融合: [结合【外部热点趋势】，提出可融合的跨界创意]
 - 设定创新: [提出未被滥用的创新设定/金手指]
 - 切入角度: [建议新颖的主角身份或故事切入点]
+- 作者友好度: [结合【平台新人机会评估报告】，分析该方向对新人作者的友好度，例如：平台有流量扶持，适合新人切入]
 
 ### 5. 主角人设迭代方向
 - 流行人设分析: [分析当前题材下最受欢迎的1-2种主角人设及其核心魅力]
@@ -141,7 +151,7 @@ OPPORTUNITY_GENERATION_SYSTEM_PROMPT = """
 # 创作原则
 - 机会导向: 核心创意必须回应【新兴机会与蓝海方向】。
 - 跨界优先: 至少一个选题深度融合【跨界融合】建议，力争S级。
-- 灵感融合: 主动使用 `social_media_trends_search` 工具在B站搜索与【市场深度分析报告】中题材相关的热门视频、高赞评论、有趣观点、视觉风格，并将这些元素融入选题。
+- 灵感融合: 充分利用【市场深度分析报告】中提到的外部热点、流行文化、视觉风格等元素，并将这些元素融入选题。
 - 风险规避: 避开【常见“毒点”】。
 - 爽点聚焦: 围绕【核心爽点】构建。
 - 避免重复: 与【历史创意参考】显著区别。
@@ -331,28 +341,24 @@ NOVEL_CONCEPT_USER_PROMPT = """
     result_storage=local_storage,
     result_serializer=readable_json_serializer,
     retries=2,
-    retry_delay_seconds=10
+    retry_delay_seconds=10,
+    cache_expiration=604800,  # 7 天过期 (秒)
 )
-async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecision:
+async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionResult:
     logger.info("在多个深度分析报告中进行最终决策...")
-    if len(reports) < 2:
-        raise ValueError(f"task_final_decision需要至少2份报告进行比较，但收到了{len(reports)}份。")
+    if not reports:
+        raise ValueError("task_final_decision需要至少1份报告进行评估。")
 
-    report_a = reports[0]
-    report_b = reports[1]
-
-    user_prompt = FINAL_DECISION_USER_PROMPT.format(
-        report_a_platform=report_a['platform'],
-        report_a_genre=report_a['genre'],
-        report_a_content=report_a['report'],
-        report_b_platform=report_b['platform'],
-        report_b_genre=report_b['genre'],
-        report_b_content=report_b['report'],
-    )
+    user_prompt_parts = ["请对以下深度分析报告进行评估、排序，并选出最佳方案："]
+    for i, report_data in enumerate(reports):
+        user_prompt_parts.append(
+            f"\n---\n\n# 候选方案 {i+1}: 【{report_data['platform']}】 - 【{report_data['genre']}】\n{report_data['report']}"
+        )
+    user_prompt = "".join(user_prompt_parts)
 
     messages = get_llm_messages(SYSTEM_PROMPT=FINAL_DECISION_SYSTEM_PROMPT_JSON, USER_PROMPT=user_prompt)
     llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=0.1)
-    response_message = await llm_acompletion(llm_params=llm_params, response_model=FinalDecision)
+    response_message = await llm_acompletion(llm_params=llm_params, response_model=FinalDecisionResult)
     decision = response_message.validated_data
 
     if not decision:
@@ -360,7 +366,7 @@ async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecision:
         logger.error("最终决策失败，LLM未返回有效结果。")
         raise ValueError("最终决策失败。")
 
-    logger.success(f"最终决策完成。选择: 【{decision.platform}】 - 【{decision.genre}】")
+    logger.success(f"最终决策完成。选择: 【{decision.final_choice.platform}】 - 【{decision.final_choice.genre}】")
     return decision
 
 @task(name="deep_dive_analysis",
@@ -368,7 +374,8 @@ async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecision:
     result_storage=local_storage,
     result_serializer=readable_json_serializer,
     retries=2,
-    retry_delay_seconds=10
+    retry_delay_seconds=10,
+    cache_expiration=604800,  # 7 天过期 (秒)
 )
 async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: str, broad_scan_report: str, opportunity_report: str) -> Optional[str]:
     logger.info(f"对【{platform} - {genre}】启动深度分析...")
@@ -390,12 +397,12 @@ async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: s
     if not report:
         logger.error(f"为【{platform} - {genre}】生成深度分析报告失败。")
         return None
-    doc = Document(
-        text=report,
-        metadata={"platform": platform, "genre": genre, "type": "deep_dive_report", "date": datetime.now().strftime("%Y-%m-%d")}
+    await task_store.submit(
+        content=report,
+        doc_type="deep_dive_report",
+        platform=platform,
+        genre=genre
     )
-    await asyncio.to_thread(index.insert, doc)
-    logger.success("深度分析报告已存入向量数据库。")
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = f"{platform.replace(' ', '_')}_{genre.replace(' ', '_')}_{timestamp}_deep_dive.md"
@@ -411,7 +418,8 @@ async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: s
     result_storage=local_storage,
     result_serializer=readable_json_serializer,
     retries=2,
-    retry_delay_seconds=10
+    retry_delay_seconds=10,
+    cache_expiration=604800,  # 7 天过期 (秒)
 )
 async def task_generate_opportunities(market_report: str, genre: str) -> Optional[str]:
     logger.info("启动创意脑暴，生成小说选题...")
@@ -430,15 +438,15 @@ async def task_generate_opportunities(market_report: str, genre: str) -> Optiona
             market_report=market_report,
             historical_concepts=historical_concepts_str
     )
-    opportunities = await call_agent(
-        system_prompt=OPPORTUNITY_GENERATION_SYSTEM_PROMPT,
-        user_prompt=user_prompt,
-        llm_type='creative',
-        tools=get_market_tools(),
-        temperature=0.5
-    )
+    messages = get_llm_messages(SYSTEM_PROMPT=OPPORTUNITY_GENERATION_SYSTEM_PROMPT, USER_PROMPT=user_prompt)
+    llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=0.5)
+    response_message = await llm_acompletion(llm_params=llm_params)
+    opportunities = response_message.content
+
     if opportunities:
-        logger.success("Agent小说选题生成完毕！")
+        logger.success("小说选题生成完毕！")
+    else:
+        logger.error("生成小说选题失败。")
     return opportunities
 
 @task(name="generate_novel_concept",
@@ -446,7 +454,8 @@ async def task_generate_opportunities(market_report: str, genre: str) -> Optiona
     result_storage=local_storage,
     result_serializer=readable_json_serializer,
     retries=2,
-    retry_delay_seconds=10
+    retry_delay_seconds=10,
+    cache_expiration=604800,  # 7 天过期 (秒)
 )
 async def task_generate_novel_concept(opportunities_report: str, platform: str, genre: str) -> Optional[str]:
     logger.info("深化选题，生成详细小说创意...")
@@ -478,12 +487,12 @@ async def task_generate_novel_concept(opportunities_report: str, platform: str, 
     if not concept:
         logger.error("生成详细小说创意失败。")
         return None
-    doc = Document(
-        text=concept,
-        metadata={"platform": platform, "genre": genre, "type": "novel_concept", "date": datetime.now().strftime("%Y-%m-%d")}
+    await task_store.submit(
+        content=concept,
+        doc_type="novel_concept",
+        platform=platform,
+        genre=genre
     )
-    await asyncio.to_thread(index.insert, doc)
-    logger.success("小说创意已存入向量数据库。")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = f"{platform.replace(' ', '_')}_{genre.replace(' ', '_')}_{timestamp}_concept.md"
@@ -502,6 +511,10 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
 
     logger.info(f"收到手动指定的 {len(candidates_to_explore)} 个方案，开始第二部分流程: {candidates_to_explore}")
     
+    # 注意：下面的任务（task_load_platform_profile, task_platform_briefing, task_new_author_opportunity）
+    # 与第一阶段（platform_subject.py）中的任务相同。
+    # Prefect的缓存机制（基于result_storage_key）将确保这些任务不会重复执行，而是直接从缓存加载结果，
+    # 从而高效地为本流程提供必要的上下文信息。
     platforms_to_process = list(set([c.platform for c in candidates_to_explore]))
 
     # 重新获取上下文信息 (平台档案、广域扫描报告、新人机会报告)
@@ -512,8 +525,8 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
         platform, content = await future.result()
         platform_profiles[platform] = content
 
-    scan_futures = await task_broad_scan_platform.map(platforms_to_process)
-    opportunity_futures = await task_assess_new_author_opportunity.map(platforms_to_process)
+    scan_futures = await task_platform_briefing.map(platforms_to_process)
+    opportunity_futures = await task_new_author_opportunity.map(platforms_to_process)
 
     platform_reports = {}
     opportunity_reports = {}
@@ -573,27 +586,29 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
             "genre": final_choice_data["genre"],
             "reasoning": "只有一个方案成功完成深度分析，因此被直接采纳。"
         }
-        await task_store_report_in_vector_db.submit(
+        await task_store.submit(
             content=json.dumps(decision_report_content, indent=2, ensure_ascii=False),
             doc_type="final_decision_report",
             platform=final_choice_data["platform"],
             genre=final_choice_data["genre"]
         )
     else:
-        final_decision_obj = await task_final_decision(deep_dive_reports)
+        final_decision_result = await task_final_decision(deep_dive_reports)
+        final_choice_obj = final_decision_result.final_choice
         final_choice_data = {
-            "platform": final_decision_obj.platform,
-            "genre": final_decision_obj.genre,
-            "report": next((r['report'] for r in deep_dive_reports if r['platform'] == final_decision_obj.platform and r['genre'] == final_decision_obj.genre), None)
+            "platform": final_choice_obj.platform,
+            "genre": final_choice_obj.genre,
+            "report": next((r['report'] for r in deep_dive_reports if r['platform'] == final_choice_obj.platform and r['genre'] == final_choice_obj.genre), None)
         }
         logger.info("--- 最终市场方向决策 ---")
-        logger.info(f"选择: 【{final_choice_data['platform']}】 - 【{final_choice_data['genre']}】")
-        logger.info(f"理由: {final_decision_obj.reasoning}")
-        await task_store_report_in_vector_db.submit(
-            content=final_decision_obj.model_dump_json(indent=2, ensure_ascii=False),
+        logger.info(f"选择: 【{final_choice_obj.platform}】 - 【{final_choice_obj.genre}】")
+        logger.info(f"理由: {final_choice_obj.reasoning}")
+        logger.info(f"完整排名:\n{json.dumps([r.model_dump() for r in final_decision_result.ranking], indent=2, ensure_ascii=False)}")
+        await task_store.submit(
+            content=final_decision_result.model_dump_json(indent=2, ensure_ascii=False),
             doc_type="final_decision_report",
-            platform=final_decision_obj.platform,
-            genre=final_decision_obj.genre
+            platform=final_choice_obj.platform,
+            genre=final_choice_obj.genre
         )
 
     chosen_platform = final_choice_data["platform"]
@@ -613,7 +628,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
         logger.error(f"生成小说选题失败，工作流终止。")
         return
 
-    await task_store_report_in_vector_db.submit(
+    await task_store.submit(
         content=final_opportunities,
         doc_type="opportunity_generation_report",
         platform=chosen_platform,
