@@ -37,8 +37,8 @@ if [ ! -f "$TASKS_FILE" ]; then
 fi
 
 echo -e "\n▶️  正在运行主程序 (main.py)..."
-rm -f write.log  logs/*.log
-python3 write.py "$TASKS_FILE" >> write.log 2>&1
+rm -f main.log  .logs/*.log
+python3 main.py "$TASKS_FILE" >> main.log 2>&1
 if [ $? -ne 0 ]; then
     echo "❌ 错误: 主程序执行失败。请检查 write.log 获取详细信息。"
     kill $PREFECT_PID 2>/dev/null

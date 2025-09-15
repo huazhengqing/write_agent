@@ -1,14 +1,11 @@
 .*
 models/
 venv/
-prefect/*
 bug/
 bak/story*
 bak/mem0
 bak/*.py
-logs/
 docs/*.pdf
-output/*
 node_modules/
 __pycache__/
 searxng/
