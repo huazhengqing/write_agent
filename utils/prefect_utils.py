@@ -19,7 +19,7 @@ from prefect import flow, task
 
 def setup_prefect_storage() -> LocalFileSystem:
     block_name = "write-storage"
-    storage_path = Path(__file__).parent.parent.resolve() / ".prefect" / "storage"
+    storage_path = Path(prefect_home_path) / "storage"
     storage_path.mkdir(parents=True, exist_ok=True)
     try:
         storage_block = LocalFileSystem.load(block_name)

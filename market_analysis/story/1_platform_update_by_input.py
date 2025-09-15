@@ -5,7 +5,7 @@ from datetime import datetime
 from llama_index.core import SimpleDirectoryReader
 from llama_index.core.node_parser import SentenceSplitter, MarkdownNodeParser
 from utils.log import init_logger
-from market_analysis.story.common import story_input_dir, index
+from market_analysis.story.common import input_platform_dir, index
 
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 
@@ -20,15 +20,15 @@ def get_file_metadata(file_path_str: str) -> dict:
     }
 
 if __name__ == "__main__":
-    logger.info(f"正在从 '{story_input_dir}' 目录加载文件...")
+    logger.info(f"正在从 '{input_platform_dir}' 目录加载文件...")
     reader = SimpleDirectoryReader(
-        input_dir=story_input_dir,
+        input_dir=input_platform_dir,
         required_exts=[".md", ".txt"],
         file_metadata=get_file_metadata
     )
     documents = reader.load_data()
     if not documents:
-        logger.warning(f"未在 '{story_input_dir.resolve()}' 目录中找到任何 .md 或 .txt 文件。")
+        logger.warning(f"未在 '{input_platform_dir.resolve()}' 目录中找到任何 .md 或 .txt 文件。")
         exit(1)
 
     logger.info(f"找到 {len(documents)} 个文件，开始构建索引...")

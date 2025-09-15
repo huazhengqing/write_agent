@@ -7,7 +7,7 @@ from loguru import logger
 from datetime import datetime
 from llama_index.core import Document
 from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
-from market_analysis.story.common import index, story_output_dir, task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, get_market_tools, task_store
+from market_analysis.story.common import index, output_market_dir, task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, get_market_tools, task_store
 from utils.llm import call_agent, get_llm_messages, get_llm_params, llm_acompletion
 from utils.log import init_logger
 from utils.prefect_utils import local_storage, readable_json_serializer, generate_readable_cache_key
@@ -324,7 +324,7 @@ async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: s
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = f"{platform.replace(' ', '_')}_{genre.replace(' ', '_')}_{timestamp}_deep_dive.md"
-    file_path = story_output_dir / file_name
+    file_path = output_market_dir / file_name
     await asyncio.to_thread(file_path.write_text, report, encoding="utf-8")
     logger.success(f"报告已保存为Markdown文件: {file_path}")
 
@@ -419,7 +419,7 @@ async def task_save_markdown(platform: str, genre: str, deep_dive_report: str, f
     logger.info(f"生成【{platform} - {genre}】的汇总 Markdown 文件...")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = f"{platform.replace(' ', '_')}_{genre.replace(' ', '_')}_{timestamp}_summary.md"
-    file_path = story_output_dir / file_name
+    file_path = output_market_dir / file_name
 
     summary_content = f"""
 # 【{platform}】平台 - 【{genre}】创意总结报告
@@ -496,19 +496,21 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
     for candidate, future in deep_dive_futures:
         try:
             report_content = await future.result()
-                if report_content: #
-                    await task_store(
+            if report_content:
+                await task_store(
                     content=report_content,
                     doc_type="deep_dive_report",
                     platform=candidate.platform,
                     genre=candidate.genre,
                     content_format="markdown"
                 )
-                deep_dive_reports.append({
+                deep_dive_reports.append(
+                    {
                     "platform": candidate.platform,
                     "genre": candidate.genre,
                     "report": report_content
-                })
+                    }
+                )
                 logger.success(f"完成【{candidate.platform} - {candidate.genre}】的深度分析。")
             else:
                 logger.error(f"【{candidate.platform} - {candidate.genre}】的深度分析返回空，将忽略此方案。")
@@ -616,7 +618,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
     logger.info("--- 详细小说创意 ---")
     logger.info(f"\n{detailed_concept}")
 
-    await task_save_markdown.submit(chosen_platform, chosen_genre, deep_dive_report, final_opportunities, detailed_concept)
+    await task_save_markdown(chosen_platform, chosen_genre, deep_dive_report, final_opportunities, detailed_concept)
 
 
 if __name__ == "__main__":

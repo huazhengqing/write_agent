@@ -1,10 +1,18 @@
 import os
+from pathlib import Path
 import sqlite3
 import json
 import collections
 import threading
-from typing import List, Optional, Dict
-from utils.models import Task, natural_sort_key
+from typing import List, Optional, Dict, get_args
+from utils.models import CategoryType, Task, natural_sort_key
+from utils.file import output_dir
+
+
+sqlite_dir = Path(".sqlite/")
+sqlite_dir.mkdir(parents=True, exist_ok=True)
+for category in get_args(CategoryType):
+    (sqlite_dir / category).mkdir(exist_ok=True)
 
 
 """
@@ -52,7 +60,6 @@ class DB:
         db_dir = os.path.dirname(db_path)
         if db_dir:
             os.makedirs(db_dir, exist_ok=True)
-            
         self.db_path = db_path
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.cursor = self.conn.cursor()
@@ -452,12 +459,11 @@ class DB:
 
 _stores: Dict[str, DB] = {}
 _lock = threading.Lock()
-
 def get_db(run_id: str, category: str) -> DB:
     with _lock:
         if run_id in _stores:
             return _stores[run_id]
-        db_path = os.path.join("output", category, f"{run_id}.db")
+        db_path = os.path.join(sqlite_dir, category, f"{run_id}.db")
         store = DB(db_path=db_path)
         _stores[run_id] = store
         return store

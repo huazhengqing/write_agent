@@ -3,7 +3,7 @@ from pathlib import Path
 import logging
 
 
-log_dir = Path("logs")
+log_dir = Path(".logs")
 log_dir.mkdir(exist_ok=True)
 
 

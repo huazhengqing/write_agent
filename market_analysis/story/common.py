@@ -14,29 +14,30 @@ from loguru import logger
 from utils.agent_tools import agent_tavily_tools, get_web_scraper_tool, get_social_media_trends_tool, get_forum_discussions_tool
 from utils.llm import call_agent, get_embedding_params
 from utils.prefect_utils import local_storage, readable_json_serializer, generate_readable_cache_key
+from utils.file import input_dir, output_dir, chroma_dir
 from prefect import task
 
 
-story_platforms_cn = ["番茄小说", "起点中文网", "飞卢小说网", "晋江文学城", "七猫免费小说", "纵横中文网", "17K小说网", "刺猬猫", "掌阅"]
-story_platforms_en = []
+platforms_cn = ["番茄小说", "起点中文网", "飞卢小说网", "晋江文学城", "七猫免费小说", "纵横中文网", "17K小说网", "刺猬猫", "掌阅"]
+platforms_en = []
 
-story_input_dir = Path(".input")
-story_input_dir.mkdir(parents=True, exist_ok=True)
+input_platform_dir = input_dir / "story" / "platform"
+input_platform_dir.mkdir(parents=True, exist_ok=True)
 
-story_output_dir = Path(".story/")
-story_output_dir.mkdir(parents=True, exist_ok=True)
+output_market_dir = output_dir / "story" / "market"
+output_market_dir.mkdir(parents=True, exist_ok=True)
 
-story_market_chroma_dir = Path(".chroma_db/story")
-story_market_chroma_dir.mkdir(parents=True, exist_ok=True)
+chroma_market_dir = chroma_dir / "story" / "market"
+chroma_market_dir.mkdir(parents=True, exist_ok=True)
 
-story_market_chroma_collection_name = "market"
+chroma_collection_market_name = "market"
 
 embedding_params = get_embedding_params(embedding='bge-m3')
 embed_model_name = embedding_params.pop('model')
 embed_model = LiteLLMEmbedding(model_name=embed_model_name, **embedding_params)
 
-db = chromadb.PersistentClient(path=str(story_market_chroma_dir))
-chroma_collection = db.get_or_create_collection(story_market_chroma_collection_name)
+db = chromadb.PersistentClient(path=str(chroma_market_dir))
+chroma_collection = db.get_or_create_collection(chroma_collection_market_name)
 vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
 
 index = VectorStoreIndex.from_vector_store(vector_store, embed_model=embed_model)

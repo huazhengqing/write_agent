@@ -32,6 +32,7 @@ from utils.sqlite import get_db
 from utils.file import get_text_file_path, text_file_append, text_file_read
 from utils.models import Task, get_sibling_ids_up_to_current, natural_sort_key
 from utils.prompt_loader import load_prompts
+from utils.file import cache_dir, output_dir, chroma_dir, kuzu_dir
 from utils.llm import (
     LLM_TEMPERATURES,
     get_embedding_params,
@@ -43,8 +44,6 @@ from utils.llm import (
 
 class RAG:
     def __init__(self):
-        self.project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-
         self.embed_params = get_embedding_params()
         self.embed_model_name = self.embed_params.pop('model')
         self.embed_model = LiteLLMEmbedding(
@@ -62,7 +61,7 @@ class RAG:
         self.llm_synthesis_params = get_llm_params(llm='reasoning', temperature=LLM_TEMPERATURES["synthesis"])
         self.llm_synthesis: LiteLLM = LiteLLM(**self.llm_synthesis_params)
 
-        cache_base_dir = os.path.join(self.project_root, ".cache", "rag")
+        cache_base_dir = cache_dir / "story"
         os.makedirs(cache_base_dir, exist_ok=True)
         self.caches: Dict[str, Cache] = {
             'dependent_design': Cache(os.path.join(cache_base_dir, "dependent_design"), size_limit=int(32 * (1024**2))),
@@ -90,7 +89,7 @@ class RAG:
             logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 创建新的 StorageContext...")
 
             # 向量存储设置 (ChromaDB)
-            chroma_path = os.path.join(self.project_root, ".chroma_db", run_id, content_type)
+            chroma_path = os.path.join(chroma_dir, run_id, content_type)
             os.makedirs(chroma_path, exist_ok=True)
             chroma_client = chromadb.PersistentClient(path=chroma_path)
             sanitized_model_name = re.sub(r'[^a-zA-Z0-9_-]', '_', self.embed_model_name)
@@ -99,7 +98,7 @@ class RAG:
             vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
 
             # 图存储设置 (Kùzu, 高性能嵌入式)
-            kuzu_db_path = os.path.join(self.project_root, ".kuzu_db", run_id, content_type)
+            kuzu_db_path = os.path.join(kuzu_dir, run_id, content_type)
             os.makedirs(kuzu_db_path, exist_ok=True)
             db = kuzu.Database(kuzu_db_path)
             graph_store = KuzuGraphStore(db)

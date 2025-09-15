@@ -6,7 +6,7 @@ from datetime import datetime
 from utils.agent_tools import get_market_tools
 from utils.llm import call_agent
 from utils.log import init_logger
-from market_analysis.story.common import story_platforms_cn, story_output_dir, task_store
+from market_analysis.story.common import platforms_cn, output_market_dir, task_store
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
 
@@ -122,7 +122,7 @@ async def save_to_md(platform: str, md_content: Optional[str]) -> Optional[str]:
         logger.warning(f"内容为空，跳过为平台 '{platform}' 保存Markdown文件。")
         return None
     platform_filename_md = f"{platform.replace(' ', '_')}.md"
-    file_path_md = story_output_dir / platform_filename_md
+    file_path_md = output_market_dir / platform_filename_md
     await asyncio.to_thread(file_path_md.write_text, md_content, encoding="utf-8")
     logger.success(f"{platform} 平台基础信息已保存为Markdown文件: {file_path_md}")
     return str(file_path_md.resolve())
@@ -149,4 +149,4 @@ async def search_platform_all(platforms: List[str]):
 
 
 if __name__ == "__main__":
-    asyncio.run(search_platform_all(story_platforms_cn))
+    asyncio.run(search_platform_all(platforms_cn))
