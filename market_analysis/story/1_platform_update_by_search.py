@@ -1,15 +1,18 @@
 import asyncio
+import os
 from typing import List, Optional
 from loguru import logger
 from datetime import datetime
 from llama_index.core import Document
 from llama_index.core.node_parser import MarkdownNodeParser
-from utils.market import story_platforms_cn, story_output_dir, index
 from utils.agent_tools import get_market_tools
 from utils.llm import call_agent
 from utils.log import init_logger
+from market_analysis.story.common import story_platforms_cn, story_output_dir, index
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
+
+init_logger(os.path.splitext(os.path.basename(__file__))[0])
 
 
 PLATFORM_RESEARCH_SYSTEM_PROMPT = """
@@ -86,19 +89,16 @@ PLATFORM_RESEARCH_SYSTEM_PROMPT = """
 """
 
 
-init_logger("story_platform_by_search")
-
-
 @task(
-    name="获取平台基础信息",
+    name="search_platform",
     persist_result=True,
     result_storage=local_storage,
-    result_storage_key="story/platform/{parameters[platform]}.json",
+    result_storage_key="story/platform/search_platform_{parameters[platform]}.json",
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
 )
-async def task_search_platform(platform: str) -> Optional[str]:
+async def search_platform(platform: str) -> Optional[str]:
     logger.info(f"为平台 '{platform}' 生成平台档案报告...")
     system_prompt = PLATFORM_RESEARCH_SYSTEM_PROMPT.format(platform=platform)
     user_prompt = f"请开始为平台 '{platform}' 生成平台基础信息报告。"
@@ -131,11 +131,11 @@ async def task_search_platform(platform: str) -> Optional[str]:
     return md_content
 
 
-@flow(name="更新平台基础信息流程")
-async def flow_search_platform_all(platforms: List[str]):
+@flow(name="update_platform_profiles_by_search")
+async def search_platform_all(platforms: List[str]):
     logger.info(f"开始更新 {len(platforms)} 个平台的的基础信息...")
-    await task_search_platform.map(platforms)
+    await search_platform.map(platforms)
 
 
 if __name__ == "__main__":
-    asyncio.run(flow_search_platform_all(story_platforms_cn))
+    asyncio.run(search_platform_all(story_platforms_cn))

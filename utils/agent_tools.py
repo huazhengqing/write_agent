@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from llama_index.core.tools import FunctionTool
 from llama_index.tools.tavily_research import TavilyToolSpec
 from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
-from utils.market import index
+from market_analysis.story.market import index
 
 ###############################################################################
 
@@ -165,73 +165,6 @@ def get_forum_discussions_tool() -> FunctionTool:
 
 ###############################################################################
 
-async def story_market_search(
-        query: str, 
-        document_type: Optional[str] = None, 
-        platform: Optional[str] = None,
-        genre: Optional[str] = None
-    ) -> str:
-    """
-    在向量数据库中搜索相关信息，支持按类型、平台和题材进行过滤。
-    Args:
-        query (str): 核心搜索查询。
-        document_type (Optional[str]): 文档类型, 可选值为 'platform_profile', 'deep_dive_report', 'novel_concept'。
-        platform (Optional[str]): 平台名称, 如 '番茄小说'。
-        genre (Optional[str]): 题材名称, 如 '都市脑洞'。
-    Returns:
-        str: 格式化的搜索结果，包含元数据和内容。
-    """
-    logger.info(f"向量数据库搜索: query='{query}', type='{document_type}', platform='{platform}', genre='{genre}'")
-    try:
-        filters = []
-        if document_type:
-            filters.append(ExactMatchFilter(key="type", value=document_type))
-        if platform:
-            filters.append(ExactMatchFilter(key="platform", value=platform))
-        if genre:
-            filters.append(ExactMatchFilter(key="genre", value=genre))
-        retriever_kwargs = {"similarity_top_k": 5}
-        if filters:
-            retriever_kwargs["filters"] = MetadataFilters(filters=filters)
-        retriever = index.as_retriever(retriever_kwargs)
-        results = await retriever.aretrieve(query)
-        if not results:
-            logger.warning("向量数据库未找到匹配的结果。")
-            return "在内部知识库中未找到相关信息。"
-        content_parts = []
-        for i, node in enumerate(results):
-            metadata_str = json.dumps(node.metadata, ensure_ascii=False)
-            content_parts.append(f"--- 结果 {i+1} ---\n元数据: {metadata_str}\n内容:\n{node.get_content()}")
-        final_content = "\n\n".join(content_parts)
-        logger.success(f"向量数据库搜索完成，找到 {len(results)} 个结果。")
-        return final_content
-    except Exception as e:
-        logger.error(f"向量数据库搜索出错: {e}")
-        return f"向量数据库搜索失败: {e}"
-
-def get_story_market_search_tool() -> FunctionTool:
-    tool_description = (
-        "在内部知识库（向量数据库）中搜索信息。支持通过元数据进行精确过滤，以获取更相关的结果。\n"
-        "该知识库包含以下信息：\n"
-        "- 平台档案 (platform_profile): 各个平台的背景、用户特征、商业模式、作者政策等静态信息。\n"
-        "- 市场分析报告 (deep_dive_report): 针对特定平台和题材的深度市场分析报告，包含核心标签、爽点、用户画像、新兴机会等。\n"
-        "- 小说创意 (novel_concept): 详细的小说创意，包含一句话简介、故事梗概、人物设定、世界观、升级体系、爽点设计、风险评估等。\n"
-        "当你需要查找特定类型的报告或信息时，应优先使用此工具的过滤功能。\n"
-        "可用过滤器参数包括: \n"
-        "`document_type` (可选, 字符串): 文档类型，可选值为 'platform_profile', 'deep_dive_report', 'novel_concept'。\n"
-        "`platform` (可选, 字符串): 平台名称，例如 '番茄小说'。\n"
-        "`genre` (可选, 字符串): 题材名称，例如 '都市脑洞'。\n"
-        "返回的结果会包含元数据（如日期），你可以根据元数据判断信息的时效性。\n"
-        "示例1: 查找最新的关于'番茄小说'的深度分析报告 -> `story_market_search(query='最新用户趋势', document_type='deep_dive_report', platform='番茄小说')`\n"
-        "示例2: 查找所有关于'科幻'题材的小说创意 -> `story_market_search(query='创新的世界观设定', document_type='novel_concept', genre='科幻')`\n"
-        "示例3: 模糊搜索关于'新人机会'的信息 -> `story_market_search(query='新人作者机会')`"
-    )
-    return FunctionTool.from_defaults(fn=story_market_search, name="story_market_search", description=tool_description)
-
-###############################################################################
-
-def get_market_tools() -> List[FunctionTool]:
-    return agent_tavily_tools + [get_web_scraper_tool(), get_social_media_trends_tool(), get_forum_discussions_tool(), get_story_market_search_tool()]
 
 
 

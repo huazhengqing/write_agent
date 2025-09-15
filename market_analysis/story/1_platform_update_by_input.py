@@ -1,9 +1,13 @@
+import os
 from pathlib import Path
 from loguru import logger
 from datetime import datetime
 from llama_index.core import SimpleDirectoryReader
 from llama_index.core.node_parser import SentenceSplitter, MarkdownNodeParser
-from utils.market import story_input_dir, index
+from utils.log import init_logger
+from market_analysis.story.common import story_input_dir, index
+
+init_logger(os.path.splitext(os.path.basename(__file__))[0])
 
 
 def get_file_metadata(file_path_str: str) -> dict:
@@ -18,7 +22,7 @@ def get_file_metadata(file_path_str: str) -> dict:
 if __name__ == "__main__":
     logger.info(f"正在从 '{story_input_dir}' 目录加载文件...")
     reader = SimpleDirectoryReader(
-        story_input_dir=story_input_dir,
+        input_dir=story_input_dir,
         required_exts=[".md", ".txt"],
         file_metadata=get_file_metadata
     )

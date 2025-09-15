@@ -14,9 +14,7 @@ from llama_index.core.agent import ReActAgent
 from llama_index.llms.litellm import LiteLLM
 from utils.agent_tools import agent_tavily_tools, get_web_scraper_tool
 
-
 load_dotenv()
-
 
 LLM_TEMPERATURES = {
     "creative": 0.75,

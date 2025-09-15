@@ -1,12 +1,12 @@
+import os
 from typing import Optional
 from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
 from llama_index.core.schema import NodeWithScore
 from loguru import logger
 from utils.log import init_logger
-from utils.market import index
+from market_analysis.story.common import index
 
-
-init_logger("story_market_query_cn")
+init_logger(os.path.splitext(os.path.basename(__file__))[0])
 
 
 def query_reports(query: str, date: Optional[str] = None, n_results: int = 1) -> list[NodeWithScore]:
