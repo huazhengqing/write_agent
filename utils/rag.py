@@ -32,7 +32,7 @@ from utils.sqlite import get_db
 from utils.file import get_text_file_path, text_file_append, text_file_read
 from utils.models import Task, get_sibling_ids_up_to_current, natural_sort_key
 from utils.prompt_loader import load_prompts
-from utils.file import cache_dir, output_dir, chroma_dir, kuzu_dir
+from utils.file import cache_dir, chroma_dir, kuzu_dir
 from utils.llm import (
     LLM_TEMPERATURES,
     get_embedding_params,

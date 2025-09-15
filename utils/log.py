@@ -1,19 +1,22 @@
 from loguru import logger
 from pathlib import Path
 import logging
-
-
-log_dir = Path(".logs")
-log_dir.mkdir(exist_ok=True)
+import sys
+from utils.file import log_dir
 
 
 def init_logger(file_name):
+    logger.remove()  # 移除所有旧的处理器，确保一个干净的配置
+    logger.add(
+        sys.stderr,  # 添加一个处理器到标准错误，确保日志在控制台可见
+        level="INFO"
+    )
     logger.add(
         log_dir / f"{file_name}.log",
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         rotation="10 MB",
         level="INFO",
-        enqueue=True,
+        enqueue=False,  # 改为False，使用同步日志记录，在Prefect中更可靠
         backtrace=True,
         diagnose=True,
     )
@@ -59,5 +62,3 @@ def ensure_task_logger(run_id: str):
         diagnose=True,
     )
     _SINK_IDS[run_id] = sink_id
-
-

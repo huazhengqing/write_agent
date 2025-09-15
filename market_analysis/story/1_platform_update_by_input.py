@@ -1,9 +1,11 @@
 import os
+import sys
 from pathlib import Path
 from loguru import logger
 from datetime import datetime
 from llama_index.core import SimpleDirectoryReader
 from llama_index.core.node_parser import SentenceSplitter, MarkdownNodeParser
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from utils.log import init_logger
 from market_analysis.story.common import input_platform_dir, index
 
@@ -46,5 +48,3 @@ if __name__ == "__main__":
     index.insert_nodes(all_nodes, show_progress=True)
     
     logger.success(f"成功处理 {len(documents)} 个平台文件并存入向量数据库。")
-
-

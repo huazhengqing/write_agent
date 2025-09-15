@@ -1,18 +1,11 @@
 import os
-from pathlib import Path
 import sqlite3
 import json
 import collections
 import threading
-from typing import List, Optional, Dict, get_args
-from utils.models import CategoryType, Task, natural_sort_key
-from utils.file import output_dir
-
-
-sqlite_dir = Path(".sqlite/")
-sqlite_dir.mkdir(parents=True, exist_ok=True)
-for category in get_args(CategoryType):
-    (sqlite_dir / category).mkdir(exist_ok=True)
+from typing import List, Optional, Dict
+from utils.models import Task, natural_sort_key
+from utils.file import sqlite_dir
 
 
 """

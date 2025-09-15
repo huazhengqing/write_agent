@@ -1,14 +1,15 @@
 import asyncio
 import os
+import sys
 from typing import List, Optional
 from loguru import logger
-from market_analysis.story.common import platforms_cn, output_market_dir, task_store
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+from utils.log import init_logger
+init_logger(os.path.splitext(os.path.basename(__file__))[0])
+from utils.llm import call_agent
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
-from utils.llm import call_agent
-from utils.log import init_logger
-
-init_logger(os.path.splitext(os.path.basename(__file__))[0])
+from market_analysis.story.common import output_market_dir, task_store
 
 
 PLATFORM_RESEARCH_SYSTEM_PROMPT = """
@@ -134,16 +135,20 @@ async def search_platform_all(platforms: List[str]):
         platform=platforms,
         md_content=report_futures
     )
-    task_store.map(
+    store_futures = task_store.map(
         content=report_futures,
         doc_type="platform_profile",
         content_format="markdown",
         platform=platforms,
         source=filepath_futures
     )
+    for future in store_futures:
+        await future.wait()
     logger.info(f"已完成对 {len(platforms)} 个平台基础信息的更新流程。")
 
 
 if __name__ == "__main__":
     platforms_cn = ["番茄小说", "起点中文网", "飞卢小说网", "晋江文学城", "七猫免费小说", "纵横中文网", "17K小说网", "刺猬猫", "掌阅"]
-    asyncio.run(search_platform_all(platforms_cn))
+    platforms_en = ["Wattpad", "RoyalRoad", "AO3", "Webnovel", "Scribble Hub", "Tapas"]
+    platforms = ["番茄小说"]
+    asyncio.run(search_platform_all(platforms))

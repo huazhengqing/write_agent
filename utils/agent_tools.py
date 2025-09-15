@@ -6,7 +6,7 @@ from loguru import logger
 from typing import List, Optional
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
-from duckduckgo_search import AsyncDDGS
+from duckduckgo_search import DDGS
 from diskcache import Cache
 from llama_index.core.tools import FunctionTool
 import trafilatura
@@ -34,12 +34,10 @@ async def async_web_search(query: str, max_results: int = 10) -> str:
             response = await client.get(SEARXNG_BASE_URL, params=params, timeout=15.0)
             response.raise_for_status()
             data = response.json()
-
         results = data.get("results", [])
         if not results:
             # 抛出异常以触发回退逻辑
             raise ValueError("SearXNG returned no results")
-
         results = results[:max_results]
         formatted_results = []
         for i, result in enumerate(results):
@@ -57,14 +55,12 @@ async def async_web_search(query: str, max_results: int = 10) -> str:
     logger.info(f"策略二: 正在使用 DuckDuckGo 执行搜索: '{query}'")
     try:
         # 使用 duckduckgo-search 异步接口
-        async with AsyncDDGS() as ddgs:
-            # ddgs.text returns an async generator
+        async with DDGS() as ddgs:
+            # ddgs.text 返回一个异步生成器
             results = [r async for r in ddgs.text(query, max_results=max_results)]
-
         if not results:
             logger.error(f"所有搜索引擎（SearXNG, DuckDuckGo）对 '{query}' 的搜索均未找到任何结果。")
             return f"搜索 '{query}' 未找到任何结果。"
-
         formatted_results = []
         for i, result in enumerate(results):
             title = result.get('title')

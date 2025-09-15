@@ -1,8 +1,10 @@
 import os
+import sys
 from typing import Optional
 from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
 from llama_index.core.schema import NodeWithScore
 from loguru import logger
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from utils.log import init_logger
 from market_analysis.story.common import index
 

@@ -1,16 +1,18 @@
 import asyncio
 import json
 import os
+import sys
 from typing import Optional, Dict, List
 from pydantic import BaseModel, Field
 from loguru import logger
 from datetime import datetime
 from llama_index.core import Document
 from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from market_analysis.story.common import index, output_market_dir, task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, get_market_tools, task_store
 from utils.llm import call_agent, get_llm_messages, get_llm_params, llm_acompletion
 from utils.log import init_logger
-from utils.prefect_utils import local_storage, readable_json_serializer, generate_readable_cache_key
+from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
 
 init_logger(os.path.splitext(os.path.basename(__file__))[0])

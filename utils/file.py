@@ -3,32 +3,48 @@ from pathlib import Path
 import re
 from typing import get_args
 from utils.models import Task, CategoryType
+from dotenv import load_dotenv
+load_dotenv()
 
 
-project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+project_root = Path(__file__).resolve().parent.parent
 
-cache_dir = Path(".cache/")
+log_dir = project_root / ".logs"
+log_dir.mkdir(parents=True, exist_ok=True)
+
+prefect_dir = project_root / ".prefect"
+os.environ["PREFECT_HOME"] = str(prefect_dir)
+prefect_dir.mkdir(parents=True, exist_ok=True)
+prefect_storage_path = prefect_dir / "storage"
+prefect_storage_path.mkdir(parents=True, exist_ok=True)
+
+sqlite_dir = project_root / ".sqlite"
+sqlite_dir.mkdir(parents=True, exist_ok=True)
+for category in get_args(CategoryType):
+    (sqlite_dir / category).mkdir(exist_ok=True)
+
+cache_dir = project_root / ".cache"
 cache_dir.mkdir(parents=True, exist_ok=True)
 for category in get_args(CategoryType):
     (cache_dir / category).mkdir(exist_ok=True)
 
-kuzu_dir = Path(".kuzu_db/")
+chroma_dir = project_root / ".chroma_db"
+chroma_dir.mkdir(parents=True, exist_ok=True)
+for category in get_args(CategoryType):
+    (chroma_dir / category).mkdir(exist_ok=True)
+
+kuzu_dir = project_root / ".kuzu_db"
 kuzu_dir.mkdir(parents=True, exist_ok=True)
 
-input_dir = Path(".input/")
+input_dir = project_root / ".input"
 input_dir.mkdir(parents=True, exist_ok=True)
 for category in get_args(CategoryType):
     (input_dir / category).mkdir(exist_ok=True)
 
-output_dir = Path(".output/")
+output_dir = project_root / ".output"
 output_dir.mkdir(parents=True, exist_ok=True)
 for category in get_args(CategoryType):
     (output_dir / category).mkdir(exist_ok=True)
-
-chroma_dir = Path(".chroma_db/")
-chroma_dir.mkdir(parents=True, exist_ok=True)
-for category in get_args(CategoryType):
-    (chroma_dir / category).mkdir(exist_ok=True)
 
 
 def sanitize_filename(name: str) -> str:
