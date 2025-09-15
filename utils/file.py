@@ -12,6 +12,9 @@ project_root = Path(__file__).resolve().parent.parent
 log_dir = project_root / ".logs"
 log_dir.mkdir(parents=True, exist_ok=True)
 
+litellm_cache_dir = project_root / ".litellm_cache"
+litellm_cache_dir.mkdir(parents=True, exist_ok=True)
+
 prefect_dir = project_root / ".prefect"
 os.environ["PREFECT_HOME"] = str(prefect_dir)
 prefect_dir.mkdir(parents=True, exist_ok=True)

@@ -16,7 +16,9 @@ from llama_index.core.agent.workflow import ReActAgent
 from llama_index.core.workflow import Context
 from llama_index.llms.litellm import LiteLLM
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from utils.file import litellm_cache_dir
 from utils.agent_tools import web_search_tools
+
 
 
 load_dotenv()
@@ -151,9 +153,12 @@ def custom_get_cache_key(**kwargs):
     return hashlib.sha256(key_string.encode("utf-8")).hexdigest()
 
 
+cache = Cache(type="disk", disk_cache_dir=litellm_cache_dir)
+cache.get_cache_key = custom_get_cache_key
+litellm.cache = cache
 litellm.enable_json_schema_validation=True
 litellm.drop_params = True
-litellm.cache = Cache(type="disk", get_cache_key=custom_get_cache_key)
+
 
 
 def get_llm_messages(
