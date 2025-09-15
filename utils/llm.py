@@ -367,7 +367,7 @@ async def call_agent(
         llm=llm,
         system_prompt=system_prompt,
         verbose=True
-    ) 
+    )
     logger.info(f"系统提示词:\n{system_prompt}")
     logger.info(f"用户提示词:\n{user_prompt}")
     ctx = Context(agent)
@@ -396,46 +396,6 @@ if __name__ == "__main__":
     async def main():
         logger.info("开始测试 call_agent...")
 
-        # 测试 1: 简单文本生成 (不使用工具)
-        system_prompt_1 = "你是一个乐于助人的助手。"
-        user_prompt_1 = "你好，请介绍一下你自己。"
-        logger.info("--- 测试 1: 简单文本生成 ---")
-        result_1 = await call_agent(
-            system_prompt=system_prompt_1,
-            user_prompt=user_prompt_1,
-        )
-        if result_1:
-            logger.success(f"测试 1 成功，结果:\n{result_1}")
-        else:
-            logger.error("测试 1 失败。")
-
-        # 测试 2: 使用 web_search 工具
-        system_prompt_2 = "你是一个研究助理，擅长使用网络搜索工具来回答问题。"
-        user_prompt_2 = "请搜索一下'大型语言模型在代码生成方面的最新进展'，并给我一个简短的总结。"
-        logger.info("\n--- 测试 2: 使用 web_search 工具 ---")
-        result_2 = await call_agent(
-            system_prompt=system_prompt_2,
-            user_prompt=user_prompt_2,
-        )
-        if result_2:
-            logger.success(f"测试 2 成功，结果:\n{result_2}")
-        else:
-            logger.error("测试 2 失败。")
-
-        # 测试 3: 使用 targeted_search 工具
-        system_prompt_3 = "你是一个市场分析师，需要从特定平台获取信息。"
-        user_prompt_3 = "请在知乎和B站上搜索关于'AI写作助手'的讨论，总结用户的主要观点。"
-        logger.info("\n--- 测试 3: 使用 targeted_search 工具 ---")
-        result_3 = await call_agent(
-            system_prompt=system_prompt_3,
-            user_prompt=user_prompt_3,
-        )
-        if result_3:
-            logger.success(f"测试 3 成功，结果:\n{result_3}")
-        else:
-            logger.error("测试 3 失败。")
-
-        # 测试 4: 使用 Pydantic 模型进行结构化输出
         class SearchSummary(BaseModel):
             topic: str = Field(description="搜索的主题")
             key_points: List[str] = Field(description="总结的关键点列表")

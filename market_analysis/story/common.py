@@ -1,5 +1,7 @@
 import json
 import asyncio
+import os
+import sys
 import chromadb
 from typing import List, Optional, Tuple, Dict, Any
 from llama_index.core import VectorStoreIndex, Document
@@ -10,11 +12,12 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
 from llama_index.core.tools import FunctionTool
 from loguru import logger
-from utils.prefect_utils import local_storage, readable_json_serializer
-from prefect import task
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from utils.agent_tools import web_search_tools
 from utils.llm import call_agent, get_embedding_params
 from utils.file import input_dir, output_dir, chroma_dir
+from utils.prefect_utils import local_storage, readable_json_serializer
+from prefect import task
 
 
 input_platform_dir = input_dir / "story" / "platform"

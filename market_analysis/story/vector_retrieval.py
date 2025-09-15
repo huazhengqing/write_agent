@@ -6,9 +6,8 @@ from llama_index.core.schema import NodeWithScore
 from loguru import logger
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from utils.log import init_logger
-from market_analysis.story.common import index
-
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
+from market_analysis.story.common import index
 
 
 def query_reports(query: str, date: Optional[str] = None, n_results: int = 1) -> list[NodeWithScore]:
