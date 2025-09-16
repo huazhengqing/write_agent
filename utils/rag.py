@@ -11,31 +11,19 @@ from typing import Dict, Any, List, Literal, Optional, Callable
 from llama_index.graph_stores.kuzu import KuzuGraphStore
 from llama_index.llms.litellm import LiteLLM
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.core import (
-    StorageContext, 
-    Document, 
-    VectorStoreIndex,
-    KnowledgeGraphIndex,
-    Response,
-)
-from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core.response_synthesizers import CompactAndRefine, ResponseMode
-from llama_index.core.indices.prompt_helper import PromptHelper
+from llama_index.core import StorageContext
 from llama_index.core.prompts import PromptTemplate
-from llama_index.core.postprocessor import LLMRerank
 from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
-from llama_index.core.node_parser import SentenceSplitter, MarkdownNodeParser
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.sqlite import get_db
+from utils.sqlite import get_task_db
 from utils.file import get_text_file_path, text_file_append, text_file_read
 from utils.models import Task, get_sibling_ids_up_to_current, natural_sort_key
 from utils.prompt_loader import load_prompts
-from utils.graph import get_kuzu_graph_store, store as graph_store_func, hybrid_query
-from utils.vector import get_embed_model, store as vector_store_func, vector_query, get_chroma_vector_store
-from utils.file import cache_dir, chroma_dir, kuzu_dir
+from utils.kg import get_kg_store, kg_add, hybrid_query
+from utils.vector import get_embed_model, vector_add, vector_query, get_vector_store
+from utils.file import cache_dir, data_dir
 from utils.llm import (
     LLM_TEMPERATURES,
-    get_embedding_params,
     get_llm_messages,
     get_llm_params,
     llm_completion
@@ -82,10 +70,10 @@ class RAG:
                 return self.vector_stores[context_key]
 
             logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 创建新的 VectorStore (ChromaDB)...")
-            chroma_path = os.path.join(chroma_dir, run_id, content_type)
+            chroma_path = os.path.join(data_dir, run_id, content_type)
             sanitized_model_name = re.sub(r'[^a-zA-Z0-9_-]', '_', self.embed_model.model_name)
             collection_name = f"collection_{sanitized_model_name}"
-            vector_store = get_chroma_vector_store(db_path=chroma_path, collection_name=collection_name)
+            vector_store = get_vector_store(db_path=chroma_path, collection_name=collection_name)
             
             self.vector_stores[context_key] = vector_store
             logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 的 VectorStore 创建并缓存成功。")
@@ -101,40 +89,40 @@ class RAG:
                 return self.graph_stores[context_key]
 
             logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 创建新的 GraphStore (Kùzu)...")
-            kuzu_db_path = os.path.join(kuzu_dir, run_id, content_type)
-            graph_store = get_kuzu_graph_store(db_path=kuzu_db_path)
+            kuzu_db_path = os.path.join(data_dir, run_id, content_type)
+            graph_store = get_kg_store(db_path=kuzu_db_path)
             
             self.graph_stores[context_key] = graph_store
             logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 的 GraphStore 创建并缓存成功。")
             return graph_store
 
-    def add(self, task: Task, task_type: str):
-        db = get_db(run_id=task.run_id, category=task.category)
+    def save_data(self, task: Task, task_type: str):
+        task_db = get_task_db(run_id=task.run_id)
         if task_type == "task_atom":
             if task.id == "1" or task.results.get("goal_update"):
                 self.caches['task_list'].evict(tag=task.run_id)
-                db.add_task(task)
-            db.add_result(task)
+                task_db.add_task(task)
+            task_db.add_result(task)
         elif task_type == "task_plan":
             if task.results.get("plan"):
-                db.add_result(task)
+                task_db.add_result(task)
         elif task_type == "task_plan_reflection":
             if task.results.get("plan_reflection"):
                 self.caches['task_list'].evict(tag=task.run_id)
                 self.caches['upper_design'].evict(tag=task.run_id)
                 self.caches['upper_search'].evict(tag=task.run_id)
-                db.add_result(task)
-                db.add_sub_tasks(task)
+                task_db.add_result(task)
+                task_db.add_sub_tasks(task)
         elif task_type == "review_design":
             if task.results.get("review_design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                db.add_result(task)
-                self.store_design(task, task.results.get("review_design"))
+                task_db.add_result(task)
+                self.save_design(task, task.results.get("review_design"))
         elif task_type == "review_write":
             if task.results.get("review_write"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                db.add_result(task)
-                self.store_design(task, task.results.get("review_write"))
+                task_db.add_result(task)
+                self.save_design(task, task.results.get("review_write"))
         elif task_type in [
             "task_design",
             "task_design_market",
@@ -150,41 +138,41 @@ class RAG:
         ]:
             if task.results.get("design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                db.add_result(task)
-                self.store_design(task, task.results.get("design"))
+                task_db.add_result(task)
+                self.save_design(task, task.results.get("design"))
         elif task_type == "task_design_reflection":
             if task.results.get("design_reflection"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                db.add_result(task)
-                self.store_design(task, task.results.get("design_reflection"))
+                task_db.add_result(task)
+                self.save_design(task, task.results.get("design_reflection"))
         elif task_type == "task_hierarchy":
             if task.results.get("design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                db.add_result(task)
+                task_db.add_result(task)
         elif task_type == "task_hierarchy_reflection":
             if task.results.get("design_reflection"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                db.add_result(task)
-                self.store_design(task, task.results.get("design_reflection"))
+                task_db.add_result(task)
+                self.save_design(task, task.results.get("design_reflection"))
         elif task_type == "task_search":
             if task.results.get("search"):
                 self.caches['dependent_search'].evict(tag=task.run_id)
-                db.add_result(task)
-                self.store_search(task, task.results.get("search"))
+                task_db.add_result(task)
+                self.save_search(task, task.results.get("search"))
         elif task_type == "task_write_before_reflection":
             if task.results.get("design_reflection"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                db.add_result(task)
-                self.store_design(task, task.results.get("design_reflection"))
+                task_db.add_result(task)
+                self.save_design(task, task.results.get("design_reflection"))
         elif task_type == "task_write":
             if task.results.get("write"):
-                db.add_result(task)
+                task_db.add_result(task)
         elif task_type == "task_write_reflection":
             write_reflection = task.results.get("write_reflection")
             if write_reflection:
                 self.caches['text_latest'].evict(tag=task.run_id)
                 self.caches['text_length'].evict(tag=task.run_id)
-                db.add_result(task)
+                task_db.add_result(task)
                 header_parts = [
                     task.id,
                     task.hierarchical_position,
@@ -195,31 +183,31 @@ class RAG:
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 content = f"## 任务\n{header}\n{timestamp}\n\n{write_reflection}"
                 text_file_append(get_text_file_path(task), content)
-                self.store_write(task, write_reflection)
+                self.save_write(task, write_reflection)
         elif task_type == "task_summary":
             if task.results.get("summary"):
                 self.caches['text_summary'].evict(tag=task.run_id)
-                db.add_result(task)
-                self.store_summary(task, task.results.get("summary"))
+                task_db.add_result(task)
+                self.save_summary(task, task.results.get("summary"))
         elif task_type == "task_aggregate_design":
             if task.results.get("design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                db.add_result(task)
-                self.store_design(task, task.results.get("design"))
+                task_db.add_result(task)
+                self.save_design(task, task.results.get("design"))
         elif task_type == "task_aggregate_search":
             if task.results.get("search"):
                 self.caches['dependent_search'].evict(tag=task.run_id)
-                db.add_result(task)
-                self.store_search(task, task.results.get("search"))
+                task_db.add_result(task)
+                self.save_search(task, task.results.get("search"))
         elif task_type == "task_aggregate_summary":
             if task.results.get("summary"):
                 self.caches['text_summary'].evict(tag=task.run_id)
-                db.add_result(task)
-                self.store_summary(task, task.results.get("summary"))
+                task_db.add_result(task)
+                self.save_summary(task, task.results.get("summary"))
         else:
             raise ValueError("不支持的任务类型")
 
-    def store_design(self, task: Task, content: str) -> None:
+    def save_design(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 design 内容 (向量索引与知识图谱)...")
         header_parts = [
             task.id,
@@ -241,7 +229,7 @@ class RAG:
             "created_at": datetime.now().isoformat()
         }
         # 1. 存入向量数据库
-        vector_store_func(
+        vector_add(
             vector_store=vector_store,
             content=content,
             metadata=doc_metadata,
@@ -250,7 +238,7 @@ class RAG:
         )
         logger.info(f"[{task.id}] design 内容向量化完成, 开始构建知识图谱...")
         # 2. 存入知识图谱
-        graph_store_func(
+        kg_add(
             storage_context=storage_context,
             content=content,
             metadata=doc_metadata,
@@ -261,7 +249,7 @@ class RAG:
         )
         logger.info(f"[{task.id}] design 内容存储完成。")
 
-    def store_search(self, task: Task, content: str) -> None:
+    def save_search(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 search 内容 (向量索引)...")
         header_parts = [task.id, task.hierarchical_position, task.goal]
         header = " ".join(filter(None, header_parts))
@@ -271,7 +259,7 @@ class RAG:
             "task_id": task.id,
             "created_at": datetime.now().isoformat()
         }
-        vector_store_func(
+        vector_add(
             vector_store=vector_store,
             content=full_content,
             metadata=doc_metadata,
@@ -280,7 +268,7 @@ class RAG:
         )
         logger.info(f"[{task.id}] search 内容存储完成。")
 
-    def store_write(self, task: Task, content: str) -> None:
+    def save_write(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 write 内容 (构建知识图谱)...")
         graph_store = self._get_graph_store(task.run_id, "write")
         storage_context = StorageContext.from_defaults(graph_store=graph_store)
@@ -289,7 +277,7 @@ class RAG:
             "hierarchical_position": task.hierarchical_position,
             "created_at": datetime.now().isoformat()
         }
-        graph_store_func(
+        kg_add(
             storage_context=storage_context,
             content=content,
             metadata=doc_metadata,
@@ -300,7 +288,7 @@ class RAG:
         )
         logger.info(f"[{task.id}] write 内容存储完成。")
     
-    def store_summary(self, task: Task, content: str) -> None:
+    def save_summary(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 summary 内容 (向量索引)...")
         header_parts = [
             task.id,
@@ -316,7 +304,7 @@ class RAG:
             "hierarchical_position": task.hierarchical_position,
             "created_at": datetime.now().isoformat()
         }
-        vector_store_func(
+        vector_add(
             vector_store=vector_store,
             content=full_content,
             metadata=doc_metadata,
@@ -338,13 +326,13 @@ class RAG:
         }
         if not task.parent_id:
             return ret
-        db = get_db(run_id=task.run_id, category=task.category)
-        dependent_design = self.get_dependent_design(db, task)
-        dependent_search = self.get_dependent_search(db, task)
+        task_db = get_task_db(run_id=task.run_id)
+        dependent_design = self.get_dependent_design(task_db, task)
+        dependent_search = self.get_dependent_search(task_db, task)
         text_latest = self.get_text_latest(task)
         task_list = ""
         if len(task.id.split(".")) >= 2:
-            task_list = self.get_task_list(db, task)
+            task_list = self.get_task_list(task_db, task)
         ret.update({
             "dependent_design": dependent_design,
             "dependent_search": dependent_search,
@@ -372,30 +360,30 @@ class RAG:
             ret.update(rag_results)
         return ret
 
-    def get_dependent_design(self, db: Any, task: Task) -> str:
+    def get_dependent_design(self, task_db: Any, task: Task) -> str:
         cache_key = f"dependent_design:{task.run_id}:{task.id}"
         cached_result = self.caches['dependent_design'].get(cache_key)
         if cached_result is not None:
             return cached_result
-        result = db.get_dependent_design(task)
+        result = task_db.get_dependent_design(task)
         self.caches['dependent_design'].set(cache_key, result, tag=task.run_id)
         return result
 
-    def get_dependent_search(self, db: Any, task: Task) -> str:
+    def get_dependent_search(self, task_db: Any, task: Task) -> str:
         cache_key = f"dependent_search:{task.run_id}:{task.id}"
         cached_result = self.caches['dependent_search'].get(cache_key)
         if cached_result is not None:
             return cached_result
-        result = db.get_dependent_search(task)
+        result = task_db.get_dependent_search(task)
         self.caches['dependent_search'].set(cache_key, result, tag=task.run_id)
         return result
 
-    def get_task_list(self, db: Any, task: Task) -> str:
+    def get_task_list(self, task_db: Any, task: Task) -> str:
         cache_key = f"task_list:{task.run_id}:{task.parent_id}"
         cached_result = self.caches['task_list'].get(cache_key)
         if cached_result is not None:
             return cached_result
-        result = db.get_task_list(task)
+        result = task_db.get_task_list(task)
         self.caches['task_list'].set(cache_key, result, tag=task.run_id)
         return result
 
@@ -404,8 +392,8 @@ class RAG:
         cached_result = self.caches['text_latest'].get(key)
         if cached_result is not None:
             return cached_result
-        db = get_db(run_id=task.run_id, category=task.category)
-        full_content = db.get_latest_write_reflection(length)
+        task_db = get_task_db(run_id=task.run_id)
+        full_content = task_db.get_latest_write_reflection(length)
         if len(full_content) <= length:
             result = full_content
         else:
@@ -440,15 +428,15 @@ class RAG:
     def get_aggregate_design(self, task: Task) -> Dict[str, Any]:
         ret = self.get_context_base(task)
         if task.sub_tasks:
-            db = get_db(run_id=task.run_id, category=task.category)
-            ret["subtask_design"] = db.get_subtask_design(task.id)
+            task_db = get_task_db(run_id=task.run_id)
+            ret["subtask_design"] = task_db.get_subtask_design(task.id)
         return ret
 
     def get_aggregate_search(self, task: Task) -> Dict[str, Any]:
         ret = self.get_context_base(task)
         if task.sub_tasks:
-            db = get_db(run_id=task.run_id, category=task.category)
-            ret["subtask_search"] = db.get_subtask_search(task.id)
+            task_db = get_task_db(run_id=task.run_id)
+            ret["subtask_search"] = task_db.get_subtask_search(task.id)
         return ret
 
     def get_aggregate_summary(self, task: Task) -> Dict[str, Any]:
@@ -460,8 +448,8 @@ class RAG:
             ),
         }
         if task.sub_tasks:
-            db = get_db(run_id=task.run_id, category=task.category)
-            ret["subtask_summary"] = db.get_subtask_summary(task.id)
+            task_db = get_task_db(run_id=task.run_id)
+            ret["subtask_summary"] = task_db.get_subtask_summary(task.id)
         return ret
 
     def get_inquiry(
@@ -730,29 +718,29 @@ if __name__ == "__main__":
         )
         logger.info(f"使用模拟任务: {mock_task.model_dump_json(indent=2)}")
 
-        # 2. 测试 store_design
-        logger.info("--- 正在测试 store_design ---")
+        # 2. 测试 save_design
+        logger.info("--- 正在测试 save_design ---")
         design_content = "这是一个详细的设计方案。主角是一个年轻的法师，他发现了一个古老的秘密。世界观是魔法与科技并存。"
-        rag.store_design(mock_task, design_content)
-        logger.success("--- store_design 测试完成 ---")
+        rag.save_design(mock_task, design_content)
+        logger.success("--- save_design 测试完成 ---")
 
-        # 3. 测试 store_search
-        logger.info("--- 正在测试 store_search ---")
+        # 3. 测试 save_search
+        logger.info("--- 正在测试 save_search ---")
         search_content = "关于“魔法与科技并存”设定的市场调研结果：\n- 优点：受众广泛，想象空间大。\n- 缺点：容易出现设定冲突。"
-        rag.store_search(mock_task, search_content)
-        logger.success("--- store_search 测试完成 ---")
+        rag.save_search(mock_task, search_content)
+        logger.success("--- save_search 测试完成 ---")
 
-        # 4. 测试 store_write
-        logger.info("--- 正在测试 store_write ---")
+        # 4. 测试 save_write
+        logger.info("--- 正在测试 save_write ---")
         write_content = "第一章的开头。清晨，阳光穿过浮空城市的缝隙，照亮了艾瑞克简陋的房间。他桌上的机械臂正小心翼翼地擦拭着一根老旧的法杖。"
-        rag.store_write(mock_task, write_content)
-        logger.success("--- store_write 测试完成 ---")
+        rag.save_write(mock_task, write_content)
+        logger.success("--- save_write 测试完成 ---")
 
-        # 5. 测试 store_summary
-        logger.info("--- 正在测试 store_summary ---")
+        # 5. 测试 save_summary
+        logger.info("--- 正在测试 save_summary ---")
         summary_content = "本章介绍了主角艾瑞克和他所处的世界，一个魔法与科技交融的浮空城市。通过开头的场景，暗示了主角的背景和故事的基调。"
-        rag.store_summary(mock_task, summary_content)
-        logger.success("--- store_summary 测试完成 ---")
+        rag.save_summary(mock_task, summary_content)
+        logger.success("--- save_summary 测试完成 ---")
 
         logger.info("所有 RAG 存储功能测试已完成。请检查 .chroma_db, .kuzu_db 等目录下的 'test_run_12345' 文件夹以验证结果。")
 

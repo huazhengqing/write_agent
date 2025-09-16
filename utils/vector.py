@@ -12,12 +12,14 @@ from llama_index.core import (
     SimpleDirectoryReader,
     VectorStoreIndex,
 )
+from llama_index.core import PromptTemplate
 from llama_index.core.indices.prompt_helper import PromptHelper
 from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
 from llama_index.core.postprocessor import LLMRerank
 from llama_index.core.response_synthesizers import CompactAndRefine
 from llama_index.core.schema import NodeWithScore
-from llama_index.core.vector_stores import MetadataFilters, VectorStore
+from llama_index.core.vector_stores import MetadataFilters
+from llama_index.core.vector_stores.types import VectorStore
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.llms.litellm import LiteLLM
@@ -38,7 +40,7 @@ def get_embed_model() -> LiteLLMEmbedding:
         logger.success("嵌入模型初始化完成。")
     return _embed_model
 
-def get_chroma_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
+def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
     logger.info(f"正在访问ChromaDB: path='{db_path}', collection='{collection_name}'")
     os.makedirs(db_path, exist_ok=True)
     db = chromadb.PersistentClient(path=db_path)
@@ -53,8 +55,6 @@ def vector_query(
     filters: Optional[MetadataFilters] = None,
     similarity_top_k: int = 15,
     rerank_top_n: Optional[int] = 3,
-    rerank_llm_type: str = 'fast',
-    synthesis_llm_type: str = 'reasoning',
 ) -> Tuple[Optional[str], Optional[List[NodeWithScore]]]:
     logger.info(f"🚀 开始执行向量查询与合成: '{query_text}'")
 
@@ -64,16 +64,44 @@ def vector_query(
     postprocessors = []
     if rerank_top_n and rerank_top_n > 0:
         logger.info(f"正在配置LLM重排序器 (top_n={rerank_top_n})...")
-        rerank_llm_params = get_llm_params(llm=rerank_llm_type)
+        rerank_llm_params = get_llm_params(llm="fast")
         reranker = LLMRerank(choice_batch_size=5, top_n=rerank_top_n, llm=LiteLLM(**rerank_llm_params))
         postprocessors.append(reranker)
         log_message = f"正在执行查询：初步检索 {similarity_top_k} 个文档，重排并选出前 {rerank_top_n} 个用于合成答案..."
     else:
         log_message = f"正在执行查询：检索 {similarity_top_k} 个文档用于合成答案 (无重排)..."
-    
-    synthesis_llm_params = get_llm_params(llm=synthesis_llm_type)
+
+    synthesis_llm_params = get_llm_params(llm="reasoning")
     synthesis_llm = LiteLLM(**synthesis_llm_params)
 
+    # 定义中文提示词
+    TEXT_QA_TEMPLATE_CN = PromptTemplate(
+        """你是一个问答机器人。
+        你将根据以下上下文回答问题。
+        ---------------------
+        {context_str}
+        ---------------------
+        基于以上上下文，请回答以下问题：{query_str}
+        """
+    )
+
+    REFINE_TEMPLATE_CN = PromptTemplate(
+        """你是一个问答机器人，你正在改进一个已有的答案。
+        你已经提供了一个答案：{existing_answer}
+        你现在有更多的上下文信息：
+        ---------------------
+        {context_msg}
+        ---------------------
+        请根据新的上下文信息改进你的答案。
+        如果你不能改进你的答案，请直接返回已有的答案。
+        """
+    )
+
+    # response_synthesizer = get_response_synthesizer(
+    #     llm=synthesis_llm,
+    #     text_qa_template=TEXT_QA_TEMPLATE_CN,
+    #     refine_template=REFINE_TEMPLATE_CN
+    # )
     response_synthesizer = CompactAndRefine(
         llm=synthesis_llm,
         prompt_helper=PromptHelper(
@@ -81,6 +109,8 @@ def vector_query(
             num_output=synthesis_llm_params['max_tokens'],
             chunk_overlap_ratio=0.2
         )
+        ,text_qa_template=TEXT_QA_TEMPLATE_CN,
+        refine_template=REFINE_TEMPLATE_CN
     )
 
     query_engine = index.as_query_engine(
@@ -112,43 +142,30 @@ def _default_file_metadata(file_path_str: str) -> dict:
         "modification_date": modification_time,
     }
 
-def store_from_directory(
+def vector_add_from_dir(
     vector_store: VectorStore,
     input_dir: str,
     file_metadata_func: Optional[Callable[[str], dict]] = None,
-    recursive: bool = True,
-    required_exts: Optional[List[str]] = None,
 ) -> bool:
     """
     从指定目录加载、解析文件，并将内容存入向量数据库。
-
     Args:
         vector_store (VectorStore): 目标向量存储。
         input_dir (str): 输入目录的路径。
         file_metadata_func (Optional[Callable[[str], dict]]): 用于从文件名生成元数据的函数。如果为None，则使用默认函数提取文件名和时间戳。
-        recursive (bool): 是否递归搜索子目录。
-        required_exts (Optional[List[str]]): 需要加载的文件扩展名列表。默认为 [".md", ".txt", ".json"]。
-
-    Returns:
-        bool: 如果成功处理并存储了至少一个文件，则返回 True，否则返回 False。
     """
     logger.info(f"📂 开始从目录 '{input_dir}' 摄取文件...")
-    if required_exts is None:
-        required_exts = [".md", ".txt", ".json"]
-
     metadata_func = file_metadata_func or _default_file_metadata
-
     reader = SimpleDirectoryReader(
         input_dir=input_dir,
-        required_exts=required_exts,
+        required_exts=[".md", ".txt", ".json"],
         file_metadata=metadata_func,
-        recursive=recursive,
+        recursive=True,
         exclude_hidden=False
     )
     documents = reader.load_data()
-
     if not documents:
-        logger.warning(f"🤷 在 '{input_dir}' 目录中未找到任何符合要求的文件 ({required_exts})。")
+        logger.warning(f"🤷 在 '{input_dir}' 目录中未找到任何符合要求的文件。")
         return False
 
     logger.info(f"🔍 找到 {len(documents)} 个文件，开始解析并构建节点...")
@@ -161,15 +178,13 @@ def store_from_directory(
         if not doc.text.strip():
             logger.warning(f"⚠️ 文件 '{file_path.name}' 内容为空，已跳过。")
             continue
-
         if file_path.suffix == ".md":
             nodes = md_parser.get_nodes_from_documents([doc])
         elif file_path.suffix == ".json":
             # JSON文件作为一个整体节点，不进行分割
             nodes = [doc]
-        else:  # 默认为文本解析器
+        else:
             nodes = txt_parser.get_nodes_from_documents([doc])
-
         logger.info(f"  - 文件 '{file_path.name}' 被解析成 {len(nodes)} 个节点。")
         all_nodes.extend(nodes)
 
@@ -184,7 +199,7 @@ def store_from_directory(
         return False
 
 
-def store(
+def vector_add(
     vector_store: VectorStore,
     content: str,
     metadata: Dict[str, Any],
@@ -235,12 +250,12 @@ if __name__ == "__main__":
 
     test_db_path = "./.test_chroma_db_vector"
     test_collection_name = "test_collection_vector"
-    vector_store = get_chroma_vector_store(db_path=test_db_path, collection_name=test_collection_name)
+    vector_store = get_vector_store(db_path=test_db_path, collection_name=test_collection_name)
     
     doc_id_1 = "single_doc_001"
     metadata_1 = {"type": "test_doc", "author": "tester1"}
     content_1 = "这是一个关于人工智能如何改变软件工程的测试文档。"
-    store(
+    vector_store(
         vector_store=vector_store,
         content=content_1,
         metadata=metadata_1,
@@ -257,7 +272,7 @@ if __name__ == "__main__":
     with open(os.path.join(test_input_dir, "test2.md"), "w", encoding="utf-8") as f:
         f.write("# Markdown 测试\n\n这是一个 Markdown 文件，讨论了大型语言模型（LLM）的应用。")
 
-    store_from_directory(
+    vector_add_from_dir(
         vector_store=vector_store,
         input_dir=test_input_dir,
         required_exts=[".txt", ".md"]

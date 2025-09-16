@@ -5,11 +5,11 @@ from loguru import logger
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
+from utils.file import data_market_dir
 from utils.llm import call_agent
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
-from market_analysis.story.common import output_market_dir
-from market_analysis.story.tasks import task_store
+from market_analysis.story.tasks import task_save_data
 
 
 PLATFORM_RESEARCH_SYSTEM_PROMPT = """
@@ -122,7 +122,7 @@ def save_to_md(platform: str, md_content: Optional[str]) -> Optional[str]:
         logger.warning(f"内容为空，跳过为平台 '{platform}' 保存Markdown文件。")
         return None
     platform_filename_md = f"{platform.replace(' ', '_')}.md"
-    file_path_md = output_market_dir / platform_filename_md
+    file_path_md = data_market_dir / platform_filename_md
     file_path_md.write_text(md_content, encoding="utf-8")
     logger.success(f"{platform} 平台基础信息已保存为Markdown文件: {file_path_md}")
     return str(file_path_md.resolve())
@@ -136,7 +136,7 @@ def search_platform_all(platforms: List[str]):
         platform=platforms,
         md_content=report_futures
     )
-    store_futures = task_store.map(
+    store_futures = task_save_data.map(
         content=report_futures,
         doc_type="platform_profile",
         content_format="markdown",

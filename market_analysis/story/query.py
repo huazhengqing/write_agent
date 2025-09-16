@@ -11,7 +11,7 @@ from market_analysis.story.common import get_market_vector_store
 from utils.vector import vector_query
 
 
-def query_market_reports(
+def market_story_query(
     query_text: str,
     query_date: Optional[str] = None,
     num_results: int = 3,
@@ -25,16 +25,13 @@ def query_market_reports(
         Tuple[Optional[str], Optional[List[NodeWithScore]]]: 返回一个元组，包含 (合成的答案字符串, 来源节点列表)。如果失败则返回 (None, None)。
     """
     logger.info(f"🚀 开始市场报告查询: '{query_text}'")
-    
-    vector_store = get_market_vector_store()
-
     filters = None
     if query_date:
         logger.info(f"  - 配置元数据过滤器，按日期筛选: {query_date}")
         filters = MetadataFilters(filters=[ExactMatchFilter(key="date", value=query_date)])
 
     answer, source_nodes = vector_query(
-        vector_store=vector_store,
+        vector_store=get_market_vector_store(),
         query_text=query_text,
         filters=filters,
         rerank_top_n=num_results
@@ -59,5 +56,7 @@ def query_market_reports(
 
 if __name__ == "__main__":
     query = "起点小说平台的 签约审核流程 "
-    query_market_reports(query_text=query)
+    market_story_query(query_text=query)
+
+
 

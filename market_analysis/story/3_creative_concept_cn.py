@@ -10,9 +10,11 @@ from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
-from market_analysis.story.common import get_market_vector_store, get_market_tools, output_market_dir
-from market_analysis.story.tasks import task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, task_store
-from utils.llm import call_agent, get_llm_messages, get_llm_params, llm_completion, vector_query
+from utils.file import data_market_dir
+from utils.llm import call_agent, get_llm_messages, get_llm_params, llm_completion
+from utils.vector import vector_query
+from market_analysis.story.common import get_market_vector_store, get_market_tools
+from market_analysis.story.tasks import task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, task_save_data
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
 
@@ -325,7 +327,7 @@ def task_deep_dive_analysis(platform: str, genre: str, platform_profile: str, br
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = f"{platform.replace(' ', '_')}_{genre.replace(' ', '_')}_{timestamp}_deep_dive.md"
-    file_path = output_market_dir / file_name
+    file_path = data_market_dir / file_name
     file_path.write_text(report, encoding="utf-8")
     logger.success(f"报告已保存为Markdown文件: {file_path}")
 
@@ -344,7 +346,7 @@ def task_generate_opportunities(market_report: str, genre: str) -> Optional[str]
     logger.info("启动创意脑暴，生成小说选题...")
     logger.info(f"正在查询【{genre}】相关的历史创意库，避免重复...")
     
-    _, historical_concepts_nodes = vector_query(
+    _, historical_concepts_nodes = utils.vector.vector_query(
         vector_store=get_market_vector_store(),
         query_text=f"{genre} 小说核心创意",
         filters=MetadataFilters(filters=[ExactMatchFilter(key="type", value="novel_concept")]),
@@ -432,7 +434,7 @@ def task_save_markdown(platform: str, genre: str, deep_dive_report: str, final_o
     logger.info(f"生成【{platform} - {genre}】的汇总 Markdown 文件...")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = f"{platform.replace(' ', '_')}_{genre.replace(' ', '_')}_{timestamp}_summary.md"
-    file_path = output_market_dir / file_name
+    file_path = data_market_dir / file_name
 
     summary_content = f"""
 # 【{platform}】平台 - 【{genre}】创意总结报告
@@ -510,7 +512,7 @@ def creative_concept(candidates_to_explore: List[Candidate]):
         try:
             report_content = future.result()
             if report_content:
-                task_store(
+                task_save_data(
                     content=report_content,
                     doc_type="deep_dive_report",
                     platform=candidate.platform,
@@ -560,7 +562,7 @@ def creative_concept(candidates_to_explore: List[Candidate]):
         logger.info(f"选择: 【{final_choice_obj.platform}】 - 【{final_choice_obj.genre}】")
         logger.info(f"理由: {final_choice_obj.reasoning}")
 
-        task_store(
+        task_save_data(
             content=final_decision_result.model_dump_json(indent=2, ensure_ascii=False),
             doc_type="final_decision_report",
             platform=final_choice_data["platform"],
@@ -579,7 +581,7 @@ def creative_concept(candidates_to_explore: List[Candidate]):
         logger.info(f"选择: 【{final_choice_obj.platform}】 - 【{final_choice_obj.genre}】")
         logger.info(f"理由: {final_choice_obj.reasoning}")
         logger.info(f"完整排名:\n{json.dumps([r.model_dump() for r in final_decision_result.ranking], indent=2, ensure_ascii=False)}")
-        task_store(
+        task_save_data(
             content=final_decision_result.model_dump_json(indent=2, ensure_ascii=False),
             doc_type="final_decision_report",
             platform=final_choice_obj.platform,
@@ -604,7 +606,7 @@ def creative_concept(candidates_to_explore: List[Candidate]):
         logger.error(f"生成小说选题失败，工作流终止。")
         return
 
-    task_store(
+    task_save_data(
         content=final_opportunities,
         doc_type="opportunity_generation_report",
         platform=chosen_platform,
@@ -620,7 +622,7 @@ def creative_concept(candidates_to_explore: List[Candidate]):
         logger.error(f"深化小说创意失败，工作流终止。")
         return
 
-    task_store(
+    task_save_data(
         content=detailed_concept,
         doc_type="novel_concept",
         platform=chosen_platform,

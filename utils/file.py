@@ -9,11 +9,14 @@ from utils.models import Task, CategoryType
 
 project_root = Path(__file__).resolve().parent.parent
 
-log_dir = project_root / ".logs"
-log_dir.mkdir(parents=True, exist_ok=True)
+data_dir = project_root / ".data"
+data_dir.mkdir(parents=True, exist_ok=True)
 
-litellm_cache_dir = project_root / ".litellm_cache"
-litellm_cache_dir.mkdir(parents=True, exist_ok=True)
+data_market_dir = data_dir / "market"
+data_market_dir.mkdir(parents=True, exist_ok=True)
+
+data_platform_dir = data_dir / "platform"
+data_platform_dir.mkdir(parents=True, exist_ok=True)
 
 prefect_dir = project_root / ".prefect"
 os.environ["PREFECT_HOME"] = str(prefect_dir)
@@ -21,33 +24,14 @@ prefect_dir.mkdir(parents=True, exist_ok=True)
 prefect_storage_path = prefect_dir / "storage"
 prefect_storage_path.mkdir(parents=True, exist_ok=True)
 
-sqlite_dir = project_root / ".sqlite"
-sqlite_dir.mkdir(parents=True, exist_ok=True)
-for category in get_args(CategoryType):
-    (sqlite_dir / category).mkdir(exist_ok=True)
-
 cache_dir = project_root / ".cache"
 cache_dir.mkdir(parents=True, exist_ok=True)
-for category in get_args(CategoryType):
-    (cache_dir / category).mkdir(exist_ok=True)
 
-chroma_dir = project_root / ".chroma_db"
-chroma_dir.mkdir(parents=True, exist_ok=True)
-for category in get_args(CategoryType):
-    (chroma_dir / category).mkdir(exist_ok=True)
-
-kuzu_dir = project_root / ".kuzu_db"
-kuzu_dir.mkdir(parents=True, exist_ok=True)
-
-input_dir = project_root / ".input"
-input_dir.mkdir(parents=True, exist_ok=True)
-for category in get_args(CategoryType):
-    (input_dir / category).mkdir(exist_ok=True)
-
-output_dir = project_root / ".output"
+output_dir = project_root / "output"
 output_dir.mkdir(parents=True, exist_ok=True)
-for category in get_args(CategoryType):
-    (output_dir / category).mkdir(exist_ok=True)
+
+log_dir = project_root / "logs"
+log_dir.mkdir(parents=True, exist_ok=True)
 
 
 def sanitize_filename(name: str) -> str:
@@ -57,7 +41,7 @@ def sanitize_filename(name: str) -> str:
 
 
 def get_text_file_path(task: Task) -> str:
-    return os.path.join(output_dir, task.category, f"{task.run_id}.txt")
+    return os.path.join(output_dir, f"{task.run_id}.txt")
 
 
 def text_file_append(file_path: str, content: str):

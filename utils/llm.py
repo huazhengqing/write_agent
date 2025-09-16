@@ -12,10 +12,9 @@ from loguru import logger
 from typing import List, Dict, Any, Literal, Optional, Type, Callable, Union
 from pydantic import BaseModel, ValidationError
 from llama_index.core.agent.workflow import ReActAgent
-from llama_index.core.workflow import Context
 from llama_index.llms.litellm import LiteLLM
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from utils.file import litellm_cache_dir
+from utils.file import cache_dir
 from utils.search import web_search_tools
 
 
@@ -152,7 +151,7 @@ def custom_get_cache_key(**kwargs):
     return hashlib.sha256(key_string.encode("utf-8")).hexdigest()
 
 
-cache = Cache(type="disk", disk_cache_dir=litellm_cache_dir)
+cache = Cache(type="disk", disk_cache_dir=cache_dir)
 cache.get_cache_key = custom_get_cache_key
 litellm.cache = cache
 litellm.enable_json_schema_validation=True
@@ -375,7 +374,7 @@ def call_agent(
     logger.info(f"系统提示词:\n{system_prompt}")
     logger.info(f"用户提示词:\n{user_prompt}")
     response = agent.run(user_prompt)
-    raw_output = response.response.content
+    raw_output = response.response
     cleaned_output = clean_markdown_fences(raw_output)
     if response_model:
         logger.info("Agent 执行完成，正在将自然语言输出转换为结构化 JSON...")

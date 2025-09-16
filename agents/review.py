@@ -1,5 +1,5 @@
 import os
-from utils.sqlite import get_db
+from utils.sqlite import get_task_db
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, LLM_TEMPERATURES, llm_completion
 from utils.rag import get_rag
@@ -22,7 +22,7 @@ def review_write(task: Task) -> Task:
     SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "review_write_cn", "SYSTEM_PROMPT", "USER_PROMPT")
     context = get_rag().get_context(task)
     context.update({
-        "text": get_db(task.run_id, task.category).get_write_text(task)
+        "text": get_task_db(task.run_id).get_write_text(task)
     })
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
     llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["reasoning"])

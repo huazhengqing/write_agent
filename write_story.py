@@ -14,7 +14,7 @@ from agents.hierarchy import hierarchy, hierarchy_reflection
 from agents.review import review_design, review_write
 from agents import route
 from utils.rag import get_rag
-from utils.sqlite import get_db
+from utils.sqlite import get_task_db
 from prefect import flow, task
 
 
@@ -282,12 +282,12 @@ def task_review_write(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_store_{operation_name}",
 )
-def task_store(task: Task, operation_name: str) -> bool:
+def task_save_data(task: Task, operation_name: str) -> bool:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         if not task.id or not task.goal:
-            raise ValueError(f"传递给 task_store 的任务信息不完整, 缺少ID或目标: {task}")
-        get_rag().add(task, operation_name)
+            raise ValueError(f"传递给 task_save_data 的任务信息不完整, 缺少ID或目标: {task}")
+        get_rag().save_data(task, operation_name)
         return True
 
 
@@ -310,7 +310,7 @@ def flow_write_story(current_task: Task):
 
         day_wordcount_goal = getattr(current_task, 'day_wordcount_goal', 0)
         if day_wordcount_goal > 0:
-            db = get_db(run_id=current_task.run_id, category=current_task.category)
+            db = get_task_db(run_id=current_task.run_id)
             word_count_24h = db.get_word_count_last_24h()
             if word_count_24h >= day_wordcount_goal:
                 logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停任务: {current_task.run_id}")
@@ -318,41 +318,41 @@ def flow_write_story(current_task: Task):
 
         logger.info(f"判断原子任务='{current_task.id}' ")
         task_result = task_atom(current_task)
-        task_store(task_result, "task_atom")
+        task_save_data(task_result, "task_atom")
         if task_result.results.get("atom_result") == "atom": 
             if task_result.task_type == "design":
                 logger.info(f"执行: design 任务='{current_task.id}'")
                 category = task_route(task_result)
                 logger.info(f"执行: design {category} 任务='{current_task.id}'")
                 task_result = task_design(task_result, category=category)
-                task_store(task_result, f"task_design_{category}")
+                task_save_data(task_result, f"task_design_{category}")
             elif task_result.task_type == "search":
                 logger.info(f"执行: search 任务='{current_task.id}'")
                 task_result = task_search(task_result)
-                task_store(task_result, "task_search")
+                task_save_data(task_result, "task_search")
             elif task_result.task_type == "write":
                 logger.info(f"执行: 设计反思: write 任务='{current_task.id}'")
                 task_result = task_write_before_reflection(task_result)
-                task_store(task_result, "task_write_before_reflection")
+                task_save_data(task_result, "task_write_before_reflection")
 
                 logger.info(f"执行: 写作初稿: write 任务='{current_task.id}'")
                 task_result = task_write(task_result)
-                task_store(task_result, "task_write")
+                task_save_data(task_result, "task_write")
 
                 logger.info(f"执行: 反思初稿: write 任务='{current_task.id}'")
                 task_result = task_write_reflection(task_result)
-                task_store(task_result, "task_write_reflection")
+                task_save_data(task_result, "task_write_reflection")
 
                 logger.info(f"执行: 正文摘要: write 任务='{current_task.id}'")
                 task_result = task_summary(task_result)
-                task_store(task_result, "task_summary")
+                task_save_data(task_result, "task_summary")
                 
                 keywords_to_skip_review = ["全书", "卷", "幕", "段落", "场景"]
                 position = task_result.hierarchical_position
                 if position and "章" in position and not any(keyword in position for keyword in keywords_to_skip_review):
                     logger.info(f"执行: 审查正文: write 任务='{task_result.id}' ")
                     task_result = task_review_write(task_result)
-                    task_store(task_result, "task_review_write")
+                    task_save_data(task_result, "task_review_write")
             else:
                 raise ValueError(f"未知的原子任务类型: {task_result.task_type}")
         else:
@@ -361,31 +361,31 @@ def flow_write_story(current_task: Task):
             if (task_result.task_type == "write" and 'design_insufficient' not in complex_reasons):
                 logger.info(f"审查设计方案: write 任务='{task_result.id}' ")
                 task_result = task_review_design(task_result)
-                task_store(task_result, "task_review_design")
+                task_save_data(task_result, "task_review_design")
 
                 logger.info(f"划分结构: write 任务='{task_result.id}' ")
                 task_result = task_hierarchy(task_result)
-                task_store(task_result, "task_hierarchy")
+                task_save_data(task_result, "task_hierarchy")
 
                 logger.info(f"反思划分结构结果: write 任务='{task_result.id}' ")
                 task_result = task_hierarchy_reflection(task_result)
-                task_store(task_result, "task_hierarchy_reflection")
+                task_save_data(task_result, "task_hierarchy_reflection")
             
             logger.info(f"分解: write 任务='{task_result.id}' ")
             task_result = task_plan(task_result)
-            task_store(task_result, "task_plan")
+            task_save_data(task_result, "task_plan")
 
             if task_result.task_type in ["write", "design"]:
                 logger.info(f"反思分解结果: write 任务='{task_result.id}' ")
                 task_result = task_plan_reflection(task_result)
-                task_store(task_result, "task_plan_reflection")
+                task_save_data(task_result, "task_plan_reflection")
 
             if task_result.sub_tasks:
                 logger.info(f"任务 '{current_task.id}' 分解为 {len(task_result.sub_tasks)} 个子任务, 开始递归处理。")
                 for sub_task in task_result.sub_tasks:
 
                     if day_wordcount_goal > 0:
-                        db = get_db(run_id=current_task.run_id, category=current_task.category)
+                        db = get_task_db(run_id=current_task.run_id)
                         word_count_24h = db.get_word_count_last_24h()
                         if word_count_24h >= day_wordcount_goal:
                             logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停处理后续子任务: {sub_task.run_id}")
@@ -399,20 +399,20 @@ def flow_write_story(current_task: Task):
                     if position and "章" in position and not any(keyword in position for keyword in keywords_to_skip_review):
                         logger.info(f"审查正文: write 任务='{task_result.id}' ")
                         task_result = task_review_write(task_result)
-                        task_store(task_result, "task_review_write")
+                        task_save_data(task_result, "task_review_write")
 
                 if task_result.task_type == "design":
                     logger.info(f"聚合: design 任务='{task_result.id}' ")
                     task_result = task_aggregate_design(task_result)
-                    task_store(task_result, "task_aggregate_design")
+                    task_save_data(task_result, "task_aggregate_design")
                 elif task_result.task_type == "search":
                     logger.info(f"聚合: search 任务='{task_result.id}' ")
                     task_result = task_aggregate_search(task_result)
-                    task_store(task_result, "task_aggregate_search")
+                    task_save_data(task_result, "task_aggregate_search")
                 elif task_result.task_type == "write":
                     logger.info(f"聚合摘要: write 任务='{task_result.id}' ")
                     task_result = task_aggregate_summary(task_result)
-                    task_store(task_result, "task_aggregate_summary")
+                    task_save_data(task_result, "task_aggregate_summary")
                 else:
                     raise ValueError(f"未知的聚合任务类型: {task_result.task_type}")
             else:

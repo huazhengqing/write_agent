@@ -19,28 +19,31 @@ from llama_index.core.postprocessor import LLMRerank
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.response_synthesizers import BaseSynthesizer, CompactAndRefine
-from llama_index.core.vector_stores import MetadataFilters, VectorStore
+from llama_index.core.vector_stores import MetadataFilters
+from llama_index.core.vector_stores.types import VectorStore
 from llama_index.graph_stores.kuzu import KuzuGraphStore
 from llama_index.llms.litellm import LiteLLM
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from .llm import LLM_TEMPERATURES, get_llm_messages, get_llm_params, llm_completion
-from .models import natural_sort_key
-from .vector import get_embed_model
+from utils.llm import LLM_TEMPERATURES, get_llm_messages, get_llm_params, llm_completion
+from utils.models import natural_sort_key
+from utils.vector import get_embed_model
 from utils.log import init_logger
 
 
-def get_kuzu_graph_store(db_path: str) -> KuzuGraphStore:
+def get_kg_store(db_path: str) -> KuzuGraphStore:
     logger.info(f"正在访问 Kùzu 图数据库: path='{db_path}'")
-    os.makedirs(db_path, exist_ok=True)
+    parent_dir = os.path.dirname(db_path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
     db = kuzu.Database(db_path)
     graph_store = KuzuGraphStore(db)
     logger.success(f"Kùzu 图数据库已在路径 '{db_path}' 准备就绪。")
     return graph_store
 
 
-def store(
+def kg_add(
     storage_context: StorageContext,
     content: str,
     metadata: Dict[str, Any],
@@ -260,16 +263,18 @@ def hybrid_query(
 
 
 if __name__ == "__main__":
+    import shutil
     from datetime import datetime
-    from utils.vector import get_chroma_vector_store
+    from utils.vector import get_vector_store
 
     init_logger(os.path.splitext(os.path.basename(__file__))[0])
 
     test_db_path = "./.test_chroma_db_graph"
     test_kuzu_path = "./.test_kuzu_db_graph"
+
     test_collection_name = "test_collection_graph"
-    vector_store = get_chroma_vector_store(db_path=test_db_path, collection_name=test_collection_name)
-    graph_store = get_kuzu_graph_store(db_path=test_kuzu_path)
+    vector_store = get_vector_store(db_path=test_db_path, collection_name=test_collection_name)
+    graph_store = get_kg_store(db_path=test_kuzu_path)
     storage_context = StorageContext.from_defaults(
         vector_store=vector_store,
         graph_store=graph_store
@@ -277,8 +282,8 @@ if __name__ == "__main__":
 
     doc_id = "test_story_001"
     metadata = {
-        "author": "测试员", 
-        "task_id": "第一章", 
+        "author": "测试员",
+        "task_id": "第一章",
         "created_at": datetime.now().isoformat()
     }
     content = """
@@ -289,7 +294,6 @@ if __name__ == "__main__":
     这块石头，就是传说中的“苍穹之石”，据说拥有连接天空与大地的力量。
     村里的长老曾说过，只有心灵纯洁的人才能唤醒它。
     """
-    # 用于知识图谱三元组提取的提示
     kg_extraction_prompt = """
     从以下文本中提取知识三元组。三元组应为 (主语, 谓语, 宾语) 格式。
     请专注于实体及其之间的关系。
@@ -303,9 +307,9 @@ if __name__ == "__main__":
     提取的三元组:
     """
 
-    # 4. 调用 store 函数将内容存入知识图谱和向量存储
+    # --- 存储 ---
     logger.info("\n--- 步骤1: 开始存储内容 ---")
-    store(
+    kg_add(
         storage_context=storage_context,
         content=content,
         metadata=metadata,
@@ -315,7 +319,7 @@ if __name__ == "__main__":
     )
     logger.success("--- 内容存储完成 ---")
 
-    # 5. 准备查询
+    # --- 查询 ---
     logger.info("\n--- 步骤2: 开始混合查询 ---")
     retrieval_query_text = "小明和苍穹之石有什么关系？"
     synthesis_query_text = f"请详细总结一下关于'{retrieval_query_text}'的所有信息。"
@@ -335,6 +339,20 @@ if __name__ == "__main__":
     请综合以上所有信息，给出最终的详细回答。
     """
 
+    # 为知识图谱查询定义一个更明确的 NL2GraphQuery 提示
+    kg_gen_query_prompt_template = """
+    你是一个图数据库专家。根据提供的图谱模式和自然语言问题，生成一个 Cypher 查询语句来回答问题。
+    只输出 Cypher 查询语句，不要有任何解释或代码块标记。
+
+    图谱模式:
+    {schema}
+
+    问题: {query_str}
+
+    Cypher 查询:
+    """
+    kg_nl2graphquery_prompt = PromptTemplate(template=kg_gen_query_prompt_template)
+
     final_answer = hybrid_query(
         retrieval_query_text=retrieval_query_text,
         synthesis_query_text=synthesis_query_text,
@@ -342,9 +360,7 @@ if __name__ == "__main__":
         synthesis_user_prompt=synthesis_user_prompt,
         vector_store=vector_store,
         graph_store=graph_store,
+        kg_nl2graphquery_prompt=kg_nl2graphquery_prompt,
     )
     logger.success("\n--- 最终综合回答 ---")
     logger.info(f"\n{final_answer}")
-
-    logger.info("\n--- 测试完成 ---")
-    logger.info(f"你可以检查以下目录来验证结果: '{test_db_path}', '{test_kuzu_path}'")

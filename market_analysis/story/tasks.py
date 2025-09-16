@@ -10,7 +10,7 @@ from market_analysis.story.common import (
     get_market_vector_store,
     get_market_tools,
 )
-from utils.vector import store as vector_store_func, vector_query
+from utils.vector import vector_add, vector_query
 from utils.llm import call_agent
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import task
@@ -117,7 +117,7 @@ def task_new_author_opportunity(platform: str) -> str:
 
 
 @task(
-    name="task_store",
+    name="task_save_data",
     persist_result=True,
     result_storage=local_storage,
     result_serializer=readable_json_serializer,
@@ -125,20 +125,20 @@ def task_new_author_opportunity(platform: str) -> str:
     retries=2,
     retry_delay_seconds=10,
 )
-def task_store(
+def task_save_data(
     content: str, doc_type: str, content_format: str = "text", **metadata: Any
 ) -> bool:
     logger.info(f"准备将类型为 '{doc_type}' (格式: {content_format}) 的报告存入向量库...")
     final_metadata = metadata.copy()
     final_metadata["type"] = doc_type
-    success = vector_store_func(
-        vector_store=get_market_vector_store(),
+    success = vector_add(
+        vector_store =get_market_vector_store(),
         content=content,
         metadata=final_metadata,
         content_format=content_format,
     )
     if success:
-        logger.success(f"任务 'task_store' (类型: {doc_type}) 成功完成。")
+        logger.success(f"任务 'task_save_data' (类型: {doc_type}) 成功完成。")
     else:
-        logger.warning(f"任务 'task_store' (类型: {doc_type}) 执行失败或内容为空被跳过。")
+        logger.warning(f"任务 'task_save_data' (类型: {doc_type}) 执行失败或内容为空被跳过。")
     return success

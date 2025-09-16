@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from market_analysis.story.common import get_market_tools
-from market_analysis.story.tasks import task_load_platform_profile, task_platform_briefing, task_new_author_opportunity, task_store
+from market_analysis.story.tasks import task_load_platform_profile, task_platform_briefing, task_new_author_opportunity, task_save_data
 from utils.llm import call_agent, llm_completion, get_llm_params, get_llm_messages
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
@@ -225,7 +225,7 @@ def platform_subject(platforms_to_scan: list[str]):
             scan_future = scan_futures[i]
             report = scan_future.result()
             platform_reports[platform_name] = report
-            task_store(
+            task_save_data(
                 content=report,
                 doc_type="broad_scan_report",
                 platform=platform_name,
@@ -239,7 +239,7 @@ def platform_subject(platforms_to_scan: list[str]):
         try:
             opportunity_report = opportunity_futures[i].result()
             new_author_reports[platform_name] = opportunity_report
-            task_store(
+            task_save_data(
                 content=opportunity_report,
                 doc_type="new_author_opportunity_report",
                 platform=platform_name,
@@ -290,7 +290,7 @@ def platform_subject(platforms_to_scan: list[str]):
             try:
                 platform, genre, trend_report = future.result()
                 external_trend_reports[f"{platform}-{genre}"] = trend_report
-                task_store(
+                task_save_data(
                     content=trend_report,
                     doc_type="external_trend_report",
                     platform=platform,
@@ -306,7 +306,7 @@ def platform_subject(platforms_to_scan: list[str]):
         logger.warning("未能从决策任务中获得有效结果，工作流终止。")
         return
 
-    task_store(
+    task_save_data(
         content=initial_decision.model_dump_json(indent=2, ensure_ascii=False),
         doc_type="market_analysis_result",
         platform="summary",

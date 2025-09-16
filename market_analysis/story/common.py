@@ -8,28 +8,19 @@ from llama_index.core.tools import FunctionTool
 from llama_index.core.schema import NodeWithScore
 from loguru import logger
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from utils.file import input_dir, output_dir, chroma_dir
+from utils.file import data_market_dir
 from utils.search import web_search_tools
-from utils.vector import vector_query, get_chroma_vector_store
+from utils.vector import vector_query, get_vector_store
 
-
-input_platform_dir = input_dir / "story" / "platform"
-input_platform_dir.mkdir(parents=True, exist_ok=True)
-
-output_market_dir = output_dir / "story" / "market"
-output_market_dir.mkdir(parents=True, exist_ok=True)
-
-chroma_market_dir = chroma_dir / "story" / "market"
-chroma_market_dir.mkdir(parents=True, exist_ok=True)
 
 _vector_store: Optional[ChromaVectorStore] = None
 
 def get_market_vector_store() -> ChromaVectorStore:
     global _vector_store
     if _vector_store is None:
-        _vector_store = get_chroma_vector_store(
-            db_path=str(chroma_market_dir),
-            collection_name="market"
+        _vector_store = get_vector_store(
+            db_path=str(data_market_dir / "story"),
+            collection_name="story"
         )
     return _vector_store
 
@@ -110,9 +101,9 @@ def story_market_vector(
         
         metadata_filters = MetadataFilters(filters=filters) if filters else None
 
-        # 使用通用的 vector_query 函数执行查询和重排序
+        # 使用通用的 query 函数执行查询和重排序
         # 在异步函数中调用同步函数，使用 asyncio.to_thread
-        _, final_results = vector_query(
+        _, final_results = query(
             vector_store=get_market_vector_store(),
             query_text=query,
             filters=metadata_filters,

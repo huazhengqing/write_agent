@@ -29,7 +29,7 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
-TASKS_FILE=".input/tasks.json"
+TASKS_FILE="./tasks.json"
 if [ ! -f "$TASKS_FILE" ]; then
     echo "❌ 错误: 找不到任务文件 '$TASKS_FILE'。"
     kill $PREFECT_PID 2>/dev/null

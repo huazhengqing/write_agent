@@ -1,11 +1,10 @@
-import os
 import sqlite3
 import json
 import collections
 import threading
 from typing import List, Optional, Dict
 from utils.models import Task, natural_sort_key
-from utils.file import sqlite_dir
+from utils.file import data_dir
 
 
 """
@@ -48,11 +47,8 @@ Table: t_tasks
 """
 
 
-class DB:
+class TaskDB:
     def __init__(self, db_path: str):
-        db_dir = os.path.dirname(db_path)
-        if db_dir:
-            os.makedirs(db_dir, exist_ok=True)
         self.db_path = db_path
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.cursor = self.conn.cursor()
@@ -450,13 +446,14 @@ class DB:
 ###############################################################################
 
 
-_stores: Dict[str, DB] = {}
+_stores: Dict[str, TaskDB] = {}
 _lock = threading.Lock()
-def get_db(run_id: str, category: str) -> DB:
+def get_task_db(run_id: str) -> TaskDB:
     with _lock:
         if run_id in _stores:
             return _stores[run_id]
-        db_path = os.path.join(sqlite_dir, category, f"{run_id}.db")
-        store = DB(db_path=db_path)
+        db_path = data_dir / run_id / "task.TaskDB"
+        db_path.parent.mkdir(parents=True, exist_ok=True)
+        store = TaskDB(db_path=str(db_path))
         _stores[run_id] = store
         return store
