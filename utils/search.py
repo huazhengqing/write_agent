@@ -270,7 +270,6 @@ def targeted_search(query: str, platforms: Optional[List[str]] = None, sites: Op
             for p_key, site in platform_site_map.items():
                 if p_user in p_key:
                     matched_sites_for_p.add(site)
-
             if matched_sites_for_p:
                 all_sites.update(matched_sites_for_p)
             else:

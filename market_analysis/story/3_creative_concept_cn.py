@@ -11,8 +11,9 @@ from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
-from market_analysis.story.common import index, output_market_dir, task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, get_market_tools, task_store
-from utils.llm import call_agent, get_llm_messages, get_llm_params, llm_acompletion
+from market_analysis.story.common import get_market_vector_store, get_market_tools, output_market_dir
+from market_analysis.story.tasks import task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, task_store
+from utils.llm import call_agent, get_llm_messages, get_llm_params, llm_acompletion, vector_query
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
 
@@ -343,14 +344,21 @@ async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: s
 async def task_generate_opportunities(market_report: str, genre: str) -> Optional[str]:
     logger.info("启动创意脑暴，生成小说选题...")
     logger.info(f"正在查询【{genre}】相关的历史创意库，避免重复...")
-    retriever = index.as_retriever(
-        similarity_top_k=5,
-        filters=MetadataFilters(filters=[ExactMatchFilter(key="type", value="novel_concept")])
+    
+    _, historical_concepts_nodes = await asyncio.to_thread(
+        vector_query,
+        vector_store=get_market_vector_store(),
+        query_text=f"{genre} 小说核心创意",
+        filters=MetadataFilters(filters=[ExactMatchFilter(key="type", value="novel_concept")]),
+        similarity_top_k=10,
+        rerank_top_n=5,
     )
-    historical_concepts_docs = await retriever.aretrieve(f"{genre} 小说核心创意")
-    if historical_concepts_docs:
-        historical_concepts_str = "\n\n---\n\n".join([doc.get_content() for doc in historical_concepts_docs])
-        logger.success(f"查询到 {len(historical_concepts_docs)} 份历史创意，将用于规避重复。")
+
+    if historical_concepts_nodes:
+        historical_concepts_str = "\n\n---\n\n".join(
+            [node.get_content() for node in historical_concepts_nodes]
+        )
+        logger.success(f"查询到 {len(historical_concepts_nodes)} 份历史创意，将用于规避重复。")
     else:
         historical_concepts_str = "无相关历史创意可供参考。"
     user_prompt = OPPORTUNITY_GENERATION_USER_PROMPT.format(
@@ -378,17 +386,24 @@ async def task_generate_opportunities(market_report: str, genre: str) -> Optiona
 async def task_generate_novel_concept(opportunities_report: str, platform: str, genre: str) -> Optional[str]:
     logger.info("深化选题，生成详细小说创意...")
     logger.info(f"正在查询【{platform} - {genre}】相关的历史成功案例...")
-    retriever = index.as_retriever(
-        similarity_top_k=3,
+
+    _, historical_success_nodes = await asyncio.to_thread(
+        vector_query,
+        vector_store=get_market_vector_store(),
+        query_text=f"{platform} {genre} 爆款成功小说创意案例",
         filters=MetadataFilters(filters=[
             ExactMatchFilter(key="type", value="novel_concept"),
             ExactMatchFilter(key="platform", value=platform)
-        ])
+        ]),
+        similarity_top_k=5,
+        rerank_top_n=3,
     )
-    historical_success_docs = await retriever.aretrieve(f"{platform} {genre} 爆款成功小说创意案例")
-    if historical_success_docs:
-        historical_success_cases_str = "\n\n---\n\n".join([doc.get_content() for doc in historical_success_docs])
-        logger.success(f"查询到 {len(historical_success_docs)} 份成功案例，将用于借鉴。")
+
+    if historical_success_nodes:
+        historical_success_cases_str = "\n\n---\n\n".join(
+            [node.get_content() for node in historical_success_nodes]
+        )
+        logger.success(f"查询到 {len(historical_success_nodes)} 份成功案例，将用于借鉴。")
     else:
         historical_success_cases_str = "无相关历史成功案例可供参考。"
     user_prompt = NOVEL_CONCEPT_USER_PROMPT.format(

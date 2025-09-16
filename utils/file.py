@@ -2,9 +2,9 @@ import os
 from pathlib import Path
 import re
 from typing import get_args
-from utils.models import Task, CategoryType
 from dotenv import load_dotenv
 load_dotenv()
+from utils.models import Task, CategoryType
 
 
 project_root = Path(__file__).resolve().parent.parent

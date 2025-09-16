@@ -3,13 +3,11 @@ import sys
 from pathlib import Path
 from loguru import logger
 from datetime import datetime
-from llama_index.core import SimpleDirectoryReader
-from llama_index.core.node_parser import SentenceSplitter, MarkdownNodeParser
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
-from market_analysis.story.common import input_platform_dir, index
-
+from market_analysis.story.common import get_market_vector_store, input_platform_dir
+from utils.vector import store_from_directory
 
 
 def get_file_metadata(file_path_str: str) -> dict:
@@ -21,30 +19,21 @@ def get_file_metadata(file_path_str: str) -> dict:
         "date": datetime.now().strftime("%Y-%m-%d")
     }
 
-if __name__ == "__main__":
-    logger.info(f"正在从 '{input_platform_dir}' 目录加载文件...")
-    reader = SimpleDirectoryReader(
-        input_dir=input_platform_dir,
-        required_exts=[".md", ".txt"],
-        file_metadata=get_file_metadata
+def update_platform_from_input(platform_dir: str):
+    logger.info(f"开始从目录 '{platform_dir}' 更新平台档案...")
+    success = store_from_directory(
+        vector_store=get_market_vector_store(),
+        input_dir=str(platform_dir),
+        file_metadata_func=get_file_metadata,
+        recursive=True,
+        required_exts=[".md", ".txt"]
     )
-    documents = reader.load_data()
-    if not documents:
-        logger.warning(f"未在 '{input_platform_dir.resolve()}' 目录中找到任何 .md 或 .txt 文件。")
-        exit(1)
+    if success:
+        logger.success(f"成功从 '{platform_dir}' 更新平台档案到向量数据库。")
+    else:
+        logger.warning(f"从 '{platform_dir}' 更新平台档案失败或未找到文件。")
 
-    logger.info(f"找到 {len(documents)} 个文件，开始构建索引...")
-    md_parser = MarkdownNodeParser(include_metadata=True)
-    txt_parser = SentenceSplitter(chunk_size=1000, chunk_overlap=200)
-    all_nodes = []
-    for doc in documents:
-        file_path = Path(doc.metadata.get("file_path", ""))
-        if file_path.suffix == ".md":
-            nodes = md_parser.get_nodes_from_documents([doc])
-        else:
-            nodes = txt_parser.get_nodes_from_documents([doc])
-        all_nodes.extend(nodes)
 
-    index.insert_nodes(all_nodes, show_progress=True)
+if __name__ == "__main__":
+    update_platform_from_input(input_platform_dir)
     
-    logger.success(f"成功处理 {len(documents)} 个平台文件并存入向量数据库。")

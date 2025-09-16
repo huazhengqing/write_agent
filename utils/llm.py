@@ -17,7 +17,7 @@ from llama_index.core.workflow import Context
 from llama_index.llms.litellm import LiteLLM
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.file import litellm_cache_dir
-from utils.agent_tools import web_search_tools
+from utils.search import web_search_tools
 
 
 
@@ -158,6 +158,7 @@ cache.get_cache_key = custom_get_cache_key
 litellm.cache = cache
 litellm.enable_json_schema_validation=True
 litellm.drop_params = True
+litellm.telemetry = False
 
 
 
@@ -324,7 +325,7 @@ async def llm_acompletion(
             if attempt < max_retries - 1:
                 try:
                     cache_key = litellm.cache.get_cache_key(**llm_params_for_api)
-                    litellm.cache.delete(key=cache_key)
+                    litellm.cache.cache.delete_cache(cache_key)
                 except Exception as cache_e:
                     logger.error(f"删除缓存条目失败: {cache_e}")
                 # 针对JSON解析/验证错误的自我修正逻辑
@@ -370,48 +371,44 @@ async def call_agent(
     )
     logger.info(f"系统提示词:\n{system_prompt}")
     logger.info(f"用户提示词:\n{user_prompt}")
-    ctx = Context(agent)
-    response = await agent.run(user_prompt, ctx=ctx)
+    response = await agent.run(user_prompt)
     raw_output = response.response.content
+    cleaned_output = clean_markdown_fences(raw_output)
     if response_model:
-        cleaned_json = clean_markdown_fences(raw_output)
-        validated_data = response_model.model_validate_json(cleaned_json)
-        logger.success("Agent输出成功通过Pydantic模型验证。")
+        logger.info("Agent 执行完成，正在将自然语言输出转换为结构化 JSON...")
+        logger.info(f"待转换的 Agent 输出:\n{cleaned_output}")
+        extraction_system_prompt = (
+            "你是一个数据提取专家。你的任务是根据用户提供的文本，严格按照给定的 Pydantic JSON Schema 提取信息并生成一个 JSON 对象。"
+            "你的输出必须是、且只能是一个完整的、有效的 JSON 对象。"
+            "不要添加任何解释、注释或 Markdown 代码块。"
+        )
+        extraction_user_prompt = (
+            f"请从以下文本中提取信息并生成 JSON 对象:\n\n"
+            f"--- TEXT START ---\n"
+            f"{cleaned_output}\n"
+            f"--- TEXT END ---"
+        )
+        extraction_messages = get_llm_messages(
+            SYSTEM_PROMPT=extraction_system_prompt,
+            USER_PROMPT=extraction_user_prompt
+        )
+        extraction_llm_params = get_llm_params(
+            llm='reasoning',
+            messages=extraction_messages, 
+            temperature=LLM_TEMPERATURES["classification"]
+        )
+        extraction_response = await llm_acompletion(llm_params=extraction_llm_params, response_model=response_model)
+        validated_data = extraction_response.validated_data
+        logger.success("成功将 Agent 输出转换为 Pydantic 模型。")
         return validated_data
     else:
-        cleaned_output = clean_markdown_fences(raw_output)
         _default_text_validator(cleaned_output)
         logger.success("Agent执行完成并生成了有效文本。")
         return cleaned_output
     
 
-if __name__ == "__main__":
-    import asyncio
-    from utils.log import init_logger
-    from pydantic import BaseModel, Field
-    from typing import List, Optional
 
-    init_logger("test_agent")
 
-    async def main():
-        logger.info("开始测试 call_agent...")
 
-        class SearchSummary(BaseModel):
-            topic: str = Field(description="搜索的主题")
-            key_points: List[str] = Field(description="总结的关键点列表")
-            source_urls: Optional[List[str]] = Field(None, description="信息来源的URL列表")
 
-        system_prompt_4 = "你是一个信息提取助手。你的任务是根据用户请求进行网络搜索，并以JSON格式返回结构化的摘要。"
-        user_prompt_4 = "搜索'什么是RAG（检索增强生成）'，并提供3个关键点和至少一个来源URL。"
-        logger.info("\n--- 测试 4: 结构化输出 (Pydantic) ---")
-        result_4 = await call_agent(
-            system_prompt=system_prompt_4,
-            user_prompt=user_prompt_4,
-            response_model=SearchSummary,
-        )
-        if result_4:
-            logger.success(f"测试 4 成功，结果:\n{result_4.model_dump_json(indent=2, ensure_ascii=False)}")
-        else:
-            logger.error("测试 4 失败。")
 
-    asyncio.run(main())

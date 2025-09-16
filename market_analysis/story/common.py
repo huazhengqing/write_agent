@@ -1,23 +1,18 @@
 import json
-import asyncio
 import os
 import sys
 import chromadb
-from typing import List, Optional, Tuple, Dict, Any
-from llama_index.core import VectorStoreIndex, Document
-from llama_index.embeddings.litellm import LiteLLMEmbedding
-from datetime import datetime
-from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
+import asyncio
+from typing import List, Optional, Tuple
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
 from llama_index.core.tools import FunctionTool
+from llama_index.core.schema import NodeWithScore
 from loguru import logger
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from utils.agent_tools import web_search_tools
-from utils.llm import call_agent, get_embedding_params
 from utils.file import input_dir, output_dir, chroma_dir
-from utils.prefect_utils import local_storage, readable_json_serializer
-from prefect import task
+from utils.search import web_search_tools
+from utils.vector import vector_query, get_chroma_vector_store
 
 
 input_platform_dir = input_dir / "story" / "platform"
@@ -31,15 +26,16 @@ chroma_market_dir.mkdir(parents=True, exist_ok=True)
 
 chroma_collection_market_name = "market"
 
-embedding_params = get_embedding_params(embedding='bge-m3')
-embed_model_name = embedding_params.pop('model')
-embed_model = LiteLLMEmbedding(model_name=embed_model_name, **embedding_params)
+_vector_store: Optional[ChromaVectorStore] = None
 
-db = chromadb.PersistentClient(path=str(chroma_market_dir))
-chroma_collection = db.get_or_create_collection(chroma_collection_market_name)
-vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-
-index = VectorStoreIndex.from_vector_store(vector_store, embed_model=embed_model)
+def get_market_vector_store() -> ChromaVectorStore:
+    global _vector_store
+    if _vector_store is None:
+        _vector_store = get_chroma_vector_store(
+            db_path=str(chroma_market_dir),
+            collection_name=chroma_collection_market_name
+        )
+    return _vector_store
 
 
 BROAD_SCAN_SYSTEM_PROMPT = """
@@ -105,34 +101,44 @@ async def story_market_vector(
         query (str): 核心搜索查询。
         document_type (Optional[str]): 文档类型, 可选值为 'platform_profile', 'deep_dive_report', 'novel_concept'。
         platform (Optional[str]): 平台名称, 如 '番茄小说'。
-        genre (Optional[str]): 题材名称, 如 '都市脑洞'。
+        genre (Optional[str]): 题材名称, 如 '都市脑洞'。 
     Returns:
         str: 格式化的搜索结果，包含元数据和内容。
     """
     logger.info(f"向量数据库搜索: query='{query}', type='{document_type}', platform='{platform}', genre='{genre}'")
     try:
         filters = []
-        if document_type:
-            filters.append(ExactMatchFilter(key="type", value=document_type))
-        if platform:
-            filters.append(ExactMatchFilter(key="platform", value=platform))
-        if genre:
-            filters.append(ExactMatchFilter(key="genre", value=genre))
-        retriever_kwargs = {"similarity_top_k": 5}
-        if filters:
-            retriever_kwargs["filters"] = MetadataFilters(filters=filters)
-        retriever = index.as_retriever(retriever_kwargs)
-        results = await retriever.aretrieve(query)
-        if not results:
+        if document_type: filters.append(ExactMatchFilter(key="type", value=document_type))
+        if platform: filters.append(ExactMatchFilter(key="platform", value=platform))
+        if genre: filters.append(ExactMatchFilter(key="genre", value=genre))
+        
+        metadata_filters = MetadataFilters(filters=filters) if filters else None
+
+        # 使用通用的 vector_query 函数执行查询和重排序
+        # 在异步函数中调用同步函数，使用 asyncio.to_thread
+        _, final_results = await asyncio.to_thread(
+            vector_query,
+            vector_store=get_market_vector_store(),
+            query_text=query,
+            filters=metadata_filters,
+            similarity_top_k=25, # 初步检索25个
+            rerank_top_n=5,      # 重排后保留5个
+        )
+
+        if not final_results:
             logger.warning("向量数据库未找到匹配的结果。")
             return "在内部知识库中未找到相关信息。"
+
         content_parts = []
-        for i, node in enumerate(results):
+        for i, node_with_score in enumerate(final_results):
+            node = node_with_score.node
             metadata_str = json.dumps(node.metadata, ensure_ascii=False)
             content_parts.append(f"--- 结果 {i+1} ---\n元数据: {metadata_str}\n内容:\n{node.get_content()}")
+        
         final_content = "\n\n".join(content_parts)
-        logger.success(f"向量数据库搜索完成，找到 {len(results)} 个结果。")
+        logger.success(f"向量数据库搜索和重排序完成，找到 {len(final_results)} 个结果。")
         return final_content
+
     except Exception as e:
         logger.error(f"向量数据库搜索出错: {e}")
         return f"向量数据库搜索失败: {e}"
@@ -164,122 +170,3 @@ def get_story_market_search_tool() -> FunctionTool:
 
 def get_market_tools() -> List[FunctionTool]:
     return web_search_tools + [get_story_market_search_tool()]
-
-
-@task(
-    name="load_platform_profile",
-    persist_result=True,
-    result_storage=local_storage,
-    result_storage_key="story/market/common/load_platform_profile_{parameters[platform]}.json",
-    result_serializer=readable_json_serializer,
-    retries=2,
-    retry_delay_seconds=10,
-    cache_expiration=604800,
-)
-async def task_load_platform_profile(platform: str) -> Tuple[str, str]:
-    logger.info(f"正在从向量库加载平台 '{platform}' 的基础信息...")
-    profile_content = f"# {platform} 平台档案\n\n未在知识库中找到该平台的基础信息。"
-    try:
-        filters = MetadataFilters(filters=[
-            ExactMatchFilter(key="type", value="platform_profile"),
-            ExactMatchFilter(key="platform", value=platform)
-        ])
-        retriever = index.as_retriever(similarity_top_k=1, filters=filters)
-        results = await retriever.aretrieve(f"{platform} 平台档案")
-        if results:
-            profile_content = results[0].get_content()
-            logger.success(f"已加载 '{platform}' 的基础信息。")
-        else:
-            logger.warning(f"在向量库中未找到 '{platform}' 的基础信息。建议先运行 `story_platform_by_search.py`。")
-    except Exception as e:
-        logger.error(f"加载 '{platform}' 的基础信息时出错: {e}")
-        profile_content = f"# {platform} 平台档案\n\n加载基础信息时出错: {e}"
-    return platform, profile_content
-
-@task(name="platform_briefing",
-    persist_result=True,
-    result_storage=local_storage,
-    result_storage_key="story/market/common/platform_briefing_{parameters[platform]}.json",
-    result_serializer=readable_json_serializer,
-    retries=2,
-    retry_delay_seconds=10,
-    cache_expiration=604800,
-)
-async def task_platform_briefing(platform: str) -> str:
-    logger.info(f"为平台 '{platform}' 生成市场动态简报...")
-    system_prompt = BROAD_SCAN_SYSTEM_PROMPT.format(platform=platform)
-    user_prompt = f"请开始为平台 '{platform}' 生成市场动态简报。"
-    report = await call_agent(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        tools=get_market_tools(),
-        temperature=0.1
-    )
-    if report:
-        logger.success(f"Agent为 '{platform}' 完成了简报生成，报告长度: {len(report)}。")
-        return report
-    else:
-        error_msg = f"为平台 '{platform}' 生成市场动态简报时Agent调用失败或返回空。"
-        logger.error(error_msg)
-        return f"## {platform} 平台市场动态简报\n\n生成报告时出错: {error_msg}"
-
-@task(
-    name="new_author_opportunity",
-    persist_result=True,
-    result_storage=local_storage,
-    result_storage_key="story/market/common/new_author_opportunity_{parameters[platform]}.json",
-    result_serializer=readable_json_serializer,
-    retries=2,
-    retry_delay_seconds=10,
-    cache_expiration=604800,
-)
-async def task_new_author_opportunity(platform: str) -> str:
-    logger.info(f"为平台 '{platform}' 生成新人机会评估报告...")
-    system_prompt = ASSESS_NEW_AUTHOR_OPPORTUNITY_SYSTEM_PROMPT.format(platform=platform)
-    user_prompt = f"请开始为平台 '{platform}' 生成新人机会评估报告。"
-    report = await call_agent(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        tools=get_market_tools(),
-        temperature=0.1
-    )
-    if report:
-        logger.success(f"Agent为 '{platform}' 完成了新人机会评估报告生成，报告长度: {len(report)}。")
-        return report
-    else:
-        error_msg = f"为平台 '{platform}' 生成新人机会评估报告时Agent调用失败或返回空。"
-        logger.error(error_msg)
-        return f"## {platform} 平台新人机会评估报告\n\n生成报告时出错: {error_msg}"
-
-@task(
-    name="task_store",
-    persist_result=True,
-    result_storage=local_storage,
-    result_serializer=readable_json_serializer,
-    cache_expiration=604800,
-    retries=2,
-    retry_delay_seconds=10
-)
-async def task_store(content: str, doc_type: str, content_format: str = "text", **metadata: Any) -> bool:
-    if not content or not content.strip() or "生成报告时出错" in content:
-        logger.warning(f"内容为空或包含错误，跳过存入向量库。类型: {doc_type}, 元数据: {metadata}")
-        return False
-    logger.info(f"正在将类型为 '{doc_type}' (格式: {content_format}) 的报告存入向量库...")
-    final_metadata = metadata.copy()
-    final_metadata["type"] = doc_type
-    final_metadata["date"] = datetime.now().strftime("%Y-%m-%d")
-    doc = Document(text=content, metadata=final_metadata)
-    if content_format == "markdown":
-        md_parser = MarkdownNodeParser(include_metadata=True)
-        nodes = md_parser.get_nodes_from_documents([doc])
-        await asyncio.to_thread(index.insert_nodes, nodes)
-    elif content_format == "json":
-        await asyncio.to_thread(index.insert, doc)
-    else:
-        parser = SentenceSplitter(include_metadata=True)
-        nodes = parser.get_nodes_from_documents([doc])
-        await asyncio.to_thread(index.insert_nodes, nodes)
-    logger.success(f"类型为 '{doc_type}' 的报告已成功存入向量库。元数据: {final_metadata}")
-    return True
-
-

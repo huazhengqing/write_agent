@@ -9,7 +9,8 @@ init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from utils.llm import call_agent
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
-from market_analysis.story.common import output_market_dir, task_store
+from market_analysis.story.common import output_market_dir
+from market_analysis.story.tasks import task_store
 
 
 PLATFORM_RESEARCH_SYSTEM_PROMPT = """
@@ -17,10 +18,11 @@ PLATFORM_RESEARCH_SYSTEM_PROMPT = """
 你是一名专业的网络小说行业研究员。
 
 # 任务
-为平台【{platform}】生成一份详细的平台档案报告。你需要利用工具（网络搜索、网页抓取）收集信息，并严格按照指定的Markdown格式和结构输出最终报告。
+为平台【{platform}】生成一份全面、详尽、聚焦于最新现状的平台档案报告。
+这份报告的核心用途是为网络小说创作者提供战略决策参考。
 
 # 工作流程
-1.  研究: 将“输出结构”中的要点作为研究目标，使用工具进行搜索和网页内容抓取。优先选择官方网站、作者论坛、行业报告、新闻稿等可靠信源。
+1.  研究: 将“输出结构”中的要点作为研究目标，使用工具进行搜索和网页内容抓取。优先搜索能反映平台最新动态的官方网站、作者论坛、近半年的行业报告和新闻稿等可靠信源。
 2.  总结: 在找到所有要点的信息后，将你的发现综合成一份完整的Markdown报告。如果某个要点确实找不到信息，请在该标题下明确指出“未找到相关信息”。
 
 # 输出结构 (Markdown)
@@ -81,7 +83,7 @@ PLATFORM_RESEARCH_SYSTEM_PROMPT = """
 
 # 输出要求
 - 严格遵循上述Markdown格式和编号。
-- 所有结论必须基于你搜索到的数据，避免主观臆测。
+- 所有结论必须基于你搜索到的数据，为创作者提供客观、可操作的洞察，避免主观臆测。
 - 你的最终输出只能是这份Markdown报告，不要包含任何其他内容，如你的思考过程或工具使用日志。
 """
 

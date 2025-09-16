@@ -9,11 +9,7 @@ import threading
 from loguru import logger
 from diskcache import Cache
 from typing import Dict, Any, List, Literal, Optional, Callable
-import kuzu
-import chromadb
 from llama_index.llms.litellm import LiteLLM
-from llama_index.embeddings.litellm import LiteLLMEmbedding
-from llama_index.graph_stores.kuzu import KuzuGraphStore
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core import (
     StorageContext, 
@@ -34,6 +30,8 @@ from utils.sqlite import get_db
 from utils.file import get_text_file_path, text_file_append, text_file_read
 from utils.models import Task, get_sibling_ids_up_to_current, natural_sort_key
 from utils.prompt_loader import load_prompts
+from utils.graph import get_kuzu_graph_store, store as graph_store_func
+from utils.vector import get_embed_model, store as vector_store_func, vector_query, get_chroma_vector_store
 from utils.file import cache_dir, chroma_dir, kuzu_dir
 from utils.llm import (
     LLM_TEMPERATURES,
@@ -46,13 +44,7 @@ from utils.llm import (
 
 class RAG:
     def __init__(self):
-        self.embed_params = get_embedding_params()
-        self.embed_model_name = self.embed_params.pop('model')
-        self.embed_model = LiteLLMEmbedding(
-            model_name=self.embed_model_name,
-            **self.embed_params,
-        )
-        self.embed_model.get_text_embedding("test")
+        self.embed_model = get_embed_model()
 
         self.llm_extract_params = get_llm_params(llm='fast', temperature=LLM_TEMPERATURES["summarization"])
         self.llm_extract: LiteLLM = LiteLLM(**self.llm_extract_params)
@@ -92,18 +84,13 @@ class RAG:
 
             # 向量存储设置 (ChromaDB)
             chroma_path = os.path.join(chroma_dir, run_id, content_type)
-            os.makedirs(chroma_path, exist_ok=True)
-            chroma_client = chromadb.PersistentClient(path=chroma_path)
-            sanitized_model_name = re.sub(r'[^a-zA-Z0-9_-]', '_', self.embed_model_name)
+            sanitized_model_name = re.sub(r'[^a-zA-Z0-9_-]', '_', self.embed_model.model_name)
             collection_name = f"collection_{sanitized_model_name}"
-            chroma_collection = chroma_client.get_or_create_collection(collection_name)
-            vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+            vector_store = get_chroma_vector_store(db_path=chroma_path, collection_name=collection_name)
 
             # 图存储设置 (Kùzu, 高性能嵌入式)
             kuzu_db_path = os.path.join(kuzu_dir, run_id, content_type)
-            os.makedirs(kuzu_db_path, exist_ok=True)
-            db = kuzu.Database(kuzu_db_path)
-            graph_store = KuzuGraphStore(db)
+            graph_store = get_kuzu_graph_store(db_path=kuzu_db_path)
             
             storage_context = StorageContext.from_defaults(
                 vector_store=vector_store,
@@ -240,50 +227,46 @@ class RAG:
             "status": "active",                         # 状态, 用于标记/取消文档
             "created_at": datetime.now().isoformat() 
         }
-        doc = Document(id_=task.id, text=content, metadata=doc_metadata)
-        node_parser = MarkdownNodeParser(include_metadata=True, include_prev_next_rel=True)
+        # 1. 存入向量数据库
         await asyncio.to_thread(
-            VectorStoreIndex.from_documents, 
-            [doc], 
-            storage_context=storage_context, 
-            embed_model=self.embed_model,
-            transformations=[node_parser]
+            vector_store_func,
+            vector_store=storage_context.vector_store,
+            content=content,
+            metadata=doc_metadata,
+            content_format="markdown",
+            doc_id=task.id
         )
         logger.info(f"[{task.id}] design 内容向量化完成, 开始构建知识图谱...")
+        # 2. 存入知识图谱
         await asyncio.to_thread(
-            KnowledgeGraphIndex.from_documents,
-            [doc],
+            graph_store_func,
             storage_context=storage_context,
-            embed_model=self.embed_model, 
-            llm=self.llm_extract, 
-            kg_extraction_prompt=load_prompts(task.category, "graph_cn", "kg_extraction_prompt_design")[0], 
-            include_embeddings=True,        # 将图谱节点与向量嵌入关联, 支持混合搜索
-            max_triplets_per_chunk=15,      # 每个文本块最多提取15个三元组
-            transformations=[node_parser]   # 使用与向量索引相同的解析器, 保证块的一致性
+            content=content,
+            metadata=doc_metadata,
+            doc_id=task.id,
+            kg_extraction_prompt=load_prompts(task.category, "graph_cn", "kg_extraction_prompt_design")[0],
+            content_format="markdown",
+            max_triplets_per_chunk=15,
         )
         logger.info(f"[{task.id}] design 内容存储完成。")
 
     async def store_search(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 search 内容 (向量索引)...")
-        header_parts = [
-            task.id,
-            task.hierarchical_position,
-            task.goal
-        ]
+        header_parts = [task.id, task.hierarchical_position, task.goal]
         header = " ".join(filter(None, header_parts))
-        content = f"# 任务\n{header}\n\n{content}"
+        full_content = f"# 任务\n{header}\n\n{content}"
         storage_context = self._get_storage_context(task.run_id, "search")
         doc_metadata = {
             "task_id": task.id,
             "created_at": datetime.now().isoformat()
         }
-        doc = Document(id_=task.id, text=content, metadata=doc_metadata)
         await asyncio.to_thread(
-            VectorStoreIndex.from_documents, 
-            [doc], 
-            storage_context=storage_context, 
-            embed_model=self.embed_model, 
-            transformations=[MarkdownNodeParser(include_metadata=True, include_prev_next_rel=True)]
+            vector_store_func,
+            vector_store=storage_context.vector_store,
+            content=full_content,
+            metadata=doc_metadata,
+            content_format="markdown",
+            doc_id=task.id
         )
         logger.info(f"[{task.id}] search 内容存储完成。")
 
@@ -295,17 +278,15 @@ class RAG:
             "hierarchical_position": task.hierarchical_position, 
             "created_at": datetime.now().isoformat()
         }
-        doc = Document(id_=task.id, text=content, metadata=doc_metadata)
         await asyncio.to_thread(
-            KnowledgeGraphIndex.from_documents,
-            [doc],
+            graph_store_func,
             storage_context=storage_context,
-            embed_model=self.embed_model, 
-            llm=self.llm_extract, 
-            kg_extraction_prompt=load_prompts(task.category, "graph_cn", "kg_extraction_prompt_write")[0], 
-            include_embeddings=True,        # 将图谱节点与向量嵌入关联, 支持混合搜索
-            max_triplets_per_chunk=15,      # 每个文本块最多提取15个三元组
-            transformations=[SentenceSplitter(chunk_size=512, chunk_overlap=100)]
+            content=content,
+            metadata=doc_metadata,
+            doc_id=task.id,
+            kg_extraction_prompt=load_prompts(task.category, "graph_cn", "kg_extraction_prompt_write")[0],
+            content_format="text",
+            max_triplets_per_chunk=15,
         )
         logger.info(f"[{task.id}] write 内容存储完成。")
     
@@ -318,20 +299,20 @@ class RAG:
             task.length
         ]
         header = " ".join(filter(None, header_parts))
-        content = f"# 任务\n{header}\n\n{content}"
+        full_content = f"# 任务\n{header}\n\n{content}"
         storage_context = self._get_storage_context(task.run_id, "summary")
         doc_metadata = {
             "task_id": task.id,
             "hierarchical_position": task.hierarchical_position, 
             "created_at": datetime.now().isoformat()
         }
-        doc = Document(id_=task.id, text=content, metadata=doc_metadata)
         await asyncio.to_thread(
-            VectorStoreIndex.from_documents, 
-            [doc], 
-            storage_context=storage_context, 
-            embed_model=self.embed_model,
-            transformations=[MarkdownNodeParser(include_metadata=True, include_prev_next_rel=True)]
+            vector_store_func,
+            vector_store=storage_context.vector_store,
+            content=full_content,
+            metadata=doc_metadata,
+            content_format="markdown",
+            doc_id=task.id
         )
         logger.info(f"[{task.id}] summary 内容存储完成。")
 
@@ -518,6 +499,7 @@ class RAG:
         if cached_result is not None:
             logger.info(f"[{task.id}] 命中上层搜索(upper_search)缓存。")
             return cached_result
+        
         inquiry = await self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'search')
         if not inquiry or not inquiry.get("questions"):
             logger.warning(f"[{task.id}] 生成的探询问题为空或无效, 跳过上层搜索。")
@@ -528,34 +510,33 @@ class RAG:
             return ""
         single_question = "\n".join(all_questions)
         logger.info(f"[{task.id}] 整合后的上层搜索查询问题:\n{single_question}")
-        logger.info(f"[{task.id}] 正在为 'search' 库初始化向量索引用于上层搜索...")
+        
         storage_context = self._get_storage_context(task.run_id, "search")
-        vector_index = await asyncio.to_thread(
-            VectorStoreIndex.from_vector_store,
-            storage_context.vector_store,
-            embed_model=self.embed_model
-        )
+
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
         if preceding_sibling_ids:
             active_filters.append(MetadataFilter(key='task_id', value=preceding_sibling_ids, operator='nin'))
-        logger.info(f"[{task.id}] 上层搜索使用的过滤器: {active_filters}")
-        vector_retriever = vector_index.as_retriever(
-            filters=MetadataFilters(filters=active_filters) if active_filters else None,
-            similarity_top_k=20,
+        
+        filters = MetadataFilters(filters=active_filters) if active_filters else None
+        logger.info(f"[{task.id}] 上层搜索使用的过滤器: {filters.to_dict() if filters else 'None'}")
+
+        answer, _ = await asyncio.to_thread(
+            vector_query,
+            vector_store=storage_context.vector_store,
+            query_text=single_question,
+            filters=filters,
+            rerank_top_n=4,  # 使 similarity_top_k=20, 与原始逻辑相似
         )
-        logger.info(f"[{task.id}] 开始从向量数据库中检索上层搜索内容...")
-        retrieved_nodes = await asyncio.to_thread(vector_retriever.retrieve, single_question)
-        if not retrieved_nodes:
-            logger.warning(f"[{task.id}] 上层搜索未检索到任何相关节点。")
-            return ""
-        logger.info(f"[{task.id}] 上层搜索成功检索到 {len(retrieved_nodes)} 个相关节点。")
-        source_details = [
-            re.sub(r'\s+', ' ', node.get_content()).strip() for node in retrieved_nodes
-        ]
-        result = "\n\n".join(filter(None, source_details))
+
+        result = answer or ""
+        if not result:
+            logger.warning(f"[{task.id}] 上层搜索(upper_search)未能生成答案或找到相关文档。")
+        else:
+            logger.success(f"[{task.id}] 上层搜索(upper_search)成功完成，并生成了综合答案。")
+
         await asyncio.to_thread(self.caches['upper_search'].set, cache_key, result, tag=task.run_id)
-        logger.info(f"[{task.id}] 获取上层搜索(upper_search)上下文完成。\n{result}")
+        logger.info(f"[{task.id}] 获取上层搜索(upper_search)上下文的流程已结束。")
         return result
 
     async def get_upper_design(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
@@ -573,6 +554,7 @@ class RAG:
         if not all_questions:
             logger.warning(f"[{task.id}] 探询列表中没有问题, 无法执行上层设计查询。")
             return ""
+        
         logger.info(f"[{task.id}] 正在为 'design' 库初始化向量和知识图谱查询引擎...")
         storage_context = self._get_storage_context(task.run_id, "design")
         vector_index = await asyncio.to_thread(
@@ -592,6 +574,7 @@ class RAG:
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
         if preceding_sibling_ids:
             active_filters.append(MetadataFilter(key='task_id', value=preceding_sibling_ids, operator='nin'))
+            
         logger.info(f"[{task.id}] 4. 构建向量查询引擎...")
         vector_query_engine = vector_index.as_query_engine(
             filters=MetadataFilters(filters=active_filters) if active_filters else None,
@@ -871,3 +854,54 @@ def get_rag():
     if _rag_instance is None:
         _rag_instance = RAG()
     return _rag_instance
+
+
+###############################################################################
+
+
+if __name__ == "__main__":
+    async def main():
+        logger.info("开始 RAG 存储功能测试...")
+        rag = get_rag()
+
+        # 1. 创建一个模拟任务
+        mock_task = Task(
+            id="1.1",
+            parent_id="1",
+            task_type="write",
+            hierarchical_position="第一章",
+            goal="测试存储功能",
+            category="story",
+            language="cn",
+            root_name="测试书籍",
+            run_id="test_run_12345",
+        )
+        logger.info(f"使用模拟任务: {mock_task.model_dump_json(indent=2)}")
+
+        # 2. 测试 store_design
+        logger.info("--- 正在测试 store_design ---")
+        design_content = "这是一个详细的设计方案。主角是一个年轻的法师，他发现了一个古老的秘密。世界观是魔法与科技并存。"
+        await rag.store_design(mock_task, design_content)
+        logger.success("--- store_design 测试完成 ---")
+
+        # 3. 测试 store_search
+        logger.info("--- 正在测试 store_search ---")
+        search_content = "关于“魔法与科技并存”设定的市场调研结果：\n- 优点：受众广泛，想象空间大。\n- 缺点：容易出现设定冲突。"
+        await rag.store_search(mock_task, search_content)
+        logger.success("--- store_search 测试完成 ---")
+
+        # 4. 测试 store_write
+        logger.info("--- 正在测试 store_write ---")
+        write_content = "第一章的开头。清晨，阳光穿过浮空城市的缝隙，照亮了艾瑞克简陋的房间。他桌上的机械臂正小心翼翼地擦拭着一根老旧的法杖。"
+        await rag.store_write(mock_task, write_content)
+        logger.success("--- store_write 测试完成 ---")
+
+        # 5. 测试 store_summary
+        logger.info("--- 正在测试 store_summary ---")
+        summary_content = "本章介绍了主角艾瑞克和他所处的世界，一个魔法与科技交融的浮空城市。通过开头的场景，暗示了主角的背景和故事的基调。"
+        await rag.store_summary(mock_task, summary_content)
+        logger.success("--- store_summary 测试完成 ---")
+
+        logger.info("所有 RAG 存储功能测试已完成。请检查 .chroma_db, .kuzu_db 等目录下的 'test_run_12345' 文件夹以验证结果。")
+
+    asyncio.run(main())
