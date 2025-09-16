@@ -1,4 +1,3 @@
-import asyncio
 import os
 import sys
 from typing import Any, Tuple
@@ -27,7 +26,7 @@ from prefect import task
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-async def task_load_platform_profile(platform: str) -> Tuple[str, str]:
+def task_load_platform_profile(platform: str) -> Tuple[str, str]:
     logger.info(f"正在从向量库加载平台 '{platform}' 的基础信息...")
     profile_content = f"# {platform} 平台档案\n\n未在知识库中找到该平台的基础信息。"
     try:
@@ -38,8 +37,7 @@ async def task_load_platform_profile(platform: str) -> Tuple[str, str]:
             ]
         )
         
-        _, nodes = await asyncio.to_thread(
-            vector_query,
+        _, nodes = vector_query(
             vector_store=get_market_vector_store(),
             query_text=f"{platform} 平台档案",
             filters=filters,
@@ -70,11 +68,11 @@ async def task_load_platform_profile(platform: str) -> Tuple[str, str]:
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-async def task_platform_briefing(platform: str) -> str:
+def task_platform_briefing(platform: str) -> str:
     logger.info(f"为平台 '{platform}' 生成市场动态简报...")
     system_prompt = BROAD_SCAN_SYSTEM_PROMPT.format(platform=platform)
     user_prompt = f"请开始为平台 '{platform}' 生成市场动态简报。"
-    report = await call_agent(
+    report = call_agent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         tools=get_market_tools(),
@@ -99,11 +97,11 @@ async def task_platform_briefing(platform: str) -> str:
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-async def task_new_author_opportunity(platform: str) -> str:
+def task_new_author_opportunity(platform: str) -> str:
     logger.info(f"为平台 '{platform}' 生成新人机会评估报告...")
     system_prompt = ASSESS_NEW_AUTHOR_OPPORTUNITY_SYSTEM_PROMPT.format(platform=platform)
     user_prompt = f"请开始为平台 '{platform}' 生成新人机会评估报告。"
-    report = await call_agent(
+    report = call_agent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         tools=get_market_tools(),
@@ -127,14 +125,13 @@ async def task_new_author_opportunity(platform: str) -> str:
     retries=2,
     retry_delay_seconds=10,
 )
-async def task_store(
+def task_store(
     content: str, doc_type: str, content_format: str = "text", **metadata: Any
 ) -> bool:
     logger.info(f"准备将类型为 '{doc_type}' (格式: {content_format}) 的报告存入向量库...")
     final_metadata = metadata.copy()
     final_metadata["type"] = doc_type
-    success = await asyncio.to_thread(
-        vector_store_func,
+    success = vector_store_func(
         vector_store=get_market_vector_store(),
         content=content,
         metadata=final_metadata,

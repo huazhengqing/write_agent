@@ -1,4 +1,3 @@
-import asyncio
 import os
 import sys
 from typing import List, Optional
@@ -98,11 +97,11 @@ PLATFORM_RESEARCH_SYSTEM_PROMPT = """
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-async def search_platform(platform: str) -> Optional[str]:
+def search_platform(platform: str) -> Optional[str]:
     logger.info(f"为平台 '{platform}' 生成平台档案报告...")
     system_prompt = PLATFORM_RESEARCH_SYSTEM_PROMPT.format(platform=platform)
     user_prompt = f"请开始为平台 '{platform}' 生成平台基础信息报告。"
-    md_content = await call_agent(
+    md_content = call_agent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         temperature=0.1
@@ -118,19 +117,19 @@ async def search_platform(platform: str) -> Optional[str]:
     retries=1,
     retry_delay_seconds=10,
 )
-async def save_to_md(platform: str, md_content: Optional[str]) -> Optional[str]:
+def save_to_md(platform: str, md_content: Optional[str]) -> Optional[str]:
     if not md_content:
         logger.warning(f"内容为空，跳过为平台 '{platform}' 保存Markdown文件。")
         return None
     platform_filename_md = f"{platform.replace(' ', '_')}.md"
     file_path_md = output_market_dir / platform_filename_md
-    await asyncio.to_thread(file_path_md.write_text, md_content, encoding="utf-8")
+    file_path_md.write_text(md_content, encoding="utf-8")
     logger.success(f"{platform} 平台基础信息已保存为Markdown文件: {file_path_md}")
     return str(file_path_md.resolve())
 
 
 @flow(name="search_platform_all")
-async def search_platform_all(platforms: List[str]):
+def search_platform_all(platforms: List[str]):
     logger.info(f"开始更新 {len(platforms)} 个平台的的基础信息...")
     report_futures = search_platform.map(platforms)
     filepath_futures = save_to_md.map(
@@ -145,7 +144,7 @@ async def search_platform_all(platforms: List[str]):
         source=filepath_futures
     )
     for future in store_futures:
-        await future.result()
+        future.result()
     logger.info(f"已完成对 {len(platforms)} 个平台基础信息的更新流程。")
 
 
@@ -153,4 +152,4 @@ if __name__ == "__main__":
     platforms_cn = ["番茄小说", "起点中文网", "飞卢小说网", "晋江文学城", "七猫免费小说", "纵横中文网", "17K小说网", "刺猬猫", "掌阅"]
     platforms_en = ["Wattpad", "RoyalRoad", "AO3", "Webnovel", "Scribble Hub", "Tapas"]
     platforms = ["番茄小说"]
-    asyncio.run(search_platform_all(platforms))
+    search_platform_all(platforms)

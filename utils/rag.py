@@ -1,7 +1,6 @@
 import os
 import json
 import hashlib
-import asyncio
 import re
 from datetime import datetime
 import sys
@@ -9,6 +8,7 @@ import threading
 from loguru import logger
 from diskcache import Cache
 from typing import Dict, Any, List, Literal, Optional, Callable
+from llama_index.graph_stores.kuzu import KuzuGraphStore
 from llama_index.llms.litellm import LiteLLM
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core import (
@@ -30,7 +30,7 @@ from utils.sqlite import get_db
 from utils.file import get_text_file_path, text_file_append, text_file_read
 from utils.models import Task, get_sibling_ids_up_to_current, natural_sort_key
 from utils.prompt_loader import load_prompts
-from utils.graph import get_kuzu_graph_store, store as graph_store_func
+from utils.graph import get_kuzu_graph_store, store as graph_store_func, hybrid_query
 from utils.vector import get_embed_model, store as vector_store_func, vector_query, get_chroma_vector_store
 from utils.file import cache_dir, chroma_dir, kuzu_dir
 from utils.llm import (
@@ -38,7 +38,7 @@ from utils.llm import (
     get_embedding_params,
     get_llm_messages,
     get_llm_params,
-    llm_acompletion
+    llm_completion
 )
 
 
@@ -68,115 +68,123 @@ class RAG:
             'task_list': Cache(os.path.join(cache_base_dir, "task_list"), size_limit=int(32 * (1024**2))),
         }
 
-        self.storage_contexts: Dict[str, StorageContext] = {}
+        self.vector_stores: Dict[str, ChromaVectorStore] = {}
+        self.graph_stores: Dict[str, KuzuGraphStore] = {}
         self._storage_lock = threading.Lock()
 
-    def _get_storage_context(self, run_id: str, content_type: str) -> StorageContext:
+    def _get_vector_store(self, run_id: str, content_type: str) -> ChromaVectorStore:
         context_key = f"{run_id}_{content_type}"
-        if context_key in self.storage_contexts:
-            return self.storage_contexts[context_key]
+        if context_key in self.vector_stores:
+            return self.vector_stores[context_key]
 
         with self._storage_lock:
-            if context_key in self.storage_contexts:
-                return self.storage_contexts[context_key]
+            if context_key in self.vector_stores:
+                return self.vector_stores[context_key]
 
-            logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 创建新的 StorageContext...")
-
-            # 向量存储设置 (ChromaDB)
+            logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 创建新的 VectorStore (ChromaDB)...")
             chroma_path = os.path.join(chroma_dir, run_id, content_type)
             sanitized_model_name = re.sub(r'[^a-zA-Z0-9_-]', '_', self.embed_model.model_name)
             collection_name = f"collection_{sanitized_model_name}"
             vector_store = get_chroma_vector_store(db_path=chroma_path, collection_name=collection_name)
+            
+            self.vector_stores[context_key] = vector_store
+            logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 的 VectorStore 创建并缓存成功。")
+            return vector_store
 
-            # 图存储设置 (Kùzu, 高性能嵌入式)
+    def _get_graph_store(self, run_id: str, content_type: str) -> KuzuGraphStore:
+        context_key = f"{run_id}_{content_type}"
+        if context_key in self.graph_stores:
+            return self.graph_stores[context_key]
+
+        with self._storage_lock:
+            if context_key in self.graph_stores:
+                return self.graph_stores[context_key]
+
+            logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 创建新的 GraphStore (Kùzu)...")
             kuzu_db_path = os.path.join(kuzu_dir, run_id, content_type)
             graph_store = get_kuzu_graph_store(db_path=kuzu_db_path)
             
-            storage_context = StorageContext.from_defaults(
-                vector_store=vector_store,
-                graph_store=graph_store
-            )
-            self.storage_contexts[context_key] = storage_context
-            logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 的 StorageContext 创建并缓存成功。")
-            return storage_context
+            self.graph_stores[context_key] = graph_store
+            logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 的 GraphStore 创建并缓存成功。")
+            return graph_store
 
-    async def add(self, task: Task, task_type: str):
+    def add(self, task: Task, task_type: str):
         db = get_db(run_id=task.run_id, category=task.category)
         if task_type == "task_atom":
             if task.id == "1" or task.results.get("goal_update"):
                 self.caches['task_list'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_task, task)
-            await asyncio.to_thread(db.add_result, task)
+                db.add_task(task)
+            db.add_result(task)
         elif task_type == "task_plan":
             if task.results.get("plan"):
-                await asyncio.to_thread(db.add_result, task)
+                db.add_result(task)
         elif task_type == "task_plan_reflection":
             if task.results.get("plan_reflection"):
                 self.caches['task_list'].evict(tag=task.run_id)
                 self.caches['upper_design'].evict(tag=task.run_id)
                 self.caches['upper_search'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await asyncio.to_thread(db.add_sub_tasks, task)
+                db.add_result(task)
+                db.add_sub_tasks(task)
         elif task_type == "review_design":
             if task.results.get("review_design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await self.store_design(task, task.results.get("review_design"))
+                db.add_result(task)
+                self.store_design(task, task.results.get("review_design"))
         elif task_type == "review_write":
             if task.results.get("review_write"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await self.store_design(task, task.results.get("review_write"))
+                db.add_result(task)
+                self.store_design(task, task.results.get("review_write"))
         elif task_type in [
-            "task_design", 
-            "task_design_market", 
-            "task_design_title", 
-            "task_design_style", 
-            "task_design_review", 
-            "task_design_character", 
-            "task_design_system", 
-            "task_design_concept", 
-            "task_design_worldview", 
+            "task_design",
+            "task_design_market",
+            "task_design_title",
+            "task_design_style",
+            "task_design_review",
+            "task_design_character",
+            "task_design_system",
+            "task_design_concept",
+            "task_design_worldview",
             "task_design_plot",
-            "task_design_general", 
+            "task_design_general",
         ]:
             if task.results.get("design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await self.store_design(task, task.results.get("design"))
+                db.add_result(task)
+                self.store_design(task, task.results.get("design"))
         elif task_type == "task_design_reflection":
             if task.results.get("design_reflection"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await self.store_design(task, task.results.get("design_reflection"))
+                db.add_result(task)
+                self.store_design(task, task.results.get("design_reflection"))
         elif task_type == "task_hierarchy":
             if task.results.get("design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
+                db.add_result(task)
         elif task_type == "task_hierarchy_reflection":
             if task.results.get("design_reflection"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await self.store_design(task, task.results.get("design_reflection"))
+                db.add_result(task)
+                self.store_design(task, task.results.get("design_reflection"))
         elif task_type == "task_search":
             if task.results.get("search"):
                 self.caches['dependent_search'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await self.store_search(task, task.results.get("search"))
+                db.add_result(task)
+                self.store_search(task, task.results.get("search"))
         elif task_type == "task_write_before_reflection":
             if task.results.get("design_reflection"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await self.store_design(task, task.results.get("design_reflection"))
+                db.add_result(task)
+                self.store_design(task, task.results.get("design_reflection"))
         elif task_type == "task_write":
             if task.results.get("write"):
-                await asyncio.to_thread(db.add_result, task)
+                db.add_result(task)
         elif task_type == "task_write_reflection":
             write_reflection = task.results.get("write_reflection")
             if write_reflection:
                 self.caches['text_latest'].evict(tag=task.run_id)
                 self.caches['text_length'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
+                db.add_result(task)
                 header_parts = [
                     task.id,
                     task.hierarchical_position,
@@ -186,32 +194,32 @@ class RAG:
                 header = " ".join(filter(None, header_parts))
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 content = f"## 任务\n{header}\n{timestamp}\n\n{write_reflection}"
-                await asyncio.to_thread(text_file_append, get_text_file_path(task), content)
-                await self.store_write(task, write_reflection)
+                text_file_append(get_text_file_path(task), content)
+                self.store_write(task, write_reflection)
         elif task_type == "task_summary":
             if task.results.get("summary"):
                 self.caches['text_summary'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await self.store_summary(task, task.results.get("summary"))
+                db.add_result(task)
+                self.store_summary(task, task.results.get("summary"))
         elif task_type == "task_aggregate_design":
             if task.results.get("design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await self.store_design(task, task.results.get("design"))
+                db.add_result(task)
+                self.store_design(task, task.results.get("design"))
         elif task_type == "task_aggregate_search":
             if task.results.get("search"):
                 self.caches['dependent_search'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await self.store_search(task, task.results.get("search"))
+                db.add_result(task)
+                self.store_search(task, task.results.get("search"))
         elif task_type == "task_aggregate_summary":
             if task.results.get("summary"):
                 self.caches['text_summary'].evict(tag=task.run_id)
-                await asyncio.to_thread(db.add_result, task)
-                await self.store_summary(task, task.results.get("summary"))
+                db.add_result(task)
+                self.store_summary(task, task.results.get("summary"))
         else:
             raise ValueError("不支持的任务类型")
 
-    async def store_design(self, task: Task, content: str) -> None:
+    def store_design(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 design 内容 (向量索引与知识图谱)...")
         header_parts = [
             task.id,
@@ -220,17 +228,21 @@ class RAG:
         ]
         header = " ".join(filter(None, header_parts))
         content = f"# 任务\n{header}\n\n{content}"
-        storage_context = self._get_storage_context(task.run_id, "design")
+        vector_store = self._get_vector_store(task.run_id, "design")
+        graph_store = self._get_graph_store(task.run_id, "design")
+        storage_context = StorageContext.from_defaults(
+            vector_store=vector_store,
+            graph_store=graph_store
+        )
         doc_metadata = {
             "task_id": task.id,
-            "hierarchical_position": task.hierarchical_position, 
+            "hierarchical_position": task.hierarchical_position,
             "status": "active",                         # 状态, 用于标记/取消文档
-            "created_at": datetime.now().isoformat() 
+            "created_at": datetime.now().isoformat()
         }
         # 1. 存入向量数据库
-        await asyncio.to_thread(
-            vector_store_func,
-            vector_store=storage_context.vector_store,
+        vector_store_func(
+            vector_store=vector_store,
             content=content,
             metadata=doc_metadata,
             content_format="markdown",
@@ -238,8 +250,7 @@ class RAG:
         )
         logger.info(f"[{task.id}] design 内容向量化完成, 开始构建知识图谱...")
         # 2. 存入知识图谱
-        await asyncio.to_thread(
-            graph_store_func,
+        graph_store_func(
             storage_context=storage_context,
             content=content,
             metadata=doc_metadata,
@@ -250,19 +261,18 @@ class RAG:
         )
         logger.info(f"[{task.id}] design 内容存储完成。")
 
-    async def store_search(self, task: Task, content: str) -> None:
+    def store_search(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 search 内容 (向量索引)...")
         header_parts = [task.id, task.hierarchical_position, task.goal]
         header = " ".join(filter(None, header_parts))
         full_content = f"# 任务\n{header}\n\n{content}"
-        storage_context = self._get_storage_context(task.run_id, "search")
+        vector_store = self._get_vector_store(task.run_id, "search")
         doc_metadata = {
             "task_id": task.id,
             "created_at": datetime.now().isoformat()
         }
-        await asyncio.to_thread(
-            vector_store_func,
-            vector_store=storage_context.vector_store,
+        vector_store_func(
+            vector_store=vector_store,
             content=full_content,
             metadata=doc_metadata,
             content_format="markdown",
@@ -270,16 +280,16 @@ class RAG:
         )
         logger.info(f"[{task.id}] search 内容存储完成。")
 
-    async def store_write(self, task: Task, content: str) -> None:
+    def store_write(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 write 内容 (构建知识图谱)...")
-        storage_context = self._get_storage_context(task.run_id, "write")
+        graph_store = self._get_graph_store(task.run_id, "write")
+        storage_context = StorageContext.from_defaults(graph_store=graph_store)
         doc_metadata = {
             "task_id": task.id,
-            "hierarchical_position": task.hierarchical_position, 
+            "hierarchical_position": task.hierarchical_position,
             "created_at": datetime.now().isoformat()
         }
-        await asyncio.to_thread(
-            graph_store_func,
+        graph_store_func(
             storage_context=storage_context,
             content=content,
             metadata=doc_metadata,
@@ -290,7 +300,7 @@ class RAG:
         )
         logger.info(f"[{task.id}] write 内容存储完成。")
     
-    async def store_summary(self, task: Task, content: str) -> None:
+    def store_summary(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 summary 内容 (向量索引)...")
         header_parts = [
             task.id,
@@ -300,15 +310,14 @@ class RAG:
         ]
         header = " ".join(filter(None, header_parts))
         full_content = f"# 任务\n{header}\n\n{content}"
-        storage_context = self._get_storage_context(task.run_id, "summary")
+        vector_store = self._get_vector_store(task.run_id, "summary")
         doc_metadata = {
             "task_id": task.id,
-            "hierarchical_position": task.hierarchical_position, 
+            "hierarchical_position": task.hierarchical_position,
             "created_at": datetime.now().isoformat()
         }
-        await asyncio.to_thread(
-            vector_store_func,
-            vector_store=storage_context.vector_store,
+        vector_store_func(
+            vector_store=vector_store,
             content=full_content,
             metadata=doc_metadata,
             content_format="markdown",
@@ -318,24 +327,24 @@ class RAG:
 
 ###############################################################################
 
-    async def get_context_base(self, task: Task) -> Dict[str, Any]:
+    def get_context_base(self, task: Task) -> Dict[str, Any]:
         ret = {
             "task": task.model_dump_json(
                 indent=2,
                 exclude_none=True,
                 include={'id', 'parent_id', 'task_type', 'hierarchical_position', 'goal', 'length', 'dependency'}
             ),
-            "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"), 
+            "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }
         if not task.parent_id:
             return ret
         db = get_db(run_id=task.run_id, category=task.category)
-        dependent_design = await self.get_dependent_design(db, task)
-        dependent_search = await self.get_dependent_search(db, task)
-        text_latest = await self.get_text_latest(task)
+        dependent_design = self.get_dependent_design(db, task)
+        dependent_search = self.get_dependent_search(db, task)
+        text_latest = self.get_text_latest(task)
         task_list = ""
         if len(task.id.split(".")) >= 2:
-            task_list = await self.get_task_list(db, task)
+            task_list = self.get_task_list(db, task)
         ret.update({
             "dependent_design": dependent_design,
             "dependent_search": dependent_search,
@@ -344,61 +353,59 @@ class RAG:
         })
         return ret
     
-    async def get_context(self, task: Task) -> Dict[str, Any]:
-        ret = await self.get_context_base(task)
+    def get_context(self, task: Task) -> Dict[str, Any]:
+        ret = self.get_context_base(task)
         if not task.parent_id:
             return ret
         dependent_design = ret.get("dependent_design", "")
         dependent_search = ret.get("dependent_search", "")
         text_latest = ret.get("text_latest", "")
         task_list = ret.get("task_list", "")
-        rag_context_coros = {}
+        rag_results = {}
         current_level = len(task.id.split("."))
         if current_level >= 3:
-            rag_context_coros["upper_design"] = self.get_upper_design(task, dependent_design, dependent_search, text_latest, task_list)
-            rag_context_coros["upper_search"] = self.get_upper_search(task, dependent_design, dependent_search, text_latest, task_list)
+            rag_results["upper_design"] = self.get_upper_design(task, dependent_design, dependent_search, text_latest, task_list)
+            rag_results["upper_search"] = self.get_upper_search(task, dependent_design, dependent_search, text_latest, task_list)
         if len(text_latest) > 500:
-            rag_context_coros["text_summary"] = self.get_text_summary(task, dependent_design, dependent_search, text_latest, task_list)
-        if not rag_context_coros:
-            return ret
-        results = await asyncio.gather(*rag_context_coros.values())
-        ret.update({key: result for key, result in zip(rag_context_coros.keys(), results)})
+            rag_results["text_summary"] = self.get_text_summary(task, dependent_design, dependent_search, text_latest, task_list)
+        if rag_results:
+            ret.update(rag_results)
         return ret
 
-    async def get_dependent_design(self, db: Any, task: Task) -> str:
+    def get_dependent_design(self, db: Any, task: Task) -> str:
         cache_key = f"dependent_design:{task.run_id}:{task.id}"
-        cached_result = await asyncio.to_thread(self.caches['dependent_design'].get, cache_key)
+        cached_result = self.caches['dependent_design'].get(cache_key)
         if cached_result is not None:
             return cached_result
-        result = await asyncio.to_thread(db.get_dependent_design, task)
-        await asyncio.to_thread(self.caches['dependent_design'].set, cache_key, result, tag=task.run_id)
+        result = db.get_dependent_design(task)
+        self.caches['dependent_design'].set(cache_key, result, tag=task.run_id)
         return result
 
-    async def get_dependent_search(self, db: Any, task: Task) -> str:
+    def get_dependent_search(self, db: Any, task: Task) -> str:
         cache_key = f"dependent_search:{task.run_id}:{task.id}"
-        cached_result = await asyncio.to_thread(self.caches['dependent_search'].get, cache_key)
+        cached_result = self.caches['dependent_search'].get(cache_key)
         if cached_result is not None:
             return cached_result
-        result = await asyncio.to_thread(db.get_dependent_search, task)
-        await asyncio.to_thread(self.caches['dependent_search'].set, cache_key, result, tag=task.run_id)
+        result = db.get_dependent_search(task)
+        self.caches['dependent_search'].set(cache_key, result, tag=task.run_id)
         return result
 
-    async def get_task_list(self, db: Any, task: Task) -> str:
+    def get_task_list(self, db: Any, task: Task) -> str:
         cache_key = f"task_list:{task.run_id}:{task.parent_id}"
-        cached_result = await asyncio.to_thread(self.caches['task_list'].get, cache_key)
+        cached_result = self.caches['task_list'].get(cache_key)
         if cached_result is not None:
             return cached_result
-        result = await asyncio.to_thread(db.get_task_list, task)
-        await asyncio.to_thread(self.caches['task_list'].set, cache_key, result, tag=task.run_id)
+        result = db.get_task_list(task)
+        self.caches['task_list'].set(cache_key, result, tag=task.run_id)
         return result
 
-    async def get_text_latest(self, task: Task, length: int = 3000) -> str:
+    def get_text_latest(self, task: Task, length: int = 3000) -> str:
         key = f"get_text_latest:{task.run_id}:{length}"
-        cached_result = await asyncio.to_thread(self.caches['text_latest'].get, key)
+        cached_result = self.caches['text_latest'].get(key)
         if cached_result is not None:
             return cached_result
         db = get_db(run_id=task.run_id, category=task.category)
-        full_content = await asyncio.to_thread(db.get_latest_write_reflection, length)
+        full_content = db.get_latest_write_reflection(length)
         if len(full_content) <= length:
             result = full_content
         else:
@@ -416,35 +423,35 @@ class RAG:
                 else:
                     # 3. 如果全文都没有换行符, 或者只有一段很长的内容, 则直接硬截取
                     result = full_content[-length:]
-        await asyncio.to_thread(self.caches['text_latest'].set, key, result, tag=task.run_id)
+        self.caches['text_latest'].set(key, result, tag=task.run_id)
         return result
 
-    async def get_text_length(self, task: Task) -> int:
+    def get_text_length(self, task: Task) -> int:
         file_path = get_text_file_path(task)
         key = f"get_text_length:{file_path}"
-        cached_result = await asyncio.to_thread(self.caches['text_length'].get, key)
+        cached_result = self.caches['text_length'].get(key)
         if cached_result is not None:
             return cached_result
-        full_content = await asyncio.to_thread(text_file_read, file_path)
+        full_content = text_file_read(file_path)
         length = len(full_content)
-        await asyncio.to_thread(self.caches['text_length'].set, key, length, tag=task.run_id)
+        self.caches['text_length'].set(key, length, tag=task.run_id)
         return length
 
-    async def get_aggregate_design(self, task: Task) -> Dict[str, Any]:
-        ret = await self.get_context_base(task)
+    def get_aggregate_design(self, task: Task) -> Dict[str, Any]:
+        ret = self.get_context_base(task)
         if task.sub_tasks:
             db = get_db(run_id=task.run_id, category=task.category)
-            ret["subtask_design"] = await asyncio.to_thread(db.get_subtask_design, task.id)
+            ret["subtask_design"] = db.get_subtask_design(task.id)
         return ret
 
-    async def get_aggregate_search(self, task: Task) -> Dict[str, Any]:
-        ret = await self.get_context_base(task)
+    def get_aggregate_search(self, task: Task) -> Dict[str, Any]:
+        ret = self.get_context_base(task)
         if task.sub_tasks:
             db = get_db(run_id=task.run_id, category=task.category)
-            ret["subtask_search"] = await asyncio.to_thread(db.get_subtask_search, task.id)
+            ret["subtask_search"] = db.get_subtask_search(task.id)
         return ret
 
-    async def get_aggregate_summary(self, task: Task) -> Dict[str, Any]:
+    def get_aggregate_summary(self, task: Task) -> Dict[str, Any]:
         ret = {
             "task": task.model_dump_json(
                 indent=2,
@@ -454,10 +461,10 @@ class RAG:
         }
         if task.sub_tasks:
             db = get_db(run_id=task.run_id, category=task.category)
-            ret["subtask_summary"] = await asyncio.to_thread(db.get_subtask_summary, task.id)
+            ret["subtask_summary"] = db.get_subtask_summary(task.id)
         return ret
 
-    async def get_inquiry(
+    def get_inquiry(
         self,
         task: Task,
         dependent_design: str,
@@ -489,18 +496,18 @@ class RAG:
         }
         messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context_dict_user)
         llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["reasoning"])
-        message = await llm_acompletion(llm_params, response_model=Inquiry)
+        message = llm_completion(llm_params, response_model=Inquiry)
         return message.validated_data.model_dump()
     
-    async def get_upper_search(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
+    def get_upper_search(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
         logger.info(f"[{task.id}] 开始获取上层搜索(upper_search)上下文...")
         cache_key = f"get_upper_search:{task.run_id}:{task.id}"
-        cached_result = await asyncio.to_thread(self.caches['upper_search'].get, cache_key)
+        cached_result = self.caches['upper_search'].get(cache_key)
         if cached_result is not None:
             logger.info(f"[{task.id}] 命中上层搜索(upper_search)缓存。")
             return cached_result
         
-        inquiry = await self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'search')
+        inquiry = self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'search')
         if not inquiry or not inquiry.get("questions"):
             logger.warning(f"[{task.id}] 生成的探询问题为空或无效, 跳过上层搜索。")
             return ""
@@ -511,7 +518,7 @@ class RAG:
         single_question = "\n".join(all_questions)
         logger.info(f"[{task.id}] 整合后的上层搜索查询问题:\n{single_question}")
         
-        storage_context = self._get_storage_context(task.run_id, "search")
+        vector_store = self._get_vector_store(task.run_id, "search")
 
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
@@ -521,12 +528,11 @@ class RAG:
         filters = MetadataFilters(filters=active_filters) if active_filters else None
         logger.info(f"[{task.id}] 上层搜索使用的过滤器: {filters.to_dict() if filters else 'None'}")
 
-        answer, _ = await asyncio.to_thread(
-            vector_query,
-            vector_store=storage_context.vector_store,
+        answer, _ = vector_query(
+            vector_store=vector_store,
             query_text=single_question,
             filters=filters,
-            rerank_top_n=4,  # 使 similarity_top_k=20, 与原始逻辑相似
+            rerank_top_n=4,
         )
 
         result = answer or ""
@@ -535,18 +541,18 @@ class RAG:
         else:
             logger.success(f"[{task.id}] 上层搜索(upper_search)成功完成，并生成了综合答案。")
 
-        await asyncio.to_thread(self.caches['upper_search'].set, cache_key, result, tag=task.run_id)
+        self.caches['upper_search'].set(cache_key, result, tag=task.run_id)
         logger.info(f"[{task.id}] 获取上层搜索(upper_search)上下文的流程已结束。")
         return result
 
-    async def get_upper_design(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
+    def get_upper_design(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
         logger.info(f"[{task.id}] 开始获取上层设计(upper_design)上下文...")
         cache_key = f"get_upper_design:{task.run_id}:{task.id}"
-        cached_result = await asyncio.to_thread(self.caches['upper_design'].get, cache_key)
+        cached_result = self.caches['upper_design'].get(cache_key)
         if cached_result is not None:
             logger.info(f"[{task.id}] 命中上层设计(upper_design)缓存。")
             return cached_result
-        inquiry = await self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'design')
+        inquiry = self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'design')
         if not inquiry or not inquiry.get("questions"):
             logger.warning(f"[{task.id}] 生成的探询问题为空或无效, 跳过上层设计检索。")
             return ""
@@ -554,68 +560,18 @@ class RAG:
         if not all_questions:
             logger.warning(f"[{task.id}] 探询列表中没有问题, 无法执行上层设计查询。")
             return ""
-        
-        logger.info(f"[{task.id}] 正在为 'design' 库初始化向量和知识图谱查询引擎...")
-        storage_context = self._get_storage_context(task.run_id, "design")
-        vector_index = await asyncio.to_thread(
-            VectorStoreIndex.from_vector_store,
-            storage_context.vector_store,
-            embed_model=self.embed_model
-        )
-        response_synthesizer = CompactAndRefine(
-            llm=self.llm_synthesis,
-            prompt_helper=PromptHelper(
-                context_window=self.llm_synthesis_params['context_window'],
-                num_output=self.llm_synthesis_params['max_tokens'],
-                chunk_overlap_ratio=0.2
-            )
-        )
+
+        vector_store = self._get_vector_store(task.run_id, "design")
+        graph_store = self._get_graph_store(task.run_id, "design")
+
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
         if preceding_sibling_ids:
             active_filters.append(MetadataFilter(key='task_id', value=preceding_sibling_ids, operator='nin'))
-            
-        logger.info(f"[{task.id}] 4. 构建向量查询引擎...")
-        vector_query_engine = vector_index.as_query_engine(
-            filters=MetadataFilters(filters=active_filters) if active_filters else None,
-            llm=self.llm_reasoning,
-            response_synthesizer=response_synthesizer,
-            similarity_top_k=150,
-            node_postprocessors=[
-                LLMRerank(llm=self.llm_reasoning, top_n=50)
-            ]
-        )
+        vector_filters = MetadataFilters(filters=active_filters) if active_filters else None
 
-        logger.info(f"[{task.id}] 5. 构建知识图谱查询引擎...")
-        kg_filter_context = {}
         kg_gen_query_prompt = load_prompts(task.category, "rag_cn", "kg_gen_query_prompt")[0]
-        kg_query_gen_prompt = PromptTemplate(template=kg_gen_query_prompt).partial_format(**kg_filter_context)
-        logger.info(f"[{task.id}]   - 加载知识图谱索引...")
-        kg_index = await asyncio.to_thread(
-            KnowledgeGraphIndex.from_documents,
-            [], 
-            storage_context=storage_context,
-            llm=self.llm_reasoning,
-            include_embeddings=True,
-            embed_model=self.embed_model
-        )
-        logger.info(f"[{task.id}]   - 创建混合模式知识图谱检索器...")
-        kg_retriever = kg_index.as_retriever(
-            retriever_mode="hybrid",          # 混合模式: 结合了关键词、向量和图查询
-            similarity_top_k=300,             # 1. 向量检索: 初步召回200个相关节点
-            with_nl2graphquery=True,          # 2. NL2Graph: 将自然语言转为Cypher查询
-            graph_traversal_depth=2,          # 3. 图遍历: 从召回的节点出发, 深入探索2层关系
-            nl2graphquery_prompt=kg_query_gen_prompt, # 使用我们自定义的、带过滤条件的prompt
-        )
-        logger.info(f"[{task.id}]   - 组装知识图谱查询引擎...")
-        kg_query_engine = RetrieverQueryEngine(
-            retriever=kg_retriever,
-            response_synthesizer=response_synthesizer,
-            node_postprocessors=[
-                LLMRerank(llm=self.llm_reasoning, top_n=100)
-            ]
-        )
-        logger.info(f"[{task.id}] 查询引擎初始化完成。")
+        kg_query_gen_prompt = PromptTemplate(template=kg_gen_query_prompt)
 
         final_instruction = "角色: 首席故事架构师。\n任务: 整合上层设计, 提炼统一、无冲突的宏观设定和指导原则。"
         rules_text = """
@@ -630,47 +586,41 @@ class RAG:
 - 统一设定: [以要点形式, 清晰列出整合后的最终设定]
 - 设计演变与冲突: (可选) [简要说明关键设定的演变过程, 或指出已解决的重大设计矛盾]
 """
-        query_text = self.build_agent_query(all_questions, final_instruction, rules_text)
-        
-        logger.info(f"[{task.id}] 使用混合查询模式进行上层设计检索。")
-        single_question = "\n".join(all_questions)
+        synthesis_query_text = self.build_agent_query(all_questions, final_instruction, rules_text)
+        retrieval_query_text = "\n".join(all_questions)
+
         synthesis_system_prompt, synthesis_user_prompt = load_prompts(task.category, "rag_cn", "synthesis_system_prompt", "synthesis_user_prompt")
-        
-        logger.info(f"[{task.id}] 正在执行向量查询...")
-        vector_response = await asyncio.to_thread(vector_query_engine.query, single_question)
-        formatted_vector_str = await asyncio.to_thread(self.format_response_with_sorting, vector_response, 'time')
-        logger.info(f"[{task.id}] 向量查询完成, 检索到 {len(vector_response.source_nodes)} 个节点。")
 
-        logger.info(f"[{task.id}] 正在执行知识图谱查询...")
-        kg_response = await asyncio.to_thread(kg_query_engine.query, single_question)
-        formatted_kg_str = await asyncio.to_thread(self.format_response_with_sorting, kg_response, 'time')
-        logger.info(f"[{task.id}] 知识图谱查询完成, 检索到 {len(kg_response.source_nodes)} 个节点。")
+        result = hybrid_query(
+            vector_store=vector_store,
+            graph_store=graph_store,
+            retrieval_query_text=retrieval_query_text,
+            synthesis_query_text=synthesis_query_text,
+            synthesis_system_prompt=synthesis_system_prompt,
+            synthesis_user_prompt=synthesis_user_prompt,
+            kg_nl2graphquery_prompt=kg_query_gen_prompt,
+            vector_filters=vector_filters,
+            vector_similarity_top_k=150,
+            vector_rerank_top_n=50,
+            kg_similarity_top_k=300,
+            kg_rerank_top_n=100,
+            vector_sort_by='time',
+            kg_sort_by='time',
+        )
 
-        logger.info(f"[{task.id}] 正在整合向量和知识图谱的查询结果...")
-        context_dict_user = {
-            "query_text": query_text,
-            "formatted_vector_str": formatted_vector_str,
-            "formatted_kg_str": formatted_kg_str,
-        }
-        messages = get_llm_messages(synthesis_system_prompt, synthesis_user_prompt, None, context_dict_user)
-        llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=LLM_TEMPERATURES["synthesis"])
-        final_message = await llm_acompletion(llm_params)
-        result = final_message.content
-        logger.info(f"[{task.id}] 结果整合完成。")
-
-        await asyncio.to_thread(self.caches['upper_design'].set, cache_key, result, tag=task.run_id)
+        self.caches['upper_design'].set(cache_key, result, tag=task.run_id)
         logger.info(f"[{task.id}] 获取上层设计(upper_design)上下文完成。")
         return result
  
-    async def get_text_summary(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
+    def get_text_summary(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
         logger.info(f"[{task.id}] 开始获取历史情节概要(text_summary)上下文...")
         cache_key = f"get_text_summary:{task.run_id}:{task.id}"
-        cached_result = await asyncio.to_thread(self.caches['text_summary'].get, cache_key)
+        cached_result = self.caches['text_summary'].get(cache_key)
         if cached_result is not None:
             logger.info(f"[{task.id}] 命中历史情节概要(text_summary)缓存。")
             return cached_result
 
-        inquiry = await self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'write')
+        inquiry = self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'write')
         if not inquiry or not inquiry.get("questions"):
             logger.warning(f"[{task.id}] 生成的探询问题为空或无效, 跳过历史情节概要检索。")
             return ""
@@ -680,74 +630,25 @@ class RAG:
             logger.warning(f"[{task.id}] 探询列表中没有问题, 无法执行历史情节概要查询。")
             return ""
 
-        logger.info(f"[{task.id}] 2. 初始化响应合成器 (CompactAndRefine)...")
-        response_synthesizer = CompactAndRefine(
-            llm=self.llm_synthesis,
-            prompt_helper=PromptHelper(
-                context_window=self.llm_synthesis_params['context_window'],
-                num_output=self.llm_synthesis_params['max_tokens'],
-                chunk_overlap_ratio=0.2
-            )
-        )
-        logger.info(f"[{task.id}] 3. 从 'summary' 库加载向量索引...")
-        summary_storage_context = self._get_storage_context(task.run_id, "summary")
-        vector_index = await asyncio.to_thread(
-            VectorStoreIndex.from_vector_store,
-            summary_storage_context.vector_store,
-            embed_model=self.embed_model
-        )
-        logger.info(f"[{task.id}] 4. 构建向量查询引擎...")
+        summary_vector_store = self._get_vector_store(task.run_id, "summary")
+        write_graph_store = self._get_graph_store(task.run_id, "write")
+
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
         if preceding_sibling_ids:
             active_filters.append(MetadataFilter(key='task_id', value=preceding_sibling_ids, operator='nin'))
-        logger.info(f"[{task.id}] 历史情节概要检索使用的过滤器: {active_filters}")
-        vector_query_engine = vector_index.as_query_engine(
-            filters=MetadataFilters(filters=active_filters) if active_filters else None,
-            llm=self.llm_reasoning,
-            response_synthesizer=response_synthesizer,
-            similarity_top_k=300,
-            node_postprocessors=[
-                LLMRerank(llm=self.llm_reasoning, top_n=100)
-            ]
-        )
+        vector_filters = MetadataFilters(filters=active_filters) if active_filters else None
+        logger.info(f"[{task.id}] 历史情节概要检索使用的过滤器: {vector_filters.to_dict() if vector_filters else 'None'}")
 
-        logger.info(f"[{task.id}] 5. 构建知识图谱查询引擎...")
-        write_storage_context = self._get_storage_context(task.run_id, "write")
-        kg_filter_context = {}
         kg_gen_query_prompt = load_prompts(task.category, "rag_cn", "kg_gen_query_prompt")[0]
-        kg_query_gen_prompt = PromptTemplate(template=kg_gen_query_prompt).partial_format(**kg_filter_context)
-        logger.info(f"[{task.id}]   - 加载知识图谱索引...")
-        kg_index = await asyncio.to_thread(
-            KnowledgeGraphIndex.from_documents,
-            [], 
-            storage_context=write_storage_context,
-            llm=self.llm_reasoning,
-            include_embeddings=True,
-            embed_model=self.embed_model
-        )
-        logger.info(f"[{task.id}]   - 创建混合模式知识图谱检索器...")
-        kg_retriever = kg_index.as_retriever(
-            retriever_mode="hybrid",
-            similarity_top_k=600,
-            with_nl2graphquery=True,
-            graph_traversal_depth=2,
-            nl2graphquery_prompt=kg_query_gen_prompt,
-        )
-        kg_query_engine = RetrieverQueryEngine(
-            retriever=kg_retriever,
-            response_synthesizer=response_synthesizer,
-            node_postprocessors=[
-                LLMRerank(llm=self.llm_reasoning, top_n=200)
-            ]
-        )
-        logger.info(f"[{task.id}] 查询引擎初始化完成。")
+        kg_query_gen_prompt = PromptTemplate(template=kg_gen_query_prompt)
+
         final_instruction = "角色: 剧情连续性编辑。\n任务: 整合情节摘要(向量)与正文细节(图谱), 生成一份服务于续写的上下文报告。\n重点: 角色关系、关键伏笔、情节呼应。"
         rules_text = """
 # 整合规则
 1.  冲突解决: 向量(摘要)与图谱(细节)冲突时, 以图谱为准。
 2.  排序依据:
-    - 向量: 相关性。
+    - 向量: 章节顺序 (时间线)。
     - 图谱: 章节顺序 (时间线)。
 3.  输出要求: 整合为连贯叙述, 禁止罗列。
 
@@ -756,33 +657,28 @@ class RAG:
 - 关键要点: (可选) [以列表形式补充说明关键的角色状态、伏笔或设定]
 """
         
-        query_text = self.build_agent_query(all_questions, final_instruction, rules_text)
-        
-        logger.info(f"[{task.id}] 使用混合查询模式进行历史情节概要检索。")
-        single_question = "\n".join(all_questions)
+        synthesis_query_text = self.build_agent_query(all_questions, final_instruction, rules_text)
+        retrieval_query_text = "\n".join(all_questions)
         synthesis_system_prompt, synthesis_user_prompt = load_prompts(task.category, "rag_cn", "synthesis_system_prompt", "synthesis_user_prompt")
         
-        logger.info(f"[{task.id}] 正在执行向量查询(历史摘要)...")
-        vector_response = await asyncio.to_thread(vector_query_engine.query, single_question)
-        formatted_vector_str = await asyncio.to_thread(self.format_response_with_sorting, vector_response, 'narrative')
-        logger.info(f"[{task.id}] 向量查询完成, 检索到 {len(vector_response.source_nodes)} 个节点。")
+        result = hybrid_query(
+            vector_store=summary_vector_store,
+            graph_store=write_graph_store,
+            retrieval_query_text=retrieval_query_text,
+            synthesis_query_text=synthesis_query_text,
+            synthesis_system_prompt=synthesis_system_prompt,
+            synthesis_user_prompt=synthesis_user_prompt,
+            kg_nl2graphquery_prompt=kg_query_gen_prompt,
+            vector_filters=vector_filters,
+            vector_similarity_top_k=300,
+            vector_rerank_top_n=100,
+            kg_similarity_top_k=600,
+            kg_rerank_top_n=200,
+            vector_sort_by='narrative',
+            kg_sort_by='narrative',
+        )
 
-        logger.info(f"[{task.id}] 正在执行知识图谱查询(正文细节)...")
-        kg_response = await asyncio.to_thread(kg_query_engine.query, single_question)
-        formatted_kg_str = await asyncio.to_thread(self.format_response_with_sorting, kg_response, 'narrative')
-        logger.info(f"[{task.id}] 知识图谱查询完成, 检索到 {len(kg_response.source_nodes)} 个节点。")
-
-        context_dict_user = {
-            "query_text": query_text,
-            "formatted_vector_str": formatted_vector_str,
-            "formatted_kg_str": formatted_kg_str,
-        }
-        messages = get_llm_messages(synthesis_system_prompt, synthesis_user_prompt, None, context_dict_user)
-        llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=LLM_TEMPERATURES["synthesis"])
-        final_message = await llm_acompletion(llm_params)
-        result = final_message.content
-
-        await asyncio.to_thread(self.caches['text_summary'].set, cache_key, result, tag=task.run_id)
+        self.caches['text_summary'].set(cache_key, result, tag=task.run_id)
         logger.info(f"[{task.id}] 获取历史情节概要(text_summary)上下文完成。")
         return result
 
@@ -800,50 +696,6 @@ class RAG:
         logger.debug(f"最终构建的 Agent 查询文本:\n{query_text}")
         return query_text
 
-    def format_response_with_sorting(self, response: Response, sort_by: Literal['time', 'narrative', 'relevance']) -> str:
-        """
-        sort_by (Literal): 排序策略: 'time' (时间倒序), 'narrative' (章节顺序), 'relevance' (相关性)。
-        """
-        if not response.source_nodes:
-            return f"未找到相关来源信息, 但综合回答是: \n{str(response)}"
-
-        if sort_by == 'narrative':
-            # 定义一个“自然排序”的 key 函数, 能正确处理 '1.2' 和 '1.10' 这样的章节号
-            sorted_nodes = sorted(
-                list(response.source_nodes),
-                key=lambda n: natural_sort_key(n.metadata.get("task_id", "")),
-                reverse=False  # 正序排列
-            )
-            sort_description = "按小说章节顺序排列 (从前到后)"
-        elif sort_by == 'time':
-            # 按元数据中的 'created_at' 时间戳对来源节点进行降序排序
-            sorted_nodes = sorted(
-                list(response.source_nodes),
-                key=lambda n: n.metadata.get("created_at", "1970-01-01T00:00:00"),
-                reverse=True  # 倒序排列, 最新的在前
-            )
-            sort_description = "按时间倒序排列 (最新的在前)"
-        else: # 'relevance' 或其他默认情况
-            sort_description = "按相关性排序"
-            sorted_nodes = list(response.source_nodes)
-
-        # 格式化每个来源节点的详细信息
-        source_details = []
-        for node in sorted_nodes:
-            timestamp = node.metadata.get("created_at", "未知时间")
-            task_id = node.metadata.get("task_id", "未知章节")
-            score = node.get_score()
-            score_str = f"{score:.4f}" if score is not None else "N/A"
-            # 将文本中的多个空白符合并为一个空格, 以简化输出
-            content = re.sub(r'\s+', ' ', node.get_content()).strip()
-            source_details.append(f"来源信息 (章节: {task_id}, 时间: {timestamp}, 相关性: {score_str}):\n---\n{content}\n---")
-
-        formatted_sources = "\n\n".join(source_details)
-
-        # 将综合回答和详细来源信息组合成最终输出
-        final_output = f"综合回答:\n{str(response)}\n\n详细来源 ({sort_description}):\n{formatted_sources}"
-        return final_output
-
 
 ###############################################################################
 
@@ -860,7 +712,7 @@ def get_rag():
 
 
 if __name__ == "__main__":
-    async def main():
+    def main():
         logger.info("开始 RAG 存储功能测试...")
         rag = get_rag()
 
@@ -881,27 +733,27 @@ if __name__ == "__main__":
         # 2. 测试 store_design
         logger.info("--- 正在测试 store_design ---")
         design_content = "这是一个详细的设计方案。主角是一个年轻的法师，他发现了一个古老的秘密。世界观是魔法与科技并存。"
-        await rag.store_design(mock_task, design_content)
+        rag.store_design(mock_task, design_content)
         logger.success("--- store_design 测试完成 ---")
 
         # 3. 测试 store_search
         logger.info("--- 正在测试 store_search ---")
         search_content = "关于“魔法与科技并存”设定的市场调研结果：\n- 优点：受众广泛，想象空间大。\n- 缺点：容易出现设定冲突。"
-        await rag.store_search(mock_task, search_content)
+        rag.store_search(mock_task, search_content)
         logger.success("--- store_search 测试完成 ---")
 
         # 4. 测试 store_write
         logger.info("--- 正在测试 store_write ---")
         write_content = "第一章的开头。清晨，阳光穿过浮空城市的缝隙，照亮了艾瑞克简陋的房间。他桌上的机械臂正小心翼翼地擦拭着一根老旧的法杖。"
-        await rag.store_write(mock_task, write_content)
+        rag.store_write(mock_task, write_content)
         logger.success("--- store_write 测试完成 ---")
 
         # 5. 测试 store_summary
         logger.info("--- 正在测试 store_summary ---")
         summary_content = "本章介绍了主角艾瑞克和他所处的世界，一个魔法与科技交融的浮空城市。通过开头的场景，暗示了主角的背景和故事的基调。"
-        await rag.store_summary(mock_task, summary_content)
+        rag.store_summary(mock_task, summary_content)
         logger.success("--- store_summary 测试完成 ---")
 
         logger.info("所有 RAG 存储功能测试已完成。请检查 .chroma_db, .kuzu_db 等目录下的 'test_run_12345' 文件夹以验证结果。")
 
-    asyncio.run(main())
+    main()

@@ -1,10 +1,9 @@
 import copy
+import os
 import re
 import collections
 import json
 import hashlib
-import asyncio
-import os
 import sys
 import litellm
 from dotenv import load_dotenv
@@ -15,7 +14,7 @@ from pydantic import BaseModel, ValidationError
 from llama_index.core.agent.workflow import ReActAgent
 from llama_index.core.workflow import Context
 from llama_index.llms.litellm import LiteLLM
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.file import litellm_cache_dir
 from utils.search import web_search_tools
 
@@ -35,7 +34,7 @@ LLMs = {
     "reasoning": {
         "model": "openrouter/deepseek/deepseek-r1-0528:free",
         "api_key": os.getenv("OPENROUTER_API_KEY"),
-        "context_window": 163840,
+        "context_window": 16384,
         "fallbacks": [
             {
                 "model": "openai/deepseek-ai/DeepSeek-R1-0528",
@@ -67,7 +66,7 @@ LLMs = {
     "fast": {
         "model": "openrouter/deepseek/deepseek-chat-v3-0324:free",
         "api_key": os.getenv("OPENROUTER_API_KEY"),
-        "context_window": 163840,
+        "context_window": 16384,
         "fallbacks": [
             {
                 "model": "openai/deepseek-ai/DeepSeek-V3",
@@ -97,7 +96,7 @@ LLMs = {
 LLM_PARAMS_general = {
     "temperature": LLM_TEMPERATURES["reasoning"],
     "caching": True,
-    "max_tokens": 10000,
+    "max_tokens": 8000,
     "max_completion_tokens": 10000,
     "timeout": 900,
     "num_retries": 3,
@@ -254,12 +253,12 @@ PROMPT_SELF_CORRECTION = """
 {original_task}
 
 # 新的要求
-1.  严格遵循原始任务的所有指令。
+1.  严格遵循原始任务的所有指令, 尤其是关于JSON Schema的指令。
 2.  严格根据 Pydantic 模型的要求, 修正并仅返回完整的、有效的 JSON 对象。
 3.  禁止在 JSON 前后添加任何额外解释或 markdown 代码块。
 """
 
-async def llm_acompletion(
+def llm_completion(
         llm_params: Dict[str, Any], 
         response_model: Optional[Type[BaseModel]] = None, 
         validator: Optional[Callable[[Any], None]] = None
@@ -289,7 +288,7 @@ async def llm_acompletion(
             logger.info(f"用户提示词:\n{user_prompt}")
         raw_output_for_correction = None
         try:
-            response = await litellm.acompletion(**llm_params_for_api)
+            response = litellm.completion(**llm_params_for_api)
             if not response.choices or not response.choices[0].message:
                 raise ValueError("LLM响应中缺少 choices 或 message。")
             message = response.choices[0].message
@@ -350,10 +349,14 @@ async def llm_acompletion(
             else:
                 logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
                 raise
-    raise RuntimeError("llm_acompletion 在所有重试后失败, 这是一个不应出现的情况。")
+    raise RuntimeError("llm_completion 在所有重试后失败, 这是一个不应出现的情况。")
 
+async def llm_acompletion(*args, **kwargs):
+    # This is a placeholder for backward compatibility.
+    # All calls should be migrated to the synchronous llm_completion.
+    return llm_completion(*args, **kwargs)
 
-async def call_agent(
+def call_agent(
     system_prompt: str,
     user_prompt: str,
     tools: List[Any] = web_search_tools,
@@ -371,7 +374,7 @@ async def call_agent(
     )
     logger.info(f"系统提示词:\n{system_prompt}")
     logger.info(f"用户提示词:\n{user_prompt}")
-    response = await agent.run(user_prompt)
+    response = agent.run(user_prompt)
     raw_output = response.response.content
     cleaned_output = clean_markdown_fences(raw_output)
     if response_model:
@@ -397,7 +400,7 @@ async def call_agent(
             messages=extraction_messages, 
             temperature=LLM_TEMPERATURES["classification"]
         )
-        extraction_response = await llm_acompletion(llm_params=extraction_llm_params, response_model=response_model)
+        extraction_response = llm_completion(llm_params=extraction_llm_params, response_model=response_model)
         validated_data = extraction_response.validated_data
         logger.success("成功将 Agent 输出转换为 Pydantic 模型。")
         return validated_data
@@ -406,9 +409,3 @@ async def call_agent(
         logger.success("Agent执行完成并生成了有效文本。")
         return cleaned_output
     
-
-
-
-
-
-

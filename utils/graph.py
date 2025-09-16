@@ -19,7 +19,7 @@ from llama_index.core.postprocessor import LLMRerank
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.response_synthesizers import BaseSynthesizer, CompactAndRefine
-from llama_index.core.vector_stores import MetadataFilters
+from llama_index.core.vector_stores import MetadataFilters, VectorStore
 from llama_index.graph_stores.kuzu import KuzuGraphStore
 from llama_index.llms.litellm import LiteLLM
 
@@ -137,9 +137,10 @@ def _format_response_with_sorting(response: Response, sort_by: Literal["time", "
 
 
 def hybrid_query(
+    vector_store: VectorStore,
+    graph_store: KuzuGraphStore,
     retrieval_query_text: str,
     synthesis_query_text: str,
-    storage_context: StorageContext,
     synthesis_system_prompt: str,
     synthesis_user_prompt: str,
     kg_nl2graphquery_prompt: Optional[PromptTemplate] = None,
@@ -158,10 +159,11 @@ def hybrid_query(
     Args:
         retrieval_query_text (str): 用于向量和图谱检索的查询文本。
         synthesis_query_text (str): 用于最终LLM综合的、更详细的代理查询文本。
-        storage_context (StorageContext): 包含向量存储和图存储的上下文。
         synthesis_system_prompt (str): 综合阶段的系统提示。
         synthesis_user_prompt (str): 综合阶段的用户提示模板。
-        kg_nl2graphquery_prompt (Optional[PromptTemplate]): KG中NL2GraphQuery的提示。
+        vector_store (VectorStore): 用于向量检索的向量存储。
+        graph_store (KuzuGraphStore): 用于知识图谱检索的图存储。
+        kg_nl2graphquery_prompt (Optional[PromptTemplate], optional): KG中NL2GraphQuery的提示。 Defaults to None.
         vector_filters (Optional[MetadataFilters]): 应用于向量检索的元数据过滤器。
         vector_similarity_top_k (int): 向量检索的top_k。
         vector_rerank_top_n (int): 向量检索后LLM重排的top_n。
@@ -192,9 +194,10 @@ def hybrid_query(
         )
     )
 
+    # --- 向量查询 ---
     logger.info("构建向量查询引擎...")
     vector_index = VectorStoreIndex.from_vector_store(
-        vector_store=storage_context.vector_store, embed_model=embed_model
+        vector_store=vector_store, embed_model=embed_model
     )
     vector_query_engine = vector_index.as_query_engine(
         filters=vector_filters,
@@ -205,11 +208,17 @@ def hybrid_query(
             LLMRerank(llm=reasoning_llm, top_n=vector_rerank_top_n)
         ]
     )
-    
+    logger.info(f"正在执行向量查询: '{retrieval_query_text}'")
+    vector_response = vector_query_engine.query(retrieval_query_text)
+    formatted_vector_str = _format_response_with_sorting(vector_response, vector_sort_by)
+    logger.info(f"向量查询完成, 检索到 {len(vector_response.source_nodes)} 个节点。")
+
+    # --- 知识图谱查询 ---
     logger.info("构建知识图谱查询引擎...")
+    kg_storage_context = StorageContext.from_defaults(graph_store=graph_store)
     kg_index = KnowledgeGraphIndex.from_documents(
-        [], 
-        storage_context=storage_context,
+        [],
+        storage_context=kg_storage_context,
         llm=reasoning_llm,
         include_embeddings=True,
         embed_model=embed_model
@@ -228,16 +237,8 @@ def hybrid_query(
             LLMRerank(llm=reasoning_llm, top_n=kg_rerank_top_n)
         ]
     )
-
-    logger.info(f"正在执行向量查询: '{retrieval_query_text}'")
-    vector_response = vector_query_engine.query(retrieval_query_text)
-
     logger.info(f"正在执行知识图谱查询: '{retrieval_query_text}'")
     kg_response = kg_query_engine.query(retrieval_query_text)
-
-    formatted_vector_str = _format_response_with_sorting(vector_response, vector_sort_by)
-    logger.info(f"向量查询完成, 检索到 {len(vector_response.source_nodes)} 个节点。")
-    
     formatted_kg_str = _format_response_with_sorting(kg_response, kg_sort_by)
     logger.info(f"知识图谱查询完成, 检索到 {len(kg_response.source_nodes)} 个节点。")
 
@@ -248,7 +249,7 @@ def hybrid_query(
         "formatted_kg_str": formatted_kg_str,
     }
     messages = get_llm_messages(synthesis_system_prompt, synthesis_user_prompt, None, context_dict_user)
-    
+
     final_llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=LLM_TEMPERATURES["synthesis"])
 
     final_message = llm_completion(final_llm_params)
@@ -259,16 +260,27 @@ def hybrid_query(
 
 
 if __name__ == "__main__":
+    from datetime import datetime
+    from utils.vector import get_chroma_vector_store
+
     init_logger(os.path.splitext(os.path.basename(__file__))[0])
 
-    storage_context = StorageContext.from_defaults(persist_dir=persist_dir)
+    test_db_path = "./.test_chroma_db_graph"
+    test_kuzu_path = "./.test_kuzu_db_graph"
+    test_collection_name = "test_collection_graph"
+    vector_store = get_chroma_vector_store(db_path=test_db_path, collection_name=test_collection_name)
+    graph_store = get_kuzu_graph_store(db_path=test_kuzu_path)
+    storage_context = StorageContext.from_defaults(
+        vector_store=vector_store,
+        graph_store=graph_store
+    )
 
-
-
-
-    # 3. 准备要存储的示例文本数据
     doc_id = "test_story_001"
-    metadata = {"author": "测试员", "task_id": "第一章"}
+    metadata = {
+        "author": "测试员", 
+        "task_id": "第一章", 
+        "created_at": datetime.now().isoformat()
+    }
     content = """
     在一个阳光明媚的下午，小明在村庄后面的小溪边玩耍。
     他无意间踢到了一块闪闪发光的石头。这块石头不同寻常，
@@ -292,7 +304,7 @@ if __name__ == "__main__":
     """
 
     # 4. 调用 store 函数将内容存入知识图谱和向量存储
-    print("\n--- 步骤1: 开始存储内容 ---\n")
+    logger.info("\n--- 步骤1: 开始存储内容 ---")
     store(
         storage_context=storage_context,
         content=content,
@@ -301,10 +313,10 @@ if __name__ == "__main__":
         kg_extraction_prompt=kg_extraction_prompt,
         content_format="text",
     )
-    print("\n--- 内容存储完成 ---\n")
+    logger.success("--- 内容存储完成 ---")
 
     # 5. 准备查询
-    print("\n--- 步骤2: 开始混合查询 ---\n")
+    logger.info("\n--- 步骤2: 开始混合查询 ---")
     retrieval_query_text = "小明和苍穹之石有什么关系？"
     synthesis_query_text = f"请详细总结一下关于'{retrieval_query_text}'的所有信息。"
 
@@ -323,13 +335,16 @@ if __name__ == "__main__":
     请综合以上所有信息，给出最终的详细回答。
     """
 
-
     final_answer = hybrid_query(
         retrieval_query_text=retrieval_query_text,
         synthesis_query_text=synthesis_query_text,
-        storage_context=storage_context,
         synthesis_system_prompt=synthesis_system_prompt,
         synthesis_user_prompt=synthesis_user_prompt,
+        vector_store=vector_store,
+        graph_store=graph_store,
     )
-    print("\n--- 最终综合回答 ---\n")
-    print(final_answer)
+    logger.success("\n--- 最终综合回答 ---")
+    logger.info(f"\n{final_answer}")
+
+    logger.info("\n--- 测试完成 ---")
+    logger.info(f"你可以检查以下目录来验证结果: '{test_db_path}', '{test_kuzu_path}'")

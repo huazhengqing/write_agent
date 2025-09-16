@@ -1,8 +1,6 @@
 import json
 import os
 import sys
-import chromadb
-import asyncio
 from typing import List, Optional, Tuple
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
@@ -24,8 +22,6 @@ output_market_dir.mkdir(parents=True, exist_ok=True)
 chroma_market_dir = chroma_dir / "story" / "market"
 chroma_market_dir.mkdir(parents=True, exist_ok=True)
 
-chroma_collection_market_name = "market"
-
 _vector_store: Optional[ChromaVectorStore] = None
 
 def get_market_vector_store() -> ChromaVectorStore:
@@ -33,7 +29,7 @@ def get_market_vector_store() -> ChromaVectorStore:
     if _vector_store is None:
         _vector_store = get_chroma_vector_store(
             db_path=str(chroma_market_dir),
-            collection_name=chroma_collection_market_name
+            collection_name="market"
         )
     return _vector_store
 
@@ -89,7 +85,7 @@ ASSESS_NEW_AUTHOR_OPPORTUNITY_SYSTEM_PROMPT = """
 """
 
 
-async def story_market_vector(
+def story_market_vector(
         query: str, 
         document_type: Optional[str] = None, 
         platform: Optional[str] = None,
@@ -116,8 +112,7 @@ async def story_market_vector(
 
         # 使用通用的 vector_query 函数执行查询和重排序
         # 在异步函数中调用同步函数，使用 asyncio.to_thread
-        _, final_results = await asyncio.to_thread(
-            vector_query,
+        _, final_results = vector_query(
             vector_store=get_market_vector_store(),
             query_text=query,
             filters=metadata_filters,

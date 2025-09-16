@@ -1,7 +1,7 @@
 import sys
 import json
-import asyncio
 import hashlib
+import concurrent.futures
 import argparse
 from loguru import logger
 from utils.file import sanitize_filename
@@ -15,7 +15,7 @@ init_logger_by_runid("write")
 
 def write_all(tasks_data: list):
     logger.info(f"接收到 {len(tasks_data)} 个任务, 准备并行处理...")
-    flow_runs = []
+    root_tasks = []
     for task_info in tasks_data:
         if not task_info or not task_info.get('category') or not task_info.get('language'):
             logger.error(f"任务信息不完整, 跳过: {task_info}")
@@ -46,19 +46,27 @@ def write_all(tasks_data: list):
         task_args = {k: v for k, v in task_params.items() if v is not None}
         root_task = Task(**task_args)
         if root_task.category == "story":
-            flow_runs.append(flow_write_story(current_task=root_task))
+            root_tasks.append(root_task)
 
-    logger.info(f"即将并行启动 {len(flow_runs)} 个流程...")
-    if flow_runs:
-        async def run_concurrently():
-            return await asyncio.gather(*flow_runs, return_exceptions=True)
-        results = asyncio.run(run_concurrently())
+    logger.info(f"即将并行启动 {len(root_tasks)} 个流程...")
+    if root_tasks:
+        results = []
+        with concurrent.futures.ThreadPoolExecutor() as executor:
+            future_to_task = {executor.submit(flow_write_story, task): task for task in root_tasks}
+            for future in concurrent.futures.as_completed(future_to_task):
+                task = future_to_task[future]
+                try:
+                    result = future.result()
+                    results.append(result)
+                except Exception as exc:
+                    logger.error(f"任务 {task.run_id} 在执行期间产生异常: {exc}")
+                    results.append(exc)
+
         successful_runs = 0
         failed_runs = 0
         for res in results:
             if isinstance(res, Exception):
                 failed_runs += 1
-                logger.error(f"一个子流程执行失败: {res}")
             else:
                 successful_runs += 1
         logger.info(f"所有并行的子流程已执行完毕。成功: {successful_runs}, 失败: {failed_runs}。")
@@ -73,13 +81,8 @@ def main():
         type=str, 
     )
     args = parser.parse_args()
-    try:
-        with open(args.json_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-    except FileNotFoundError:
-        sys.exit(1)
-    except json.JSONDecodeError as e:
-        sys.exit(1)
+    with open(args.json_file, 'r', encoding='utf-8') as f:
+        data = json.load(f)
     tasks_data = data.get("tasks")
     if not tasks_data:
         return

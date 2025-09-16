@@ -1,4 +1,3 @@
-import asyncio
 import json
 import os
 import sys
@@ -13,7 +12,7 @@ from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from market_analysis.story.common import get_market_vector_store, get_market_tools, output_market_dir
 from market_analysis.story.tasks import task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, task_store
-from utils.llm import call_agent, get_llm_messages, get_llm_params, llm_acompletion, vector_query
+from utils.llm import call_agent, get_llm_messages, get_llm_params, llm_completion, vector_query
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
 
@@ -275,7 +274,7 @@ NOVEL_CONCEPT_USER_PROMPT = """
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionResult:
+def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionResult:
     logger.info("在多个深度分析报告中进行最终决策...")
     if not reports:
         raise ValueError("task_final_decision需要至少1份报告进行评估。")
@@ -287,7 +286,7 @@ async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionRes
     user_prompt = "".join(user_prompt_parts)
     messages = get_llm_messages(SYSTEM_PROMPT=FINAL_DECISION_SYSTEM_PROMPT_JSON, USER_PROMPT=user_prompt)
     llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=0.1)
-    response_message = await llm_acompletion(llm_params=llm_params, response_model=FinalDecisionResult)
+    response_message = llm_completion(llm_params=llm_params, response_model=FinalDecisionResult)
     decision = response_message.validated_data
     if not decision:
         logger.error("最终决策失败，LLM未返回有效结果。")
@@ -303,7 +302,7 @@ async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionRes
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: str, broad_scan_report: str, opportunity_report: str) -> Optional[str]:
+def task_deep_dive_analysis(platform: str, genre: str, platform_profile: str, broad_scan_report: str, opportunity_report: str) -> Optional[str]:
     logger.info(f"对【{platform} - {genre}】启动深度分析...")
     system_prompt = DEEP_DIVE_SYSTEM_PROMPT.format(
         platform=platform,
@@ -313,7 +312,7 @@ async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: s
         opportunity_report=opportunity_report
     )
     user_prompt = f"请开始为【{platform}】平台的【{genre}】题材生成深度分析报告。"
-    report = await call_agent(
+    report = call_agent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         llm_type='reasoning',
@@ -327,7 +326,7 @@ async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: s
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = f"{platform.replace(' ', '_')}_{genre.replace(' ', '_')}_{timestamp}_deep_dive.md"
     file_path = output_market_dir / file_name
-    await asyncio.to_thread(file_path.write_text, report, encoding="utf-8")
+    file_path.write_text(report, encoding="utf-8")
     logger.success(f"报告已保存为Markdown文件: {file_path}")
 
     logger.success("深度分析完成！")
@@ -341,12 +340,11 @@ async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: s
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-async def task_generate_opportunities(market_report: str, genre: str) -> Optional[str]:
+def task_generate_opportunities(market_report: str, genre: str) -> Optional[str]:
     logger.info("启动创意脑暴，生成小说选题...")
     logger.info(f"正在查询【{genre}】相关的历史创意库，避免重复...")
     
-    _, historical_concepts_nodes = await asyncio.to_thread(
-        vector_query,
+    _, historical_concepts_nodes = vector_query(
         vector_store=get_market_vector_store(),
         query_text=f"{genre} 小说核心创意",
         filters=MetadataFilters(filters=[ExactMatchFilter(key="type", value="novel_concept")]),
@@ -367,7 +365,7 @@ async def task_generate_opportunities(market_report: str, genre: str) -> Optiona
     )
     messages = get_llm_messages(SYSTEM_PROMPT=OPPORTUNITY_GENERATION_SYSTEM_PROMPT, USER_PROMPT=user_prompt)
     llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=0.5)
-    response_message = await llm_acompletion(llm_params=llm_params)
+    response_message = llm_completion(llm_params=llm_params)
     opportunities = response_message.content
     if opportunities:
         logger.success("小说选题生成完毕！")
@@ -383,12 +381,11 @@ async def task_generate_opportunities(market_report: str, genre: str) -> Optiona
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-async def task_generate_novel_concept(opportunities_report: str, platform: str, genre: str) -> Optional[str]:
+def task_generate_novel_concept(opportunities_report: str, platform: str, genre: str) -> Optional[str]:
     logger.info("深化选题，生成详细小说创意...")
     logger.info(f"正在查询【{platform} - {genre}】相关的历史成功案例...")
 
-    _, historical_success_nodes = await asyncio.to_thread(
-        vector_query,
+    _, historical_success_nodes = vector_query(
         vector_store=get_market_vector_store(),
         query_text=f"{platform} {genre} 爆款成功小说创意案例",
         filters=MetadataFilters(filters=[
@@ -410,7 +407,7 @@ async def task_generate_novel_concept(opportunities_report: str, platform: str, 
             selected_opportunity=opportunities_report,
             historical_success_cases=historical_success_cases_str,
     )
-    concept = await call_agent(
+    concept = call_agent(
         system_prompt=NOVEL_CONCEPT_SYSTEM_PROMPT,
         user_prompt=user_prompt,
         llm_type='reasoning',
@@ -431,7 +428,7 @@ async def task_generate_novel_concept(opportunities_report: str, platform: str, 
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-async def task_save_markdown(platform: str, genre: str, deep_dive_report: str, final_opportunities: str, detailed_concept: str) -> bool:
+def task_save_markdown(platform: str, genre: str, deep_dive_report: str, final_opportunities: str, detailed_concept: str) -> bool:
     logger.info(f"生成【{platform} - {genre}】的汇总 Markdown 文件...")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = f"{platform.replace(' ', '_')}_{genre.replace(' ', '_')}_{timestamp}_summary.md"
@@ -449,13 +446,13 @@ async def task_save_markdown(platform: str, genre: str, deep_dive_report: str, f
 ## 详细小说创意
 {detailed_concept}
 """
-    await asyncio.to_thread(file_path.write_text, summary_content, encoding="utf-8")
+    file_path.write_text(summary_content, encoding="utf-8")
     logger.success(f"已生成汇总 Markdown 文件: {file_path}")
     return True
 
 
 @flow(name="creative_concept_flow")
-async def creative_concept(candidates_to_explore: List[Candidate]):
+def creative_concept(candidates_to_explore: List[Candidate]):
     if not candidates_to_explore:
         logger.error("未提供任何需要探索的方案，工作流终止。")
         return
@@ -473,7 +470,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
     profile_futures = task_load_platform_profile.map(platforms_to_process)
     platform_profiles = {}
     for future in profile_futures:
-        platform, content = await future.result()
+        platform, content = future.result()
         platform_profiles[platform] = content
 
     scan_futures = task_platform_briefing.map(platforms_to_process)
@@ -483,14 +480,14 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
     opportunity_reports = {}
     for i, platform_name in enumerate(platforms_to_process):
         try:
-            report = await scan_futures[i].result()
+            report = scan_futures[i].result()
             platform_reports[platform_name] = report
         except Exception as e:
             logger.error(f"为后续流程获取平台 '{platform_name}' 扫描报告失败: {e}")
             platform_reports[platform_name] = f"## {platform_name} 平台市场动态简报\n\n生成报告时出错: {e}"
         
         try:
-            opportunity_report = await opportunity_futures[i].result()
+            opportunity_report = opportunity_futures[i].result()
             opportunity_reports[platform_name] = opportunity_report
         except Exception as e:
             logger.error(f"为后续流程获取平台 '{platform_name}' 新人机会报告失败: {e}")
@@ -511,9 +508,9 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
     deep_dive_reports = []
     for candidate, future in deep_dive_futures:
         try:
-            report_content = await future.result()
+            report_content = future.result()
             if report_content:
-                await task_store(
+                task_store(
                     content=report_content,
                     doc_type="deep_dive_report",
                     platform=candidate.platform,
@@ -563,7 +560,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
         logger.info(f"选择: 【{final_choice_obj.platform}】 - 【{final_choice_obj.genre}】")
         logger.info(f"理由: {final_choice_obj.reasoning}")
 
-        await task_store(
+        task_store(
             content=final_decision_result.model_dump_json(indent=2, ensure_ascii=False),
             doc_type="final_decision_report",
             platform=final_choice_data["platform"],
@@ -571,7 +568,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
             content_format="json"
         )
     else:
-        final_decision_result = await task_final_decision(deep_dive_reports)
+        final_decision_result = task_final_decision(deep_dive_reports)
         final_choice_obj = final_decision_result.final_choice
         final_choice_data = {
             "platform": final_choice_obj.platform,
@@ -582,7 +579,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
         logger.info(f"选择: 【{final_choice_obj.platform}】 - 【{final_choice_obj.genre}】")
         logger.info(f"理由: {final_choice_obj.reasoning}")
         logger.info(f"完整排名:\n{json.dumps([r.model_dump() for r in final_decision_result.ranking], indent=2, ensure_ascii=False)}")
-        await task_store(
+        task_store(
             content=final_decision_result.model_dump_json(indent=2, ensure_ascii=False),
             doc_type="final_decision_report",
             platform=final_choice_obj.platform,
@@ -602,12 +599,12 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
     logger.info("--- 深度分析报告 (最终选定) ---")
     logger.info(f"\n{deep_dive_report}")
 
-    final_opportunities = await task_generate_opportunities(market_report=deep_dive_report, genre=chosen_genre)
+    final_opportunities = task_generate_opportunities(market_report=deep_dive_report, genre=chosen_genre)
     if not final_opportunities:
         logger.error(f"生成小说选题失败，工作流终止。")
         return
 
-    await task_store(
+    task_store(
         content=final_opportunities,
         doc_type="opportunity_generation_report",
         platform=chosen_platform,
@@ -618,12 +615,12 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
     logger.info("--- 小说选题建议 ---")
     logger.info(f"\n{final_opportunities}")
 
-    detailed_concept = await task_generate_novel_concept(opportunities_report=final_opportunities, platform=chosen_platform, genre=chosen_genre)
+    detailed_concept = task_generate_novel_concept(opportunities_report=final_opportunities, platform=chosen_platform, genre=chosen_genre)
     if not detailed_concept:
         logger.error(f"深化小说创意失败，工作流终止。")
         return
 
-    await task_store(
+    task_store(
         content=detailed_concept,
         doc_type="novel_concept",
         platform=chosen_platform,
@@ -634,7 +631,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
     logger.info("--- 详细小说创意 ---")
     logger.info(f"\n{detailed_concept}")
 
-    await task_save_markdown(chosen_platform, chosen_genre, deep_dive_report, final_opportunities, detailed_concept)
+    task_save_markdown(chosen_platform, chosen_genre, deep_dive_report, final_opportunities, detailed_concept)
 
 
 if __name__ == "__main__":
@@ -651,4 +648,4 @@ if __name__ == "__main__":
 
     flow_run_name = f"creative_concept-{datetime.now().strftime('%Y%m%d')}"
     analysis_flow = creative_concept.with_options(name=flow_run_name)
-    asyncio.run(analysis_flow(candidates_to_explore=candidates_to_run))
+    analysis_flow(candidates_to_explore=candidates_to_run)

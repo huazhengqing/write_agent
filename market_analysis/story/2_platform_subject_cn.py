@@ -1,4 +1,3 @@
-import asyncio
 import os
 import sys
 from typing import Optional, Dict, List
@@ -12,7 +11,7 @@ from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from market_analysis.story.common import get_market_tools
 from market_analysis.story.tasks import task_load_platform_profile, task_platform_briefing, task_new_author_opportunity, task_store
-from utils.llm import call_agent, llm_acompletion, get_llm_params, get_llm_messages
+from utils.llm import call_agent, llm_completion, get_llm_params, get_llm_messages
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
 
@@ -131,11 +130,11 @@ CHOOSE_OPPORTUNITY_USER_PROMPT = """
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-async def task_analyze_external_trends(platform: str, genre: str) -> tuple[str, str, str]:
+def task_analyze_external_trends(platform: str, genre: str) -> tuple[str, str, str]:
     logger.info(f"为【{platform} - {genre}】分析外部趋势...")
     system_prompt = ANALYZE_EXTERNAL_TRENDS_SYSTEM_PROMPT.format(platform=platform, genre=genre)
     user_prompt = f"请开始为【{platform}】平台的【{genre}】题材生成外部趋势分析报告。"
-    report = await call_agent(
+    report = call_agent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         tools=get_market_tools(),
@@ -158,12 +157,12 @@ async def task_analyze_external_trends(platform: str, genre: str) -> tuple[str, 
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-async def task_parse_genres_from_report(platform: str, report: str) -> tuple[str, List[str]]:
+def task_parse_genres_from_report(platform: str, report: str) -> tuple[str, List[str]]:
     logger.info(f"为平台 '{platform}' 的报告解析热门题材...")
     user_prompt = f"# 市场动态简报\n\n{report}"
     messages = get_llm_messages(SYSTEM_PROMPT=PARSE_GENRES_SYSTEM_PROMPT, USER_PROMPT=user_prompt)
     llm_params = get_llm_params(llm='fast', messages=messages, temperature=0.0)
-    response_message = await llm_acompletion(llm_params=llm_params, response_model=ParsedGenres)
+    response_message = llm_completion(llm_params=llm_params, response_model=ParsedGenres)
     parsed_genres_result = response_message.validated_data
     if parsed_genres_result and parsed_genres_result.genres:
         logger.success(f"为平台 '{platform}' 解析出题材: {parsed_genres_result.genres}")
@@ -180,7 +179,7 @@ async def task_parse_genres_from_report(platform: str, report: str) -> tuple[str
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-async def task_choose_best_opportunity(platform_reports: Dict[str, str], platform_profiles: Dict[str, str], new_author_reports: Dict[str, str], external_trend_reports: Dict[str, str]) -> Optional[MarketAnalysisResult]:
+def task_choose_best_opportunity(platform_reports: Dict[str, str], platform_profiles: Dict[str, str], new_author_reports: Dict[str, str], external_trend_reports: Dict[str, str]) -> Optional[MarketAnalysisResult]:
     logger.info("决策最佳市场机会...")
     full_context = ""
     for platform, report in platform_reports.items():
@@ -196,7 +195,7 @@ async def task_choose_best_opportunity(platform_reports: Dict[str, str], platfor
     user_prompt = CHOOSE_OPPORTUNITY_USER_PROMPT.format(all_reports=full_context)
     messages = get_llm_messages(SYSTEM_PROMPT=CHOOSE_BEST_OPPORTUNITY_SYSTEM_PROMPT, USER_PROMPT=user_prompt)
     llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=0.1)
-    response_message = await llm_acompletion(llm_params=llm_params, response_model=MarketAnalysisResult)
+    response_message = llm_completion(llm_params=llm_params, response_model=MarketAnalysisResult)
     decision = response_message.validated_data
     if decision and decision.opportunities:
         top_choice = decision.opportunities[0]
@@ -207,12 +206,12 @@ async def task_choose_best_opportunity(platform_reports: Dict[str, str], platfor
 
 
 @flow(name="platform_subject")
-async def platform_subject(platforms_to_scan: list[str]):
+def platform_subject(platforms_to_scan: list[str]):
     logger.info("加载平台档案...")
     profile_futures = task_load_platform_profile.map(platforms_to_scan)
     platform_profiles = {}
     for future in profile_futures:
-        platform, content = await future.result()
+        platform, content = future.result()
         platform_profiles[platform] = content
 
     logger.info("启动广域扫描...")
@@ -224,9 +223,9 @@ async def platform_subject(platforms_to_scan: list[str]):
     for i, platform_name in enumerate(platforms_to_scan):
         try:
             scan_future = scan_futures[i]
-            report = await scan_future.result()
+            report = scan_future.result()
             platform_reports[platform_name] = report
-            await task_store(
+            task_store(
                 content=report,
                 doc_type="broad_scan_report",
                 platform=platform_name,
@@ -238,9 +237,9 @@ async def platform_subject(platforms_to_scan: list[str]):
             continue
 
         try:
-            opportunity_report = await opportunity_futures[i].result()
+            opportunity_report = opportunity_futures[i].result()
             new_author_reports[platform_name] = opportunity_report
-            await task_store(
+            task_store(
                 content=opportunity_report,
                 doc_type="new_author_opportunity_report",
                 platform=platform_name,
@@ -271,7 +270,7 @@ async def platform_subject(platforms_to_scan: list[str]):
     platform_genre_pairs = []
     for future in parse_genre_futures:
         try:
-            platform, genres = await future.result()
+            platform, genres = future.result()
             for genre in genres:
                 platform_genre_pairs.append((platform, genre))
         except Exception as e:
@@ -289,9 +288,9 @@ async def platform_subject(platforms_to_scan: list[str]):
         external_trend_reports = {}
         for future in trend_futures:
             try:
-                platform, genre, trend_report = await future.result()
+                platform, genre, trend_report = future.result()
                 external_trend_reports[f"{platform}-{genre}"] = trend_report
-                await task_store(
+                task_store(
                     content=trend_report,
                     doc_type="external_trend_report",
                     platform=platform,
@@ -302,12 +301,12 @@ async def platform_subject(platforms_to_scan: list[str]):
                 logger.error(f"分析外部趋势失败: {e}")
 
     logger.info("决策初步机会...")
-    initial_decision = await task_choose_best_opportunity(platform_reports, platform_profiles, new_author_reports, external_trend_reports)
+    initial_decision = task_choose_best_opportunity(platform_reports, platform_profiles, new_author_reports, external_trend_reports)
     if not initial_decision or not initial_decision.opportunities:
         logger.warning("未能从决策任务中获得有效结果，工作流终止。")
         return
 
-    await task_store(
+    task_store(
         content=initial_decision.model_dump_json(indent=2, ensure_ascii=False),
         doc_type="market_analysis_result",
         platform="summary",
@@ -322,4 +321,4 @@ if __name__ == "__main__":
     platforms = ["番茄小说", "起点中文网"]
     flow_run_name = f"platform_subject_{datetime.now().strftime('%Y%m%d')}"
     analysis_flow = platform_subject.with_options(name=flow_run_name)
-    asyncio.run(analysis_flow(platforms_to_scan=platforms))
+    analysis_flow(platforms_to_scan=platforms)

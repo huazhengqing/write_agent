@@ -38,7 +38,6 @@ def get_embed_model() -> LiteLLMEmbedding:
         logger.success("嵌入模型初始化完成。")
     return _embed_model
 
-
 def get_chroma_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
     logger.info(f"正在访问ChromaDB: path='{db_path}', collection='{collection_name}'")
     os.makedirs(db_path, exist_ok=True)
@@ -47,8 +46,6 @@ def get_chroma_vector_store(db_path: str, collection_name: str) -> ChromaVectorS
     vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
     logger.success(f"ChromaDB向量存储 '{collection_name}' 已准备就绪。")
     return vector_store
-
-
 
 def vector_query(
     vector_store: VectorStore,
@@ -103,7 +100,6 @@ def vector_query(
         logger.success("✅ 查询成功完成。")
         return response.response, response.source_nodes
 
-
 def _default_file_metadata(file_path_str: str) -> dict:
     file_path = Path(file_path_str)
     stat = file_path.stat()
@@ -115,7 +111,6 @@ def _default_file_metadata(file_path_str: str) -> dict:
         "creation_date": creation_time,
         "modification_date": modification_time,
     }
-
 
 def store_from_directory(
     vector_store: VectorStore,
@@ -197,17 +192,12 @@ def store(
     doc_id: Optional[str] = None,
 ) -> bool:
     """
-    将来自接口或内存的单个内容（文本、Markdown等）解析并存入向量数据库。
-
     Args:
         vector_store (VectorStore): 目标向量存储。
         content (str): 要存储的文本内容。
         metadata (Dict[str, Any]): 与内容关联的元数据字典。
         content_format (str): 内容格式，支持 "text", "markdown", "json"。
         doc_id (Optional[str]): 文档的唯一ID。如果为None，则自动生成。
-
-    Returns:
-        bool: 如果成功存储，则返回 True，否则返回 False。
     """
     if not content or not content.strip() or "生成报告时出错" in content:
         logger.warning(f"🤷 内容为空或包含错误，跳过存入向量库。元数据: {metadata}")
@@ -237,3 +227,63 @@ def store(
 
     logger.success(f"✅ 内容已成功存入向量库。元数据: {final_metadata}")
     return True
+
+
+if __name__ == "__main__":
+    from utils.log import init_logger
+    init_logger(os.path.splitext(os.path.basename(__file__))[0])
+
+    test_db_path = "./.test_chroma_db_vector"
+    test_collection_name = "test_collection_vector"
+    vector_store = get_chroma_vector_store(db_path=test_db_path, collection_name=test_collection_name)
+    
+    doc_id_1 = "single_doc_001"
+    metadata_1 = {"type": "test_doc", "author": "tester1"}
+    content_1 = "这是一个关于人工智能如何改变软件工程的测试文档。"
+    store(
+        vector_store=vector_store,
+        content=content_1,
+        metadata=metadata_1,
+        content_format="text",
+        doc_id=doc_id_1
+    )
+
+    test_input_dir = "./.test_input_dir_vector"
+    os.makedirs(test_input_dir, exist_ok=True)
+    
+    with open(os.path.join(test_input_dir, "test1.txt"), "w", encoding="utf-8") as f:
+        f.write("这是第一个文本文件，内容是关于机器学习的基础知识。")
+        
+    with open(os.path.join(test_input_dir, "test2.md"), "w", encoding="utf-8") as f:
+        f.write("# Markdown 测试\n\n这是一个 Markdown 文件，讨论了大型语言模型（LLM）的应用。")
+
+    store_from_directory(
+        vector_store=vector_store,
+        input_dir=test_input_dir,
+        required_exts=[".txt", ".md"]
+    )
+
+    query_text = "大型语言模型有什么用？"
+    answer, source_nodes = vector_query(
+        vector_store=vector_store,
+        query_text=query_text,
+        similarity_top_k=5,
+        rerank_top_n=2
+    )
+
+    if answer and source_nodes:
+        logger.success("\n--- ✅ 最终答案 ---")
+        logger.info(answer)
+        
+        logger.info("\n--- 答案来源 (经重排序) ---")
+        for i, node in enumerate(source_nodes):
+            score = node.score if node.score is not None else 'N/A'
+            score_str = f"{score:.4f}" if isinstance(score, float) else score
+            logger.info(f"\n📄 文档 {i+1}: (相关性得分: {score_str})")
+            logger.info(f"  - 元数据: {node.metadata}")
+            logger.info(f"  - 内容:\n{node.get_content()}")
+    else:
+        logger.error("查询失败，未返回任何结果。")
+
+    logger.info("\n--- 测试完成 ---")
+    logger.info(f"你可以检查以下目录来验证结果: '{test_db_path}', '{test_input_dir}'")

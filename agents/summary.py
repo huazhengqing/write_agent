@@ -1,10 +1,10 @@
 from utils.models import Task
-from utils.llm import get_llm_messages, get_llm_params, llm_acompletion, LLM_TEMPERATURES
+from utils.llm import get_llm_messages, get_llm_params, llm_completion, LLM_TEMPERATURES
 from utils.prompt_loader import load_prompts
 from utils.rag import get_rag
 
 
-async def summary(task: Task) -> Task:
+def summary(task: Task) -> Task:
     SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "summary_cn", "SYSTEM_PROMPT", "USER_PROMPT")
     context_dict_user = {
         "task": task.model_dump_json(
@@ -16,7 +16,7 @@ async def summary(task: Task) -> Task:
     }
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context_dict_user)
     llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["summarization"])
-    message = await llm_acompletion(llm_params)
+    message = llm_completion(llm_params)
     content = message.content
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")
     updated_task = task.model_copy(deep=True)
@@ -24,12 +24,12 @@ async def summary(task: Task) -> Task:
     updated_task.results["summary_reasoning"] = reasoning
     return updated_task
 
-async def summary_aggregate(task: Task) -> Task:
+def summary_aggregate(task: Task) -> Task:
     SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "summary_aggregate_cn", "SYSTEM_PROMPT", "USER_PROMPT")
-    context = await get_rag().get_aggregate_summary(task)
+    context = get_rag().get_aggregate_summary(task)
     messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
     llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["summarization"])
-    message = await llm_acompletion(llm_params)
+    message = llm_completion(llm_params)
     content = message.content
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")
     updated_task = task.model_copy(deep=True)
