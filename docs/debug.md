@@ -220,7 +220,7 @@ Tavily 和 Jina 都是外部服务，如果我想换回本地部署的方案（�
 
 
 
-审查所有SYSTEM_PROMPT，并根据“清晰、精确、简洁”的原则进行优化。
+审查所有system_prompt，并根据“清晰、精确、简洁”的原则进行优化。
 
 
 
@@ -269,8 +269,8 @@ Tavily 和 Jina 都是外部服务，如果我想换回本地部署的方案（�
 - 章节字数: 2000-5000字。
 
 提示词中的指令必须引用LLM能实际看到的上下文标题, 而不是开发者视角下的占位符变量名。
-SYSTEM_PROMPT(系统提示词, 即给LLM的指令)必须与 USER_PROMPT(用户提示词, 即提供给LLM的上下文)中的标题保持一致。
-将 SYSTEM_PROMPT 中所有引用占位符变量名(如 task, dependent_design, text_latest 等)的地方, 都修改为 USER_PROMPT 中对应的Markdown标题(如 当前任务, 设计方案, 最新章节(续写起点))。
+system_prompt(系统提示词, 即给LLM的指令)必须与 user_prompt(用户提示词, 即提供给LLM的上下文)中的标题保持一致。
+将 system_prompt 中所有引用占位符变量名(如 task, dependent_design, text_latest 等)的地方, 都修改为 user_prompt 中对应的Markdown标题(如 当前任务, 设计方案, 最新章节(续写起点))。
 
 
 
@@ -291,7 +291,7 @@ SYSTEM_PROMPT(系统提示词, 即给LLM的指令)必须与 USER_PROMPT(用户�
 请整体评估提示词, 并指出其最大的优势和可以进一步强化的方向。
 
 
-请将 USER_PROMPT 也进行类似的简化和重构。
+请将 user_prompt 也进行类似的简化和重构。
 
 
 根据以上分析, 改进建议,  请直接修改 文件, 并提供diff。
@@ -328,13 +328,13 @@ SYSTEM_PROMPT(系统提示词, 即给LLM的指令)必须与 USER_PROMPT(用户�
 
 
 
-分析一下 `SYSTEM_PROMPT_SYNTHESIZE`, 它是否足够健壮?
+分析一下 `system_prompt_SYNTHESIZE`, 它是否足够健壮?
 
 
 
 
 
-提示词包括: SYSTEM_PROMPT、USER_PROMPT 2个部分。
+提示词包括: system_prompt、user_prompt 2个部分。
 {task} 会被替换, 不要在提示词中去引用 {task} 这个字, 要引用标题
 如何更好的配合, 以提高输出质量?
 还能在哪些方面进行优化以提高输出质量?

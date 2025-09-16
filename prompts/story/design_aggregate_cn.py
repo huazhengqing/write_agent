@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 首席小说架构师。
 
@@ -27,7 +27,7 @@ SYSTEM_PROMPT = """
 """
 
 
-USER_PROMPT = """
+user_prompt = """
 # 待整合的设计方案
 <subtask_design>
 {subtask_design}

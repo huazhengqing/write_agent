@@ -24,7 +24,7 @@ def get_market_vector_store() -> ChromaVectorStore:
     return _vector_store
 
 
-BROAD_SCAN_SYSTEM_PROMPT = """
+BROAD_SCAN_system_prompt = """
 # 角色
 你是一名专业的网络小说市场动态分析师。
 
@@ -47,7 +47,7 @@ BROAD_SCAN_SYSTEM_PROMPT = """
 - (总结近期的官方征文、激励活动方向。如果没有则明确写出“近期未发现明确的官方活动导向”)
 """
 
-ASSESS_NEW_AUTHOR_OPPORTUNITY_SYSTEM_PROMPT = """
+ASSESS_NEW_AUTHOR_OPPORTUNITY_system_prompt = """
 # 角色
 你是一名专业的网络小说行业研究员，专注于评估各平台对新人作者的友好度。
 

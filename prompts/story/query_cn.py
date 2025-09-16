@@ -6,7 +6,7 @@ class Inquiry(BaseModel):
     questions: List[str] = Field(..., description="按优先级降序排列的、需要探询的具体问题列表。")
 
 
-SYSTEM_PROMPT_design = """
+system_prompt_design = """
 # 角色
 你是一名顶尖的小说架构师, 专长是为创作任务规划信息检索策略。
 
@@ -48,7 +48,7 @@ SYSTEM_PROMPT_design = """
 """
 
 
-SYSTEM_PROMPT_design_for_write = """
+system_prompt_design_for_write = """
 # 角色
 你是一名顶尖的小说架构师
 
@@ -86,7 +86,7 @@ SYSTEM_PROMPT_design_for_write = """
 """
 
 
-USER_PROMPT_design = """
+user_prompt_design = """
 # 当前任务
 {task}
 
@@ -118,7 +118,7 @@ USER_PROMPT_design = """
 ###############################################################################
 
 
-SYSTEM_PROMPT_write = """
+system_prompt_write = """
 # 角色
 你是一名资深剧情分析师, 擅长挖掘故事的内在联系, 为接下来的写作确保情节的绝对连贯。
 
@@ -153,7 +153,7 @@ SYSTEM_PROMPT_write = """
 """
 
 
-USER_PROMPT_write = """
+user_prompt_write = """
 # 当前任务
 {task}
 
@@ -184,7 +184,7 @@ USER_PROMPT_write = """
 ###############################################################################
 
 
-SYSTEM_PROMPT_search = """
+system_prompt_search = """
 # 角色
 你是一名专业研究分析师, 擅长将创作需求转化为精确的事实检索问题。
 
@@ -217,7 +217,7 @@ SYSTEM_PROMPT_search = """
 """
 
 
-USER_PROMPT_search = """
+user_prompt_search = """
 # 当前任务
 {task}
 

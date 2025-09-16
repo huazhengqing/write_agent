@@ -1,7 +1,7 @@
 
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 首席设计架构师。
 
@@ -66,7 +66,7 @@ SYSTEM_PROMPT = """
 """
 
 
-USER_PROMPT = """
+user_prompt = """
 # 当前任务
 {task}
 

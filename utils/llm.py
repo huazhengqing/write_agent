@@ -191,6 +191,7 @@ Embedding_PARAMS_general = {
     "respect_retry_after": True
 }
 
+
 def get_embedding_params(
         embedding: Literal['bge-m3', 'gemini'] = 'bge-m3',
         **kwargs: Any
@@ -199,6 +200,7 @@ def get_embedding_params(
     embedding_params.update(**Embedding_PARAMS_general)
     embedding_params.update(kwargs)
     return embedding_params
+
 
 def custom_get_cache_key(**kwargs):
     """
@@ -223,35 +225,35 @@ litellm.drop_params = True
 litellm.telemetry = False
 
 
-
 def get_llm_messages(
-        SYSTEM_PROMPT: str = None, 
-        USER_PROMPT: str = None, 
-        context_dict_system: Dict[str, Any] = None, 
-        context_dict_user: Dict[str, Any] = None
-    ) -> list[dict]:
-    if not SYSTEM_PROMPT and not USER_PROMPT:
-        raise ValueError("SYSTEM_PROMPT 和 USER_PROMPT 不能同时为空")
+    system_prompt: str = None, 
+    user_prompt: str = None, 
+    context_dict_system: Dict[str, Any] = None, 
+    context_dict_user: Dict[str, Any] = None
+) -> list[dict]:
+    if not system_prompt and not user_prompt:
+        raise ValueError("system_prompt 和 user_prompt 不能同时为空")
 
     messages = []
 
-    system_content = SYSTEM_PROMPT
+    system_content = system_prompt
     if context_dict_system:
         safe_context_system = collections.defaultdict(str, context_dict_system)
-        system_content = SYSTEM_PROMPT.format_map(safe_context_system)
+        system_content = system_prompt.format_map(safe_context_system)
     
     if system_content and system_content.strip():
         messages.append({"role": "system", "content": system_content})
 
-    user_content = USER_PROMPT
+    user_content = user_prompt
     if context_dict_user:
         safe_context_user = collections.defaultdict(str, context_dict_user)
-        user_content = USER_PROMPT.format_map(safe_context_user)
+        user_content = user_prompt.format_map(safe_context_user)
 
     if user_content and user_content.strip():
         messages.append({"role": "user", "content": user_content})
 
     return messages
+
 
 def get_llm_params(
         llm: Literal['reasoning', 'fast'] = 'reasoning',
@@ -271,6 +273,7 @@ def get_llm_params(
         llm_params["messages"] = copy.deepcopy(messages)
     return llm_params
 
+
 def _format_json_content(content: str) -> str:
     try:
         parsed = json.loads(content)
@@ -278,10 +281,12 @@ def _format_json_content(content: str) -> str:
     except json.JSONDecodeError:
         return content
 
+
 def _format_message_content(content: str) -> str:
     if content.strip().startswith("{") or content.strip().startswith("["):
         return _format_json_content(content)
     return content
+
 
 def clean_markdown_fences(content: str) -> str:
     """如果内容被Markdown代码块包裹, 则移除它们。"""
@@ -298,11 +303,13 @@ def clean_markdown_fences(content: str) -> str:
         text = text[:-3]
     return text.strip()
 
+
 def _default_text_validator(content: str):
     if not content or len(content.strip()) < 20:
         raise ValueError("生成的内容为空或过短。")
 
-PROMPT_SELF_CORRECTION = """
+
+self_correction_prompt = """
 # 任务: 修正JSON输出
 你上次的输出因为格式错误导致解析失败。请根据原始任务和错误信息, 重新生成。
 
@@ -321,11 +328,12 @@ PROMPT_SELF_CORRECTION = """
 3.  禁止在 JSON 前后添加任何额外解释或代码块。
 """
 
+
 def llm_completion(
-        llm_params: Dict[str, Any], 
-        response_model: Optional[Type[BaseModel]] = None, 
-        validator: Optional[Callable[[Any], None]] = None
-        ) -> Dict[str, Any]:
+    llm_params: Dict[str, Any], 
+    response_model: Optional[Type[BaseModel]] = None, 
+    validator: Optional[Callable[[Any], None]] = None
+) -> Dict[str, Any]:
     params_to_log = llm_params.copy()
     params_to_log.pop("messages", None)
     logger.info(f"LLM 参数:\n{json.dumps(params_to_log, indent=2, ensure_ascii=False, default=str)}")
@@ -335,7 +343,7 @@ def llm_completion(
             "type": "json_object",
             "schema": response_model.model_json_schema()
         }
-    max_retries = 5
+    max_retries = 6
     for attempt in range(max_retries):
         system_prompt = ""
         user_prompt = ""
@@ -399,7 +407,7 @@ def llm_completion(
                         if msg["role"] == "user":
                             original_user_content = msg.get("content", "")
                             break
-                    correction_prompt = PROMPT_SELF_CORRECTION.format(
+                    correction_prompt = self_correction_prompt.format(
                         error=str(e), 
                         raw_output=raw_output_for_correction,
                         original_task=original_user_content
@@ -415,7 +423,34 @@ def llm_completion(
     raise RuntimeError("llm_completion 在所有重试后失败, 这是一个不应出现的情况。")
 
 
-def call_agent(
+extraction_system_prompt = """
+你是一个数据提取专家。你的任务是根据用户提供的文本，严格按照给定的 Pydantic JSON Schema 提取信息并生成一个 JSON 对象。
+你的输出必须是、且只能是一个完整的、有效的 JSON 对象。
+不要添加任何解释、注释或代码块。
+"""
+
+extraction_user_prompt = """
+请从以下文本中提取信息并生成 JSON 对象:
+{{cleaned_output}}
+"""
+
+
+def txt_to_json(cleaned_output: str, response_model: Optional[Type[BaseModel]]):
+    extraction_messages = get_llm_messages(
+        system_prompt=extraction_system_prompt,
+        user_prompt=extraction_user_prompt.format(cleaned_output=cleaned_output)
+    )
+    extraction_llm_params = get_llm_params(
+        llm='reasoning',
+        messages=extraction_messages,
+        temperature=LLM_TEMPERATURES["classification"]
+    )
+    extraction_response = llm_completion(llm_params=extraction_llm_params, response_model=response_model)
+    validated_data = extraction_response.validated_data
+    return validated_data
+
+
+def call_ReActAgent(
     system_prompt: str,
     user_prompt: str,
     tools: List[Any] = web_search_tools,
@@ -455,37 +490,13 @@ def call_agent(
 
     raw_output = asyncio.run(async_task())
     cleaned_output = clean_markdown_fences(raw_output)
+    logger.info(f"llm 返回\n{cleaned_output}")
     if response_model:
-        logger.info("Agent 执行完成，正在将自然语言输出转换为结构化 JSON...")
-        logger.info(f"待转换的 Agent 输出:\n{cleaned_output}")
-        extraction_system_prompt = (
-            "你是一个数据提取专家。你的任务是根据用户提供的文本，严格按照给定的 Pydantic JSON Schema 提取信息并生成一个 JSON 对象。"
-            "你的输出必须是、且只能是一个完整的、有效的 JSON 对象。"
-            "不要添加任何解释、注释或代码块。"
-        )
-        extraction_user_prompt = (
-            f"请从以下文本中提取信息并生成 JSON 对象:\n\n"
-            f"--- TEXT START ---\n"
-            f"{cleaned_output}\n"
-            f"--- TEXT END ---"
-        )
-        extraction_messages = get_llm_messages(
-            SYSTEM_PROMPT=extraction_system_prompt,
-            USER_PROMPT=extraction_user_prompt
-        )
-        extraction_llm_params = get_llm_params(
-            llm='reasoning',
-            messages=extraction_messages, 
-            temperature=LLM_TEMPERATURES["classification"]
-        )
-        extraction_response = llm_completion(llm_params=extraction_llm_params, response_model=response_model)
-        validated_data = extraction_response.validated_data
-        logger.success("成功将 Agent 输出转换为 Pydantic 模型。")
-        return validated_data
+        return txt_to_json(cleaned_output, response_model)
     else:
         _default_text_validator(cleaned_output)
-        logger.success("Agent执行完成并生成了有效文本。")
         return cleaned_output
+
 
 
 

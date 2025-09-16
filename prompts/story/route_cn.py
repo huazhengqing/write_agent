@@ -1,6 +1,6 @@
 
 
-USER_PROMPT = """
+user_prompt = """
 # 角色
 任务分类专家。
 

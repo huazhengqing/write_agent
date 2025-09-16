@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 首席场景氛围设计师, 电影美术指导。
 
@@ -58,7 +58,7 @@ SYSTEM_PROMPT = """
 """
 
 
-USER_PROMPT = """
+user_prompt = """
 # 请你完成当前设计任务
 {task}
 

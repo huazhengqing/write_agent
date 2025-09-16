@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 小说写作任务分析师。
 
@@ -53,7 +53,7 @@ SYSTEM_PROMPT = """
 """.strip()
 
 
-USER_PROMPT = """
+user_prompt = """
 # 请你分析并优化写作任务, 判定其粒度
 {task}
 

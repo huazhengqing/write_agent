@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 搜索任务分析师。
 
@@ -54,7 +54,7 @@ SYSTEM_PROMPT = """
 """.strip()
 
 
-USER_PROMPT = """
+user_prompt = """
 # 请你分析并优化搜索任务, 判定其粒度
 {task}
 

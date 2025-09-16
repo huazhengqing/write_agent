@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 首席剧情架构师。
 
@@ -71,7 +71,7 @@ SYSTEM_PROMPT = """
 """
 
 
-USER_PROMPT = """
+user_prompt = """
 # 请对所有设计方案和信息收集成果进行批判性分析, 为接下来的任务生成一份分析报告。
 
 # 当前任务

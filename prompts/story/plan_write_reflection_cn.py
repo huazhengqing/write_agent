@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 首席规划师。
 
@@ -79,7 +79,7 @@ SYSTEM_PROMPT = """
 """
 
 
-USER_PROMPT = """
+user_prompt = """
 # 原始写作任务 (规划的最终目标)
 {task}
 

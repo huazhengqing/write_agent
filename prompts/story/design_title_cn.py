@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 爆款小说文案专家。
 
@@ -29,7 +29,7 @@ SYSTEM_PROMPT = """
 - 结构: 必须严格遵循以下Markdown结构:
 """
 
-USER_PROMPT = """
+user_prompt = """
 # 请你完成当前设计任务
 {task}
 

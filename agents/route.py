@@ -5,11 +5,11 @@ from utils.prompt_loader import load_prompts
 
 
 def route(task: Task) -> str:
-    USER_PROMPT = load_prompts(task.category, "route_cn", "USER_PROMPT")[0]
+    user_prompt = load_prompts(task.category, "route_cn", "user_prompt")[0]
     context_dict_user = {
         "goal": task.goal
     }
-    messages = get_llm_messages(None, USER_PROMPT, None, context_dict_user)
+    messages = get_llm_messages(None, user_prompt, None, context_dict_user)
     llm_params = get_llm_params(llm="fast", messages=messages, temperature=LLM_TEMPERATURES["classification"])
     message = llm_completion(llm_params, response_model=RouteOutput)
     return message.validated_data.category

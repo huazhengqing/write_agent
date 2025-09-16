@@ -26,9 +26,9 @@ def design(task: Task, category: str) -> Task:
     }
     prompt_file = prompt_file_map.get(category, "design_cn")
     temperature = LLM_TEMPERATURES["creative"]
-    SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, prompt_file, "SYSTEM_PROMPT", "USER_PROMPT")
+    system_prompt, user_prompt = load_prompts(task.category, prompt_file, "system_prompt", "user_prompt")
     context = get_rag().get_context(task)
-    messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
+    messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=temperature)
     message = llm_completion(llm_params)
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")
@@ -43,10 +43,10 @@ def design_reflection(task: Task) -> Task:
         updated_task.results["design_reflection"] = task.results.get("design")
         updated_task.results["design_reflection_reasoning"] = ""
     else:
-        SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "design_reflection_cn", "SYSTEM_PROMPT", "USER_PROMPT")
+        system_prompt, user_prompt = load_prompts(task.category, "design_reflection_cn", "system_prompt", "user_prompt")
         context = get_rag().get_context(task)
         context["to_reflection"] = task.results.get("design")
-        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
+        messages = get_llm_messages(system_prompt, user_prompt, None, context)
         llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["creative"])
         message = llm_completion(llm_params)
         content = message.content
@@ -56,9 +56,9 @@ def design_reflection(task: Task) -> Task:
     return updated_task
 
 def design_aggregate(task: Task) -> Task:
-    SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "design_aggregate_cn", "SYSTEM_PROMPT", "USER_PROMPT")
+    system_prompt, user_prompt = load_prompts(task.category, "design_aggregate_cn", "system_prompt", "user_prompt")
     context = get_rag().get_aggregate_design(task)
-    messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
+    messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["creative"])
     message = llm_completion(llm_params)
     content = message.content

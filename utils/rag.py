@@ -462,13 +462,13 @@ class RAG:
         inquiry_type: Literal['search', 'design', 'write']
     ) -> Dict[str, Any]:
         if inquiry_type == 'search':
-            SYSTEM_PROMPT, USER_PROMPT, Inquiry = load_prompts(task.category, "query_cn", "SYSTEM_PROMPT_search", "USER_PROMPT_search", "Inquiry")
+            system_prompt, user_prompt, Inquiry = load_prompts(task.category, "query_cn", "system_prompt_search", "user_prompt_search", "Inquiry")
         elif inquiry_type == 'design':
-            SYSTEM_PROMPT, USER_PROMPT, SYSTEM_PROMPT_design_for_write, Inquiry = load_prompts(task.category, "query_cn", "SYSTEM_PROMPT_design", "USER_PROMPT_design", "SYSTEM_PROMPT_design_for_write", "Inquiry")
+            system_prompt, user_prompt, system_prompt_design_for_write, Inquiry = load_prompts(task.category, "query_cn", "system_prompt_design", "user_prompt_design", "system_prompt_design_for_write", "Inquiry")
             if task.task_type == 'write' and task.results.get("atom_result") == "atom":
-                SYSTEM_PROMPT = SYSTEM_PROMPT_design_for_write
+                system_prompt = system_prompt_design_for_write
         elif inquiry_type == 'write':
-            SYSTEM_PROMPT, USER_PROMPT, Inquiry = load_prompts(task.category, "query_cn", "SYSTEM_PROMPT_write", "USER_PROMPT_write", "Inquiry")
+            system_prompt, user_prompt, Inquiry = load_prompts(task.category, "query_cn", "system_prompt_write", "user_prompt_write", "Inquiry")
         else:
             raise ValueError(f"不支持的探询类型: {inquiry_type}")
         context_dict_user = {
@@ -482,7 +482,7 @@ class RAG:
             "text_latest": text_latest,
             "task_list": task_list
         }
-        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context_dict_user)
+        messages = get_llm_messages(system_prompt, user_prompt, None, context_dict_user)
         llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["reasoning"])
         message = llm_completion(llm_params, response_model=Inquiry)
         return message.validated_data.model_dump()

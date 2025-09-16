@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = f"""
+system_prompt = f"""
 # 角色
 首席故事架构师。
 
@@ -59,7 +59,7 @@ SYSTEM_PROMPT = f"""
     - `结尾钩子`: (结尾悬念或引子)
 """
 
-USER_PROMPT = """
+user_prompt = """
 # 请你为以下任务进行结构规划
 {task}
 

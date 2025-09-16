@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 首席故事架构师、结构优化专家。
 
@@ -49,7 +49,7 @@ SYSTEM_PROMPT = """
     - `结尾钩子`: (结尾悬念或引子)
 """
 
-USER_PROMPT = """
+user_prompt = """
 # 待反思与改进的结构规划方案
 - 请对以下的初步结构规划方案进行批判性审查, 并重构出一个显著更优的最终版本。
 <to_reflection>

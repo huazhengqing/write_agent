@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 力量体系架构师, 规则设计师。
 
@@ -62,7 +62,7 @@ SYSTEM_PROMPT = """
 """
 
 
-USER_PROMPT = """
+user_prompt = """
 # 请你完成当前设计任务
 {task}
 

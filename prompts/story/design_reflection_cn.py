@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 首席设计架构师。擅长审查、重构设计方案, 产出更优版本。
 
@@ -45,7 +45,7 @@ SYSTEM_PROMPT = """
 """
 
 
-USER_PROMPT = """
+user_prompt = """
 # 请反思与改进设计方案
 - 请对以下的初步设计方案进行批判性审查, 并重构出一个显著更优的最终版本。
 <to_reflection>

@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 首席叙事心理学家, 读者情绪分析专家。
 
@@ -56,7 +56,7 @@ SYSTEM_PROMPT = """
 """
 
 
-USER_PROMPT = """
+user_prompt = """
 # 请你完成当前分析任务
 - 任务: 分析以下初稿, 生成读者情绪报告。
 {task}

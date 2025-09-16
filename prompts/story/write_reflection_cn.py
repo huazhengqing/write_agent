@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 首席小说编辑、文笔润色大师。你拥有顶尖的批判性思维和文学鉴赏能力。
 
@@ -107,7 +107,7 @@ SYSTEM_PROMPT = """
 """
 
 
-USER_PROMPT = """
+user_prompt = """
 # 写作初稿 (待反思与重写)
 - 请对以下初稿进行批判性分析, 并重写出一个显著更优的最终版本。
 <to_reflection>

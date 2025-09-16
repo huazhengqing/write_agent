@@ -11,9 +11,9 @@ def write_before_reflection(task: Task) -> Task:
         updated_task.results["design_reflection"] = ""
         updated_task.results["design_reflection_reasoning"] = ""
     else:
-        SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "design_batch_reflection_cn", "SYSTEM_PROMPT", "USER_PROMPT")
+        system_prompt, user_prompt = load_prompts(task.category, "design_batch_reflection_cn", "system_prompt", "user_prompt")
         context = get_rag().get_context(task)
-        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
+        messages = get_llm_messages(system_prompt, user_prompt, None, context)
         llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["creative"])
         message = llm_completion(llm_params)
         content = message.content
@@ -23,9 +23,9 @@ def write_before_reflection(task: Task) -> Task:
     return updated_task
 
 def write(task: Task) -> Task:
-    SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "write_cn", "SYSTEM_PROMPT", "USER_PROMPT")
+    system_prompt, user_prompt = load_prompts(task.category, "write_cn", "system_prompt", "user_prompt")
     context = get_rag().get_context(task)
-    messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
+    messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["creative"])
     message = llm_completion(llm_params)
     content = message.content
@@ -41,10 +41,10 @@ def write_reflection(task: Task) -> Task:
         updated_task.results["write_reflection"] = task.results.get("write")
         updated_task.results["write_reflection_reasoning"] = ""
     else:
-        SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "write_reflection_cn", "SYSTEM_PROMPT", "USER_PROMPT")
+        system_prompt, user_prompt = load_prompts(task.category, "write_reflection_cn", "system_prompt", "user_prompt")
         context = get_rag().get_context(task)
         context["to_reflection"] = task.results.get("write")
-        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
+        messages = get_llm_messages(system_prompt, user_prompt, None, context)
         llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["creative"])
         message = llm_completion(llm_params)
         content = message.content

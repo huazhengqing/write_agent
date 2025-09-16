@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 顶尖文学分析师、摘要专家。
 
@@ -74,7 +74,7 @@ SYSTEM_PROMPT = """
 """.strip()
 
 
-USER_PROMPT = """
+user_prompt = """
 # 任务信息
 {task}
 

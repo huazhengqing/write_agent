@@ -6,9 +6,9 @@ from utils.prompt_loader import load_prompts
 
 
 def hierarchy(task: Task) -> Task:
-    SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "hierarchy_cn", "SYSTEM_PROMPT", "USER_PROMPT")
+    system_prompt, user_prompt = load_prompts(task.category, "hierarchy_cn", "system_prompt", "user_prompt")
     context = get_rag().get_context(task)
-    messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
+    messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["creative"])
     message = llm_completion(llm_params)
     content = message.content
@@ -24,10 +24,10 @@ def hierarchy_reflection(task: Task) -> Task:
         updated_task.results["design_reflection"] = task.results.get("design")
         updated_task.results["design_reflection_reasoning"] = ""
     else:
-        SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, "hierarchy_reflection_cn", "SYSTEM_PROMPT", "USER_PROMPT")
+        system_prompt, user_prompt = load_prompts(task.category, "hierarchy_reflection_cn", "system_prompt", "user_prompt")
         context = get_rag().get_context(task)
         context["to_reflection"] = task.results.get("design")
-        messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
+        messages = get_llm_messages(system_prompt, user_prompt, None, context)
         llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["creative"])
         message = llm_completion(llm_params)
         content = message.content

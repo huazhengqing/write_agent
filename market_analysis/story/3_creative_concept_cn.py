@@ -11,7 +11,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from utils.file import data_market_dir
-from utils.llm import call_agent, get_llm_messages, get_llm_params, llm_completion
+from utils.llm import call_ReActAgent, get_llm_messages, get_llm_params, llm_completion
 from utils.vector import vector_query
 from market_analysis.story.common import get_market_vector_store, get_market_tools
 from market_analysis.story.tasks import task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, task_save_data
@@ -38,7 +38,7 @@ class FinalDecisionResult(BaseModel):
     final_choice: FinalDecision = Field(description="根据综合排序最终选定的最佳方案。")
     ranking: List[RankedConcept] = Field(description="所有候选方案的完整排名列表。")
 
-FINAL_DECISION_SYSTEM_PROMPT_JSON = """
+FINAL_DECISION_system_prompt_JSON = """
 # 角色
 你是一位顶尖的网文总编，拥有敏锐的市场嗅觉和战略眼光。
 
@@ -62,7 +62,7 @@ FINAL_DECISION_SYSTEM_PROMPT_JSON = """
 """
 
 
-DEEP_DIVE_SYSTEM_PROMPT = """
+DEEP_DIVE_system_prompt = """
 # 角色
 你是一名顶尖的网络小说市场分析师，专精于【{platform}】平台的【{genre}】题材。
 
@@ -130,7 +130,7 @@ DEEP_DIVE_SYSTEM_PROMPT = """
 - **综合评价**: [总结报告优缺点]
 """
 # 机会生成的提示词
-OPPORTUNITY_GENERATION_SYSTEM_PROMPT = """
+OPPORTUNITY_GENERATION_system_prompt = """
 # 角色
 金牌小说策划人。
 
@@ -160,7 +160,7 @@ OPPORTUNITY_GENERATION_SYSTEM_PROMPT = """
 - **难度理由**: [世界观, 角色, 情节, 资料]
 """
 
-OPPORTUNITY_GENERATION_USER_PROMPT = """
+OPPORTUNITY_GENERATION_user_prompt = """
 ---
 # 市场深度分析报告
 {market_report}
@@ -171,7 +171,7 @@ OPPORTUNITY_GENERATION_USER_PROMPT = """
 """
 
 # 小说创意生成提示词
-NOVEL_CONCEPT_SYSTEM_PROMPT = """
+NOVEL_CONCEPT_system_prompt = """
 # 角色
 顶级小说策划人。
 
@@ -259,7 +259,7 @@ NOVEL_CONCEPT_SYSTEM_PROMPT = """
 - **规避策略**: [提出具体的规避建议]
 """
 
-NOVEL_CONCEPT_USER_PROMPT = """
+NOVEL_CONCEPT_user_prompt = """
 ---
 # 初步选题列表
 {selected_opportunity}
@@ -286,7 +286,7 @@ def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionResult:
             f"\n---\n\n# 候选方案 {i+1}: 【{report_data['platform']}】 - 【{report_data['genre']}】\n{report_data['report']}"
         )
     user_prompt = "".join(user_prompt_parts)
-    messages = get_llm_messages(SYSTEM_PROMPT=FINAL_DECISION_SYSTEM_PROMPT_JSON, USER_PROMPT=user_prompt)
+    messages = get_llm_messages(system_prompt=FINAL_DECISION_system_prompt_JSON, user_prompt=user_prompt)
     llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=0.1)
     response_message = llm_completion(llm_params=llm_params, response_model=FinalDecisionResult)
     decision = response_message.validated_data
@@ -306,7 +306,7 @@ def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionResult:
 )
 def task_deep_dive_analysis(platform: str, genre: str, platform_profile: str, broad_scan_report: str, opportunity_report: str) -> Optional[str]:
     logger.info(f"对【{platform} - {genre}】启动深度分析...")
-    system_prompt = DEEP_DIVE_SYSTEM_PROMPT.format(
+    system_prompt = DEEP_DIVE_system_prompt.format(
         platform=platform,
         genre=genre,
         platform_profile=platform_profile,
@@ -314,7 +314,7 @@ def task_deep_dive_analysis(platform: str, genre: str, platform_profile: str, br
         opportunity_report=opportunity_report
     )
     user_prompt = f"请开始为【{platform}】平台的【{genre}】题材生成深度分析报告。"
-    report = call_agent(
+    report = call_ReActAgent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         llm_type='reasoning',
@@ -361,11 +361,11 @@ def task_generate_opportunities(market_report: str, genre: str) -> Optional[str]
         logger.success(f"查询到 {len(historical_concepts_nodes)} 份历史创意，将用于规避重复。")
     else:
         historical_concepts_str = "无相关历史创意可供参考。"
-    user_prompt = OPPORTUNITY_GENERATION_USER_PROMPT.format(
+    user_prompt = OPPORTUNITY_GENERATION_user_prompt.format(
             market_report=market_report,
             historical_concepts=historical_concepts_str
     )
-    messages = get_llm_messages(SYSTEM_PROMPT=OPPORTUNITY_GENERATION_SYSTEM_PROMPT, USER_PROMPT=user_prompt)
+    messages = get_llm_messages(system_prompt=OPPORTUNITY_GENERATION_system_prompt, user_prompt=user_prompt)
     llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=0.5)
     response_message = llm_completion(llm_params=llm_params)
     opportunities = response_message.content
@@ -405,12 +405,12 @@ def task_generate_novel_concept(opportunities_report: str, platform: str, genre:
         logger.success(f"查询到 {len(historical_success_nodes)} 份成功案例，将用于借鉴。")
     else:
         historical_success_cases_str = "无相关历史成功案例可供参考。"
-    user_prompt = NOVEL_CONCEPT_USER_PROMPT.format(
+    user_prompt = NOVEL_CONCEPT_user_prompt.format(
             selected_opportunity=opportunities_report,
             historical_success_cases=historical_success_cases_str,
     )
-    concept = call_agent(
-        system_prompt=NOVEL_CONCEPT_SYSTEM_PROMPT,
+    concept = call_ReActAgent(
+        system_prompt=NOVEL_CONCEPT_system_prompt,
         user_prompt=user_prompt,
         llm_type='reasoning',
         tools=get_market_tools(),

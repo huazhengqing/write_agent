@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 AI小说研究员。
 
@@ -102,7 +102,7 @@ AI小说研究员。
 """
 
 
-USER_PROMPT = """
+user_prompt = """
 # 当前待分解的搜索任务
 {task}
 

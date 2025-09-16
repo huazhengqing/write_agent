@@ -6,9 +6,9 @@ from utils.prompt_loader import load_prompts
 
 
 def atom(task: Task) -> Task:
-    SYSTEM_PROMPT, USER_PROMPT = load_prompts(task.category, f"atom_{task.task_type}_cn", "SYSTEM_PROMPT", "USER_PROMPT")
+    system_prompt, user_prompt = load_prompts(task.category, f"atom_{task.task_type}_cn", "system_prompt", "user_prompt")
     context = get_rag().get_context_base(task)
-    messages = get_llm_messages(SYSTEM_PROMPT, USER_PROMPT, None, context)
+    messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["classification"])
     message = llm_completion(llm_params, response_model=AtomOutput)
     data = message.validated_data

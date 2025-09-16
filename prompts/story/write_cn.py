@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 资深网络小说家, 精通读者心理与平台规则。
 
@@ -83,7 +83,7 @@ SYSTEM_PROMPT = """
 """
 
 
-USER_PROMPT = """
+user_prompt = """
 # 请你完成当前写作任务
 - 包含字数要求
 {task}

@@ -5,13 +5,13 @@ from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
 from loguru import logger
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 from market_analysis.story.common import (
-    ASSESS_NEW_AUTHOR_OPPORTUNITY_SYSTEM_PROMPT,
-    BROAD_SCAN_SYSTEM_PROMPT,
+    ASSESS_NEW_AUTHOR_OPPORTUNITY_system_prompt,
+    BROAD_SCAN_system_prompt,
     get_market_vector_store,
     get_market_tools,
 )
 from utils.vector import vector_add, vector_query
-from utils.llm import call_agent
+from utils.llm import call_ReActAgent
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import task
 
@@ -64,9 +64,9 @@ def task_load_platform_profile(platform: str) -> Tuple[str, str]:
 )
 def task_platform_briefing(platform: str) -> str:
     logger.info(f"为平台 '{platform}' 生成市场动态简报...")
-    system_prompt = BROAD_SCAN_SYSTEM_PROMPT.format(platform=platform)
+    system_prompt = BROAD_SCAN_system_prompt.format(platform=platform)
     user_prompt = f"请开始为平台 '{platform}' 生成市场动态简报。"
-    report = call_agent(
+    report = call_ReActAgent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         tools=get_market_tools(),
@@ -93,9 +93,9 @@ def task_platform_briefing(platform: str) -> str:
 )
 def task_new_author_opportunity(platform: str) -> str:
     logger.info(f"为平台 '{platform}' 生成新人机会评估报告...")
-    system_prompt = ASSESS_NEW_AUTHOR_OPPORTUNITY_SYSTEM_PROMPT.format(platform=platform)
+    system_prompt = ASSESS_NEW_AUTHOR_OPPORTUNITY_system_prompt.format(platform=platform)
     user_prompt = f"请开始为平台 '{platform}' 生成新人机会评估报告。"
-    report = call_agent(
+    report = call_ReActAgent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         tools=get_market_tools(),

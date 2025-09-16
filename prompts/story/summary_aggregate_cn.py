@@ -1,6 +1,6 @@
 #coding: utf8
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 顶尖文学分析师、摘要聚合专家。
 
@@ -40,7 +40,7 @@ SYSTEM_PROMPT = """
 """.strip()
 
 
-USER_PROMPT = """
+user_prompt = """
 # 根据你的聚合规则, 生成一份统一的、更高层级的Markdown摘要。
 
 ## 父任务信息 (用于生成新标题)

@@ -1,6 +1,6 @@
 
 
-SYSTEM_PROMPT = """
+system_prompt = """
 # 角色
 AI小说规划师。
 
@@ -150,7 +150,7 @@ AI小说规划师。
 """
 
 
-USER_PROMPT = """
+user_prompt = """
 # 请你分解以下写作任务 (严格遵循原则与流程)
 {task}
 

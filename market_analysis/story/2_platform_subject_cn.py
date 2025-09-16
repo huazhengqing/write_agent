@@ -11,7 +11,7 @@ from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from market_analysis.story.common import get_market_tools
 from market_analysis.story.tasks import task_load_platform_profile, task_platform_briefing, task_new_author_opportunity, task_save_data
-from utils.llm import call_agent, llm_completion, get_llm_params, get_llm_messages
+from utils.llm import call_ReActAgent, llm_completion, get_llm_params, get_llm_messages
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
 
@@ -31,7 +31,7 @@ class MarketAnalysisResult(BaseModel):
 class ParsedGenres(BaseModel):
     genres: List[str] = Field(description="从报告中提取的热门题材列表。", default_factory=list)
 
-ANALYZE_EXTERNAL_TRENDS_SYSTEM_PROMPT = """
+ANALYZE_EXTERNAL_TRENDS_system_prompt = """
 # 角色
 你是一名敏锐的流行文化分析师，擅长捕捉跨界趋势。
 
@@ -54,7 +54,7 @@ ANALYZE_EXTERNAL_TRENDS_SYSTEM_PROMPT = """
 - 关键洞察: [从大众讨论中提炼出的一个独特见解或创作建议]
 """
 
-PARSE_GENRES_SYSTEM_PROMPT = """
+PARSE_GENRES_system_prompt = """
 # 角色
 你是一个精准的信息提取助手。
 
@@ -72,7 +72,7 @@ PARSE_GENRES_SYSTEM_PROMPT = """
 - 如果报告中没有“热门题材”部分或该部分为空，则输出一个空的 `genres` 列表。
 """
 
-CHOOSE_BEST_OPPORTUNITY_SYSTEM_PROMPT = """
+CHOOSE_BEST_OPPORTUNITY_system_prompt = """
 # 角色
 你是一位经验丰富的网文市场战略家。
 
@@ -116,7 +116,7 @@ CHOOSE_BEST_OPPORTUNITY_SYSTEM_PROMPT = """
     - `risk_assessment` (string): 分析该机会的潜在风险，例如市场饱和度、创作难度、政策风险等。
 """
 
-CHOOSE_OPPORTUNITY_USER_PROMPT = """
+CHOOSE_OPPORTUNITY_user_prompt = """
 # 综合信息
 {all_reports}
 """
@@ -132,9 +132,9 @@ CHOOSE_OPPORTUNITY_USER_PROMPT = """
 )
 def task_analyze_external_trends(platform: str, genre: str) -> tuple[str, str, str]:
     logger.info(f"为【{platform} - {genre}】分析外部趋势...")
-    system_prompt = ANALYZE_EXTERNAL_TRENDS_SYSTEM_PROMPT.format(platform=platform, genre=genre)
+    system_prompt = ANALYZE_EXTERNAL_TRENDS_system_prompt.format(platform=platform, genre=genre)
     user_prompt = f"请开始为【{platform}】平台的【{genre}】题材生成外部趋势分析报告。"
-    report = call_agent(
+    report = call_ReActAgent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         tools=get_market_tools(),
@@ -160,7 +160,7 @@ def task_analyze_external_trends(platform: str, genre: str) -> tuple[str, str, s
 def task_parse_genres_from_report(platform: str, report: str) -> tuple[str, List[str]]:
     logger.info(f"为平台 '{platform}' 的报告解析热门题材...")
     user_prompt = f"# 市场动态简报\n\n{report}"
-    messages = get_llm_messages(SYSTEM_PROMPT=PARSE_GENRES_SYSTEM_PROMPT, USER_PROMPT=user_prompt)
+    messages = get_llm_messages(system_prompt=PARSE_GENRES_system_prompt, user_prompt=user_prompt)
     llm_params = get_llm_params(llm='fast', messages=messages, temperature=0.0)
     response_message = llm_completion(llm_params=llm_params, response_model=ParsedGenres)
     parsed_genres_result = response_message.validated_data
@@ -192,8 +192,8 @@ def task_choose_best_opportunity(platform_reports: Dict[str, str], platform_prof
             full_context += f"\n--- {key} ---\n{report}\n"
     else:
         full_context += "无外部趋势分析报告。"
-    user_prompt = CHOOSE_OPPORTUNITY_USER_PROMPT.format(all_reports=full_context)
-    messages = get_llm_messages(SYSTEM_PROMPT=CHOOSE_BEST_OPPORTUNITY_SYSTEM_PROMPT, USER_PROMPT=user_prompt)
+    user_prompt = CHOOSE_OPPORTUNITY_user_prompt.format(all_reports=full_context)
+    messages = get_llm_messages(system_prompt=CHOOSE_BEST_OPPORTUNITY_system_prompt, user_prompt=user_prompt)
     llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=0.1)
     response_message = llm_completion(llm_params=llm_params, response_model=MarketAnalysisResult)
     decision = response_message.validated_data
