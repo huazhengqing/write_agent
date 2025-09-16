@@ -3,12 +3,12 @@ from loguru import logger
 from utils.models import Task
 from utils.prompt_loader import load_prompts
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, LLM_TEMPERATURES, call_ReActAgent
-from utils.rag import get_rag
+from story.story_rag import get_story_rag
 
 
 def search(task: Task) -> Task:
     system_prompt = load_prompts(task.category, "search_cn", "system_prompt")[0]
-    context = get_rag().get_context_base(task)
+    context = get_story_rag().get_context_base(task)
     context["goal"] = task.goal
     system_prompt = system_prompt.format_map(defaultdict(str, context))
     user_prompt = f"请根据系统提示中的目标 '{task.goal}' 开始你的研究。"
@@ -27,7 +27,7 @@ def search(task: Task) -> Task:
 
 def search_aggregate(task: Task) -> Task:
     system_prompt, user_prompt = load_prompts(task.category, "search_aggregate_cn", "system_prompt", "user_prompt")
-    context = get_rag().get_aggregate_search(task)
+    context = get_story_rag().get_aggregate_search(task)
     messages = get_llm_messages(system_prompt=system_prompt, user_prompt=user_prompt, context_dict_user=context)
     llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["reasoning"])
     message = llm_completion(llm_params)

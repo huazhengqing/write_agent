@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from market_analysis.story.common import get_market_tools
-from market_analysis.story.tasks import task_load_platform_profile, task_platform_briefing, task_new_author_opportunity, task_save_data
+from market_analysis.story.tasks import task_load_platform_profile, task_platform_briefing, task_new_author_opportunity, task_save_vector
 from utils.llm import call_ReActAgent, llm_completion, get_llm_params, get_llm_messages
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
@@ -30,6 +30,7 @@ class MarketAnalysisResult(BaseModel):
 
 class ParsedGenres(BaseModel):
     genres: List[str] = Field(description="从报告中提取的热门题材列表。", default_factory=list)
+
 
 ANALYZE_EXTERNAL_TRENDS_system_prompt = """
 # 角色
@@ -54,6 +55,7 @@ ANALYZE_EXTERNAL_TRENDS_system_prompt = """
 - 关键洞察: [从大众讨论中提炼出的一个独特见解或创作建议]
 """
 
+
 PARSE_GENRES_system_prompt = """
 # 角色
 你是一个精准的信息提取助手。
@@ -71,6 +73,7 @@ PARSE_GENRES_system_prompt = """
 - 禁止在 JSON 前后添加任何额外解释、注释或 markdown 代码块。
 - 如果报告中没有“热门题材”部分或该部分为空，则输出一个空的 `genres` 列表。
 """
+
 
 CHOOSE_BEST_OPPORTUNITY_system_prompt = """
 # 角色
@@ -116,10 +119,12 @@ CHOOSE_BEST_OPPORTUNITY_system_prompt = """
     - `risk_assessment` (string): 分析该机会的潜在风险，例如市场饱和度、创作难度、政策风险等。
 """
 
+
 CHOOSE_OPPORTUNITY_user_prompt = """
 # 综合信息
 {all_reports}
 """
+
 
 @task(name="analyze_external_trends",
     persist_result=True,
@@ -148,6 +153,7 @@ def task_analyze_external_trends(platform: str, genre: str) -> tuple[str, str, s
         logger.error(error_msg)
         return platform, genre, f"## 【{platform}】-【{genre}】外部趋势分析报告\n\n生成报告时出错: {error_msg}"
 
+
 @task(
     name="parse_genres_from_report", 
     persist_result=True,
@@ -171,6 +177,7 @@ def task_parse_genres_from_report(platform: str, report: str) -> tuple[str, List
         logger.warning(f"未能为平台 '{platform}' 的报告解析出任何题材。")
         return platform, []
 
+
 @task(name="choose_best_opportunity",
     persist_result=True,
     result_storage=local_storage,
@@ -179,7 +186,12 @@ def task_parse_genres_from_report(platform: str, report: str) -> tuple[str, List
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-def task_choose_best_opportunity(platform_reports: Dict[str, str], platform_profiles: Dict[str, str], new_author_reports: Dict[str, str], external_trend_reports: Dict[str, str]) -> Optional[MarketAnalysisResult]:
+def task_choose_best_opportunity(
+    platform_reports: Dict[str, str], 
+    platform_profiles: Dict[str, str], 
+    new_author_reports: Dict[str, str], 
+    external_trend_reports: Dict[str, str]
+) -> Optional[MarketAnalysisResult]:
     logger.info("决策最佳市场机会...")
     full_context = ""
     for platform, report in platform_reports.items():
@@ -225,7 +237,7 @@ def platform_subject(platforms_to_scan: list[str]):
             scan_future = scan_futures[i]
             report = scan_future.result()
             platform_reports[platform_name] = report
-            task_save_data(
+            task_save_vector(
                 content=report,
                 doc_type="broad_scan_report",
                 platform=platform_name,
@@ -238,7 +250,7 @@ def platform_subject(platforms_to_scan: list[str]):
 
         opportunity_report = opportunity_futures[i].result()
         new_author_reports[platform_name] = opportunity_report
-        task_save_data(
+        task_save_vector(
             content=opportunity_report,
             doc_type="new_author_opportunity_report",
             platform=platform_name,
@@ -282,7 +294,7 @@ def platform_subject(platforms_to_scan: list[str]):
         for future in trend_futures:
             platform, genre, trend_report = future.result()
             external_trend_reports[f"{platform}-{genre}"] = trend_report
-            task_save_data(
+            task_save_vector(
                 content=trend_report,
                 doc_type="external_trend_report",
                 platform=platform,
@@ -296,7 +308,7 @@ def platform_subject(platforms_to_scan: list[str]):
         logger.warning("未能从决策任务中获得有效结果，工作流终止。")
         return
 
-    task_save_data(
+    task_save_vector(
         content=initial_decision.model_dump_json(indent=2, ensure_ascii=False),
         doc_type="market_analysis_result",
         platform="summary",
@@ -305,6 +317,7 @@ def platform_subject(platforms_to_scan: list[str]):
 
     logger.info("--- 初步市场机会决策报告 (JSON) ---")
     logger.info(f"\n{initial_decision.model_dump_json(indent=2, ensure_ascii=False)}")
+
 
 
 if __name__ == "__main__":

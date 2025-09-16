@@ -1,7 +1,7 @@
 import os
 from utils.models import PlanOutput, Task, convert_plan_to_tasks
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, LLM_TEMPERATURES
-from utils.rag import get_rag
+from story.story_rag import get_story_rag
 from utils.prompt_loader import load_prompts
 
 
@@ -12,14 +12,14 @@ def plan(task: Task) -> Task:
     #         task_level_func = test_get_task_level
     #     else:
     #         task_level_func = get_task_level
-    #     context = get_rag().get_context(task)
+    #     context = get_story_rag().get_context(task)
     #     messages = get_llm_messages(system_prompt, user_prompt, task_level_func(task.hierarchical_position), context)
     # else:
     system_prompt, user_prompt = load_prompts(task.category, f"plan_{task.task_type}_cn", "system_prompt", "user_prompt")
     if task.task_type == "search":
-        context = get_rag().get_context_base(task)
+        context = get_story_rag().get_context_base(task)
     else:
-        context = get_rag().get_context(task)
+        context = get_story_rag().get_context(task)
     context.update({
         "atom_reasoning": task.results.get("atom_reasoning", "无"),
         "complex_reasons": task.results.get("complex_reasons") or "原因未知"
@@ -43,9 +43,9 @@ def plan_reflection(task: Task) -> Task:
     else:
         system_prompt, user_prompt = load_prompts(task.category, f"plan_{task.task_type}_reflection_cn", "system_prompt", "user_prompt")
         if task.task_type == "search":
-            context = get_rag().get_context_base(task)
+            context = get_story_rag().get_context_base(task)
         else:
-            context = get_rag().get_context(task)
+            context = get_story_rag().get_context(task)
         context["to_reflection"] = task.results.get("plan")
         messages = get_llm_messages(system_prompt, user_prompt, None, context)
         llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["reasoning"])

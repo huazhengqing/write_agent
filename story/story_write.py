@@ -4,6 +4,7 @@ from loguru import logger
 from utils.log import ensure_task_logger
 from utils.prefect_utils import get_cache_key, local_storage, readable_json_serializer
 from utils.models import Task
+from utils.sqlite import get_task_db
 from agents.atom import atom
 from agents.plan import plan, plan_reflection
 from agents.design import design, design_aggregate, design_reflection
@@ -12,9 +13,8 @@ from agents.write import write, write_before_reflection, write_reflection
 from agents.summary import summary, summary_aggregate
 from agents.hierarchy import hierarchy, hierarchy_reflection
 from agents.review import review_design, review_write
-from agents import route
-from utils.rag import get_rag
-from utils.sqlite import get_task_db
+from agents.route import route
+from story.story_rag import get_story_rag
 from prefect import flow, task
 
 
@@ -32,6 +32,7 @@ def task_atom(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         return atom(task)
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -45,6 +46,7 @@ def task_plan(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return plan(task)
+
 
 @task(
     persist_result=True, 
@@ -60,6 +62,7 @@ def task_plan_reflection(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         return plan_reflection(task)
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -73,6 +76,7 @@ def task_route(task: Task) -> str:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return route(task)
+
 
 @task(
     persist_result=True, 
@@ -88,6 +92,7 @@ def task_design(task: Task, category: str) -> Task:
     with logger.contextualize(run_id=task.run_id):
         return design(task, category)
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -100,6 +105,7 @@ def task_design_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return design_reflection(task)
+
 
 @task(
     persist_result=True, 
@@ -115,6 +121,7 @@ def task_hierarchy(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         return hierarchy(task)
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -129,6 +136,7 @@ def task_hierarchy_reflection(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         return hierarchy_reflection(task)
     
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -143,6 +151,7 @@ def task_search(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         return search(task)
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -156,6 +165,7 @@ def task_write_before_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return write_before_reflection(task)
+
 
 @task(
     persist_result=True, 
@@ -172,6 +182,7 @@ def task_write(task: Task) -> Task:
         ret = write(task)
         return ret
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -186,6 +197,7 @@ def task_write_reflection(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         ret = write_reflection(task)
         return ret
+
 
 @task(
     persist_result=True, 
@@ -202,6 +214,7 @@ def task_summary(task: Task) -> Task:
         ret = summary(task)
         return ret
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -215,6 +228,7 @@ def task_aggregate_design(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return design_aggregate(task)
+
 
 @task(
     persist_result=True, 
@@ -230,6 +244,7 @@ def task_aggregate_search(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         return search_aggregate(task)
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -244,6 +259,7 @@ def task_aggregate_summary(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         return summary_aggregate(task)
 
+
 @task(
     persist_result=True,
     result_storage=local_storage,
@@ -257,6 +273,7 @@ def task_review_design(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return review_design(task)
+
 
 @task(
     persist_result=True,
@@ -287,17 +304,17 @@ def task_save_data(task: Task, operation_name: str) -> bool:
     with logger.contextualize(run_id=task.run_id):
         if not task.id or not task.goal:
             raise ValueError(f"传递给 task_save_data 的任务信息不完整, 缺少ID或目标: {task}")
-        get_rag().save_data(task, operation_name)
+        get_story_rag().save_data(task, operation_name)
         return True
 
 
 @flow(
     persist_result=False, 
     result_storage=local_storage,
-    name="flow_write_story", 
-    flow_run_name="{current_task.run_id}_flow_write_story_{current_task.id}",
+    name="flow_story_write", 
+    flow_run_name="{current_task.run_id}_flow_story_write_{current_task.id}",
 )
-def flow_write_story(current_task: Task):
+def flow_story_write(current_task: Task):
     ensure_task_logger(current_task.run_id)
     with logger.contextualize(run_id=current_task.run_id):
         logger.info(f"开始处理任务: {current_task.run_id} {current_task.id} {current_task.task_type} {current_task.goal}")
@@ -391,7 +408,7 @@ def flow_write_story(current_task: Task):
                             logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停处理后续子任务: {sub_task.run_id}")
                             return
                     
-                    flow_write_story(sub_task)
+                    flow_story_write(sub_task)
                 
                 if task_result.task_type == "write":
                     keywords_to_skip_review = ["全书", "卷", "幕", "段落", "场景"]
@@ -418,3 +435,4 @@ def flow_write_story(current_task: Task):
             else:
                 logger.error(f"规划失败, 任务 '{task_result.id}' 没有产生任何子任务。")
                 raise Exception(f"任务 '{task_result.id}' 规划失败, 没有子任务。")
+

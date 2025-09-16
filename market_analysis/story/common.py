@@ -19,7 +19,7 @@ def get_market_vector_store() -> ChromaVectorStore:
     if _vector_store is None:
         _vector_store = get_vector_store(
             db_path=str(data_market_dir / "story"),
-            collection_name="story"
+            collection_name="story_market"
         )
     return _vector_store
 
@@ -46,6 +46,7 @@ BROAD_SCAN_system_prompt = """
 ### 2. 官方动向
 - (总结近期的官方征文、激励活动方向。如果没有则明确写出“近期未发现明确的官方活动导向”)
 """
+
 
 ASSESS_NEW_AUTHOR_OPPORTUNITY_system_prompt = """
 # 角色
@@ -123,6 +124,7 @@ def story_market_vector(
     logger.success(f"向量数据库搜索和重排序完成，找到 {len(final_results)} 个结果。")
     return final_content
 
+
 def get_story_market_search_tool() -> FunctionTool:
     tool_description = (
         "功能: 在内部知识库（向量数据库）中搜索已归档的报告和创意。这是研究时的首选工具，应在进行外部网络搜索之前使用。\n"
@@ -150,3 +152,4 @@ def get_story_market_search_tool() -> FunctionTool:
 
 def get_market_tools() -> List[FunctionTool]:
     return web_search_tools + [get_story_market_search_tool()]
+

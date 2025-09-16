@@ -55,6 +55,7 @@ class TaskDB:
         self._lock = threading.Lock()
         self._create_table()
 
+
     def _create_table(self):
         with self._lock:
             self.cursor.execute("""
@@ -112,6 +113,7 @@ class TaskDB:
             """)
             self.conn.commit()
 
+
     def add_task(self, task: Task):
         dependency = json.dumps(task.dependency, ensure_ascii=False)
         with self._lock:
@@ -140,6 +142,7 @@ class TaskDB:
             )
             self.conn.commit()
 
+
     def add_sub_tasks(self, task: Task):
         tasks_to_process = collections.deque(task.sub_tasks or [])
         while tasks_to_process:
@@ -148,6 +151,7 @@ class TaskDB:
 
             if current_task.sub_tasks:
                 tasks_to_process.extend(current_task.sub_tasks)
+
 
     def add_result(self, task: Task):
         update_fields = {
@@ -199,6 +203,7 @@ class TaskDB:
             )
             self.conn.commit()
 
+
     def get_task_list(self, task: Task) -> str:
         """
         高效获取任务上下文列表 (父任务链 + 兄弟任务), 仅查询必要的字段。
@@ -232,6 +237,7 @@ class TaskDB:
             line_parts = [task_id, hierarchical_position, task_type, goal, length]
             output_lines.append(" ".join(filter(None, map(str, line_parts))))
         return "\n".join(output_lines)
+
 
     def get_dependent_design(self, task: Task) -> str:
         if not task.parent_id:
@@ -280,6 +286,7 @@ class TaskDB:
                 content_list.append(content)
         return "\n\n".join(content_list)
 
+
     def get_dependent_search(self, task: Task) -> str:
         if not task.parent_id:
             return ""
@@ -305,6 +312,7 @@ class TaskDB:
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
         return "\n\n".join(content_list)
+
 
     def get_subtask_design(self, parent_id: str) -> str:
         with self._lock:
@@ -337,6 +345,7 @@ class TaskDB:
                 content_list.append(content)
         return "\n\n".join(content_list)
 
+
     def get_subtask_search(self, parent_id: str) -> str:
         with self._lock:
             self.cursor.execute(
@@ -351,6 +360,7 @@ class TaskDB:
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
         return "\n\n".join(content_list)
+
 
     def get_subtask_summary(self, parent_id: str) -> str:
         with self._lock:
@@ -367,6 +377,7 @@ class TaskDB:
         content_list = [row[1] for row in sorted_rows if row[1]]
         
         return "\n\n".join(content_list)
+
 
     def get_latest_write_reflection(self, length: int = 500) -> str:
         # 通过 updated_at 倒序获取最近更新的内容, 这是最高效的方式。
@@ -401,6 +412,7 @@ class TaskDB:
         # 因为我们是按时间倒序获取的(最新在前), 所以需要反转列表以恢复正确的时序
         return "\n\n".join(reversed(content_parts))
 
+
     def get_word_count_last_24h(self) -> int:
         """
         获取最近24小时内 'write_reflection' 字段的总字数。
@@ -418,6 +430,7 @@ class TaskDB:
             if not rows:
                 return 0
             return sum(len(row[0]) for row in rows)
+
 
     def get_write_text(self, task: Task) -> str:
         with self._lock:
@@ -437,6 +450,7 @@ class TaskDB:
         content_list = [row[1] for row in sorted_rows if row[1]]
         return "\n\n".join(content_list)
 
+
     def close(self):
         with self._lock:
             if self.conn:
@@ -452,8 +466,9 @@ def get_task_db(run_id: str) -> TaskDB:
     with _lock:
         if run_id in _stores:
             return _stores[run_id]
-        db_path = data_dir / run_id / "task.TaskDB"
+        db_path = data_dir / run_id / "task.db"
         db_path.parent.mkdir(parents=True, exist_ok=True)
         store = TaskDB(db_path=str(db_path))
         _stores[run_id] = store
         return store
+

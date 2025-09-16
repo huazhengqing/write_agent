@@ -9,7 +9,6 @@ from loguru import logger
 from diskcache import Cache
 from typing import Dict, Any, List, Literal, Optional, Callable
 from llama_index.graph_stores.kuzu import KuzuGraphStore
-from llama_index.llms.litellm import LiteLLM
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.core import StorageContext
 from llama_index.core.prompts import PromptTemplate
@@ -17,10 +16,10 @@ from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.sqlite import get_task_db
 from utils.file import get_text_file_path, text_file_append, text_file_read
-from utils.models import Task, get_sibling_ids_up_to_current, natural_sort_key
+from utils.models import Task, get_sibling_ids_up_to_current
 from utils.prompt_loader import load_prompts
 from utils.kg import get_kg_store, kg_add, hybrid_query
-from utils.vector import get_embed_model, vector_add, vector_query, get_vector_store
+from utils.vector import vector_add, vector_query, get_vector_store
 from utils.file import cache_dir, data_dir
 from utils.llm import (
     LLM_TEMPERATURES,
@@ -30,35 +29,26 @@ from utils.llm import (
 )
 
 
-class RAG:
+class story_rag:
+
     def __init__(self):
-        self.embed_model = get_embed_model()
-
-        self.llm_extract_params = get_llm_params(llm='fast', temperature=LLM_TEMPERATURES["summarization"])
-        self.llm_extract: LiteLLM = LiteLLM(**self.llm_extract_params)
-
-        self.llm_reasoning_params = get_llm_params(llm='reasoning', temperature=LLM_TEMPERATURES["reasoning"])
-        self.llm_reasoning: LiteLLM = LiteLLM(**self.llm_reasoning_params)
-
-        self.llm_synthesis_params = get_llm_params(llm='reasoning', temperature=LLM_TEMPERATURES["synthesis"])
-        self.llm_synthesis: LiteLLM = LiteLLM(**self.llm_synthesis_params)
-
-        cache_base_dir = cache_dir / "story"
-        os.makedirs(cache_base_dir, exist_ok=True)
+        cache_story_dir = cache_dir / "story"
+        os.makedirs(cache_story_dir, exist_ok=True)
         self.caches: Dict[str, Cache] = {
-            'dependent_design': Cache(os.path.join(cache_base_dir, "dependent_design"), size_limit=int(32 * (1024**2))),
-            'dependent_search': Cache(os.path.join(cache_base_dir, "dependent_search"), size_limit=int(32 * (1024**2))),
-            'text_latest': Cache(os.path.join(cache_base_dir, "text_latest"), size_limit=int(32 * (1024**2))),
-            'text_length': Cache(os.path.join(cache_base_dir, "text_length"), size_limit=int(1 * (1024**2))),
-            'upper_design': Cache(os.path.join(cache_base_dir, "upper_design"), size_limit=int(128 * (1024**2))),
-            'upper_search': Cache(os.path.join(cache_base_dir, "upper_search"), size_limit=int(128 * (1024**2))),
-            'text_summary': Cache(os.path.join(cache_base_dir, "text_summary"), size_limit=int(128 * (1024**2))),
-            'task_list': Cache(os.path.join(cache_base_dir, "task_list"), size_limit=int(32 * (1024**2))),
+            'dependent_design': Cache(os.path.join(cache_story_dir, "dependent_design"), size_limit=int(32 * (1024**2))),
+            'dependent_search': Cache(os.path.join(cache_story_dir, "dependent_search"), size_limit=int(32 * (1024**2))),
+            'text_latest': Cache(os.path.join(cache_story_dir, "text_latest"), size_limit=int(32 * (1024**2))),
+            'text_length': Cache(os.path.join(cache_story_dir, "text_length"), size_limit=int(1 * (1024**2))),
+            'upper_design': Cache(os.path.join(cache_story_dir, "upper_design"), size_limit=int(128 * (1024**2))),
+            'upper_search': Cache(os.path.join(cache_story_dir, "upper_search"), size_limit=int(128 * (1024**2))),
+            'text_summary': Cache(os.path.join(cache_story_dir, "text_summary"), size_limit=int(128 * (1024**2))),
+            'task_list': Cache(os.path.join(cache_story_dir, "task_list"), size_limit=int(32 * (1024**2))),
         }
 
         self.vector_stores: Dict[str, ChromaVectorStore] = {}
         self.graph_stores: Dict[str, KuzuGraphStore] = {}
         self._storage_lock = threading.Lock()
+
 
     def _get_vector_store(self, run_id: str, content_type: str) -> ChromaVectorStore:
         context_key = f"{run_id}_{content_type}"
@@ -69,15 +59,13 @@ class RAG:
             if context_key in self.vector_stores:
                 return self.vector_stores[context_key]
 
-            logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 创建新的 VectorStore (ChromaDB)...")
             chroma_path = os.path.join(data_dir, run_id, content_type)
-            sanitized_model_name = re.sub(r'[^a-zA-Z0-9_-]', '_', self.embed_model.model_name)
-            collection_name = f"collection_{sanitized_model_name}"
+            collection_name = f"{run_id}_{content_type}"
             vector_store = get_vector_store(db_path=chroma_path, collection_name=collection_name)
             
             self.vector_stores[context_key] = vector_store
-            logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 的 VectorStore 创建并缓存成功。")
             return vector_store
+
 
     def _get_graph_store(self, run_id: str, content_type: str) -> KuzuGraphStore:
         context_key = f"{run_id}_{content_type}"
@@ -88,13 +76,12 @@ class RAG:
             if context_key in self.graph_stores:
                 return self.graph_stores[context_key]
 
-            logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 创建新的 GraphStore (Kùzu)...")
             kuzu_db_path = os.path.join(data_dir, run_id, content_type)
             graph_store = get_kg_store(db_path=kuzu_db_path)
             
             self.graph_stores[context_key] = graph_store
-            logger.info(f"为 run_id='{run_id}', content_type='{content_type}' 的 GraphStore 创建并缓存成功。")
             return graph_store
+
 
     def save_data(self, task: Task, task_type: str):
         task_db = get_task_db(run_id=task.run_id)
@@ -207,6 +194,7 @@ class RAG:
         else:
             raise ValueError("不支持的任务类型")
 
+
     def save_design(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 design 内容 (向量索引与知识图谱)...")
         header_parts = [
@@ -228,7 +216,6 @@ class RAG:
             "status": "active",                         # 状态, 用于标记/取消文档
             "created_at": datetime.now().isoformat()
         }
-        # 1. 存入向量数据库
         vector_add(
             vector_store=vector_store,
             content=content,
@@ -237,7 +224,6 @@ class RAG:
             doc_id=task.id
         )
         logger.info(f"[{task.id}] design 内容向量化完成, 开始构建知识图谱...")
-        # 2. 存入知识图谱
         kg_add(
             storage_context=storage_context,
             content=content,
@@ -248,6 +234,7 @@ class RAG:
             max_triplets_per_chunk=15,
         )
         logger.info(f"[{task.id}] design 内容存储完成。")
+
 
     def save_search(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 search 内容 (向量索引)...")
@@ -267,6 +254,7 @@ class RAG:
             doc_id=task.id
         )
         logger.info(f"[{task.id}] search 内容存储完成。")
+
 
     def save_write(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 write 内容 (构建知识图谱)...")
@@ -288,6 +276,7 @@ class RAG:
         )
         logger.info(f"[{task.id}] write 内容存储完成。")
     
+
     def save_summary(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 summary 内容 (向量索引)...")
         header_parts = [
@@ -313,7 +302,9 @@ class RAG:
         )
         logger.info(f"[{task.id}] summary 内容存储完成。")
 
+
 ###############################################################################
+
 
     def get_context_base(self, task: Task) -> Dict[str, Any]:
         ret = {
@@ -341,6 +332,7 @@ class RAG:
         })
         return ret
     
+
     def get_context(self, task: Task) -> Dict[str, Any]:
         ret = self.get_context_base(task)
         if not task.parent_id:
@@ -360,6 +352,7 @@ class RAG:
             ret.update(rag_results)
         return ret
 
+
     def get_dependent_design(self, task_db: Any, task: Task) -> str:
         cache_key = f"dependent_design:{task.run_id}:{task.id}"
         cached_result = self.caches['dependent_design'].get(cache_key)
@@ -368,6 +361,7 @@ class RAG:
         result = task_db.get_dependent_design(task)
         self.caches['dependent_design'].set(cache_key, result, tag=task.run_id)
         return result
+
 
     def get_dependent_search(self, task_db: Any, task: Task) -> str:
         cache_key = f"dependent_search:{task.run_id}:{task.id}"
@@ -378,6 +372,7 @@ class RAG:
         self.caches['dependent_search'].set(cache_key, result, tag=task.run_id)
         return result
 
+
     def get_task_list(self, task_db: Any, task: Task) -> str:
         cache_key = f"task_list:{task.run_id}:{task.parent_id}"
         cached_result = self.caches['task_list'].get(cache_key)
@@ -386,6 +381,7 @@ class RAG:
         result = task_db.get_task_list(task)
         self.caches['task_list'].set(cache_key, result, tag=task.run_id)
         return result
+
 
     def get_text_latest(self, task: Task, length: int = 3000) -> str:
         key = f"get_text_latest:{task.run_id}:{length}"
@@ -414,6 +410,7 @@ class RAG:
         self.caches['text_latest'].set(key, result, tag=task.run_id)
         return result
 
+
     def get_text_length(self, task: Task) -> int:
         file_path = get_text_file_path(task)
         key = f"get_text_length:{file_path}"
@@ -425,6 +422,7 @@ class RAG:
         self.caches['text_length'].set(key, length, tag=task.run_id)
         return length
 
+
     def get_aggregate_design(self, task: Task) -> Dict[str, Any]:
         ret = self.get_context_base(task)
         if task.sub_tasks:
@@ -432,12 +430,14 @@ class RAG:
             ret["subtask_design"] = task_db.get_subtask_design(task.id)
         return ret
 
+
     def get_aggregate_search(self, task: Task) -> Dict[str, Any]:
         ret = self.get_context_base(task)
         if task.sub_tasks:
             task_db = get_task_db(run_id=task.run_id)
             ret["subtask_search"] = task_db.get_subtask_search(task.id)
         return ret
+
 
     def get_aggregate_summary(self, task: Task) -> Dict[str, Any]:
         ret = {
@@ -451,6 +451,7 @@ class RAG:
             task_db = get_task_db(run_id=task.run_id)
             ret["subtask_summary"] = task_db.get_subtask_summary(task.id)
         return ret
+
 
     def get_inquiry(
         self,
@@ -486,6 +487,7 @@ class RAG:
         llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["reasoning"])
         message = llm_completion(llm_params, response_model=Inquiry)
         return message.validated_data.model_dump()
+    
     
     def get_upper_search(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
         logger.info(f"[{task.id}] 开始获取上层搜索(upper_search)上下文...")
@@ -533,13 +535,15 @@ class RAG:
         logger.info(f"[{task.id}] 获取上层搜索(upper_search)上下文的流程已结束。")
         return result
 
+
     def get_upper_design(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
         logger.info(f"[{task.id}] 开始获取上层设计(upper_design)上下文...")
+
         cache_key = f"get_upper_design:{task.run_id}:{task.id}"
         cached_result = self.caches['upper_design'].get(cache_key)
         if cached_result is not None:
-            logger.info(f"[{task.id}] 命中上层设计(upper_design)缓存。")
             return cached_result
+        
         inquiry = self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'design')
         if not inquiry or not inquiry.get("questions"):
             logger.warning(f"[{task.id}] 生成的探询问题为空或无效, 跳过上层设计检索。")
@@ -600,6 +604,7 @@ class RAG:
         logger.info(f"[{task.id}] 获取上层设计(upper_design)上下文完成。")
         return result
  
+
     def get_text_summary(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
         logger.info(f"[{task.id}] 开始获取历史情节概要(text_summary)上下文...")
         cache_key = f"get_text_summary:{task.run_id}:{task.id}"
@@ -670,6 +675,7 @@ class RAG:
         logger.info(f"[{task.id}] 获取历史情节概要(text_summary)上下文完成。")
         return result
 
+
     def build_agent_query(self, questions: List[str], final_instruction: str, rules_text: str) -> str:
         main_inquiry = "请综合分析并回答以下问题。"
         query_text = f"# 核心探询目标\n{main_inquiry}\n\n# 具体信息需求 (按优先级降序排列)\n"
@@ -688,60 +694,14 @@ class RAG:
 ###############################################################################
 
 _rag_instance = None
-
-def get_rag():
+def get_story_rag():
     global _rag_instance
     if _rag_instance is None:
-        _rag_instance = RAG()
+        _rag_instance = story_rag()
     return _rag_instance
 
 
-###############################################################################
 
 
-if __name__ == "__main__":
-    def main():
-        logger.info("开始 RAG 存储功能测试...")
-        rag = get_rag()
 
-        # 1. 创建一个模拟任务
-        mock_task = Task(
-            id="1.1",
-            parent_id="1",
-            task_type="write",
-            hierarchical_position="第一章",
-            goal="测试存储功能",
-            category="story",
-            language="cn",
-            root_name="测试书籍",
-            run_id="test_run_12345",
-        )
-        logger.info(f"使用模拟任务: {mock_task.model_dump_json(indent=2)}")
 
-        # 2. 测试 save_design
-        logger.info("--- 正在测试 save_design ---")
-        design_content = "这是一个详细的设计方案。主角是一个年轻的法师，他发现了一个古老的秘密。世界观是魔法与科技并存。"
-        rag.save_design(mock_task, design_content)
-        logger.success("--- save_design 测试完成 ---")
-
-        # 3. 测试 save_search
-        logger.info("--- 正在测试 save_search ---")
-        search_content = "关于“魔法与科技并存”设定的市场调研结果：\n- 优点：受众广泛，想象空间大。\n- 缺点：容易出现设定冲突。"
-        rag.save_search(mock_task, search_content)
-        logger.success("--- save_search 测试完成 ---")
-
-        # 4. 测试 save_write
-        logger.info("--- 正在测试 save_write ---")
-        write_content = "第一章的开头。清晨，阳光穿过浮空城市的缝隙，照亮了艾瑞克简陋的房间。他桌上的机械臂正小心翼翼地擦拭着一根老旧的法杖。"
-        rag.save_write(mock_task, write_content)
-        logger.success("--- save_write 测试完成 ---")
-
-        # 5. 测试 save_summary
-        logger.info("--- 正在测试 save_summary ---")
-        summary_content = "本章介绍了主角艾瑞克和他所处的世界，一个魔法与科技交融的浮空城市。通过开头的场景，暗示了主角的背景和故事的基调。"
-        rag.save_summary(mock_task, summary_content)
-        logger.success("--- save_summary 测试完成 ---")
-
-        logger.info("所有 RAG 存储功能测试已完成。请检查 .chroma_db, .kuzu_db 等目录下的 'test_run_12345' 文件夹以验证结果。")
-
-    main()

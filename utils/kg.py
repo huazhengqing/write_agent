@@ -33,13 +33,11 @@ from utils.log import init_logger
 
 
 def get_kg_store(db_path: str) -> KuzuGraphStore:
-    logger.info(f"正在访问 Kùzu 图数据库: path='{db_path}'")
     parent_dir = os.path.dirname(db_path)
     if parent_dir:
         os.makedirs(parent_dir, exist_ok=True)
     db = kuzu.Database(db_path)
     graph_store = KuzuGraphStore(db)
-    logger.success(f"Kùzu 图数据库已在路径 '{db_path}' 准备就绪。")
     return graph_store
 
 
@@ -52,19 +50,6 @@ def kg_add(
     content_format: Literal["markdown", "text", "json"] = "markdown",
     max_triplets_per_chunk: int = 15,
 ) -> None:
-    """
-    将内容存储到知识图谱中。
-
-    Args:
-        storage_context (StorageContext): LlamaIndex的存储上下文。
-        content (str): 要存储的文本内容。
-        metadata (Dict[str, Any]): 与文档关联的元数据。
-        doc_id (str): 文档的唯一ID。
-        kg_extraction_prompt (str): 用于知识图谱提取的提示模板。
-        content_format (Literal["markdown", "text", "json"], optional): 内容格式。 Defaults to "markdown".
-        max_triplets_per_chunk (int, optional): 每个块最多提取的三元组数量。 Defaults to 15.
-    """
-    logger.info(f"开始为文档 '{doc_id}' (格式: {content_format}) 构建知识图谱...")
 
     doc = Document(id_=doc_id, text=content, metadata=metadata)
 
@@ -74,9 +59,9 @@ def kg_add(
     elif content_format == "text":
         transformations.append(SentenceSplitter(chunk_size=512, chunk_overlap=100, include_metadata=True, include_prev_next_rel=True))
     elif content_format == "json":
-        logger.info("内容格式为 'json'，将整个文档作为一个节点处理。")
+        pass
     else:
-        transformations.append(SentenceSplitter(chunk_size=512, chunk_overlap=100, include_metadata=True, include_prev_next_rel=True))
+        raise ValueError("格式错误")
 
     llm_extract_params = get_llm_params(llm="fast", temperature=LLM_TEMPERATURES["summarization"])
     llm = LiteLLM(**llm_extract_params)
@@ -91,7 +76,6 @@ def kg_add(
         include_embeddings=True,
         transformations=transformations,
     )
-    logger.success(f"文档 '{doc_id}' 的知识图谱构建完成。")
 
 
 
@@ -156,29 +140,21 @@ def hybrid_query(
     kg_sort_by: Literal["time", "narrative", "relevance"] = "relevance",
 ) -> str:
     """
-    执行一个完整的混合查询流程：向量检索 -> 知识图谱检索 -> LLM综合。
-    此函数封装了从创建查询引擎到最终答案合成的所有步骤。
-
-    Args:
-        retrieval_query_text (str): 用于向量和图谱检索的查询文本。
-        synthesis_query_text (str): 用于最终LLM综合的、更详细的代理查询文本。
-        synthesis_system_prompt (str): 综合阶段的系统提示。
-        synthesis_user_prompt (str): 综合阶段的用户提示模板。
-        vector_store (VectorStore): 用于向量检索的向量存储。
-        graph_store (KuzuGraphStore): 用于知识图谱检索的图存储。
-        kg_nl2graphquery_prompt (Optional[PromptTemplate], optional): KG中NL2GraphQuery的提示。 Defaults to None.
-        vector_filters (Optional[MetadataFilters]): 应用于向量检索的元数据过滤器。
-        vector_similarity_top_k (int): 向量检索的top_k。
-        vector_rerank_top_n (int): 向量检索后LLM重排的top_n。
-        kg_similarity_top_k (int): KG混合检索中向量部分的top_k。
-        kg_rerank_top_n (int): KG检索后LLM重排的top_n。
-        vector_sort_by (Literal): 向量结果的排序方式。
-        kg_sort_by (Literal): 知识图谱结果的排序方式。
-
-    Returns:
-        str: LLM综合后的最终答案。
+    retrieval_query_text (str): 用于向量和图谱检索的查询文本。
+    synthesis_query_text (str): 用于最终LLM综合的、更详细的代理查询文本。
+    synthesis_system_prompt (str): 综合阶段的系统提示。
+    synthesis_user_prompt (str): 综合阶段的用户提示模板。
+    vector_store (VectorStore): 用于向量检索的向量存储。
+    graph_store (KuzuGraphStore): 用于知识图谱检索的图存储。
+    kg_nl2graphquery_prompt (Optional[PromptTemplate], optional): KG中NL2GraphQuery的提示。 Defaults to None.
+    vector_filters (Optional[MetadataFilters]): 应用于向量检索的元数据过滤器。
+    vector_similarity_top_k (int): 向量检索的top_k。
+    vector_rerank_top_n (int): 向量检索后LLM重排的top_n。
+    kg_similarity_top_k (int): KG混合检索中向量部分的top_k。
+    kg_rerank_top_n (int): KG检索后LLM重排的top_n。
+    vector_sort_by (Literal): 向量结果的排序方式。
+    kg_sort_by (Literal): 知识图谱结果的排序方式。
     """
-    logger.info("🚀 开始执行混合查询（向量 + 知识图谱）...")
 
     embed_model = get_embed_model()
 
@@ -197,7 +173,6 @@ def hybrid_query(
         )
     )
 
-    # --- 向量查询 ---
     logger.info("构建向量查询引擎...")
     vector_index = VectorStoreIndex.from_vector_store(
         vector_store=vector_store, embed_model=embed_model
@@ -216,7 +191,6 @@ def hybrid_query(
     formatted_vector_str = _format_response_with_sorting(vector_response, vector_sort_by)
     logger.info(f"向量查询完成, 检索到 {len(vector_response.source_nodes)} 个节点。")
 
-    # --- 知识图谱查询 ---
     logger.info("构建知识图谱查询引擎...")
     kg_storage_context = StorageContext.from_defaults(graph_store=graph_store)
     kg_index = KnowledgeGraphIndex.from_documents(
@@ -245,7 +219,6 @@ def hybrid_query(
     formatted_kg_str = _format_response_with_sorting(kg_response, kg_sort_by)
     logger.info(f"知识图谱查询完成, 检索到 {len(kg_response.source_nodes)} 个节点。")
 
-    logger.info("正在整合向量和知识图谱的查询结果...")
     context_dict_user = {
         "query_text": synthesis_query_text,
         "formatted_vector_str": formatted_vector_str,
@@ -257,110 +230,6 @@ def hybrid_query(
 
     final_message = llm_completion(final_llm_params)
     result = final_message.content
-    logger.success("✅ 混合查询及结果整合完成。")
 
     return result
 
-
-if __name__ == "__main__":
-    import shutil
-    from datetime import datetime
-    from utils.vector import get_vector_store
-
-    init_logger(os.path.splitext(os.path.basename(__file__))[0])
-
-    test_db_path = "./.test_chroma_db_graph"
-    test_kuzu_path = "./.test_kuzu_db_graph"
-
-    test_collection_name = "test_collection_graph"
-    vector_store = get_vector_store(db_path=test_db_path, collection_name=test_collection_name)
-    graph_store = get_kg_store(db_path=test_kuzu_path)
-    storage_context = StorageContext.from_defaults(
-        vector_store=vector_store,
-        graph_store=graph_store
-    )
-
-    doc_id = "test_story_001"
-    metadata = {
-        "author": "测试员",
-        "task_id": "第一章",
-        "created_at": datetime.now().isoformat()
-    }
-    content = """
-    在一个阳光明媚的下午，小明在村庄后面的小溪边玩耍。
-    他无意间踢到了一块闪闪发光的石头。这块石头不同寻常，
-    它通体呈深蓝色，表面刻有古老的符文，并且散发着微弱的暖意。
-    小明好奇地捡起了它，感觉一股奇妙的能量涌入身体。
-    这块石头，就是传说中的“苍穹之石”，据说拥有连接天空与大地的力量。
-    村里的长老曾说过，只有心灵纯洁的人才能唤醒它。
-    """
-    kg_extraction_prompt = """
-    从以下文本中提取知识三元组。三元组应为 (主语, 谓语, 宾语) 格式。
-    请专注于实体及其之间的关系。
-    例如:
-    文本: "小明发现了一块蓝色的石头。"
-    三元组: (小明, 发现, 蓝色石头)
-    ---
-    文本:
-    {text}
-    ---
-    提取的三元组:
-    """
-
-    # --- 存储 ---
-    logger.info("\n--- 步骤1: 开始存储内容 ---")
-    kg_add(
-        storage_context=storage_context,
-        content=content,
-        metadata=metadata,
-        doc_id=doc_id,
-        kg_extraction_prompt=kg_extraction_prompt,
-        content_format="text",
-    )
-    logger.success("--- 内容存储完成 ---")
-
-    # --- 查询 ---
-    logger.info("\n--- 步骤2: 开始混合查询 ---")
-    retrieval_query_text = "小明和苍穹之石有什么关系？"
-    synthesis_query_text = f"请详细总结一下关于'{retrieval_query_text}'的所有信息。"
-
-    synthesis_system_prompt = "你是一个小说分析助手。请根据下面提供的“向量检索信息”和“知识图谱信息”，整合并详细回答用户的问题。请优先使用提供的信息，并以流畅、连贯的语言组织答案。"
-    synthesis_user_prompt = """
-    [用户信息]
-    问题: {query_text}
-
-    [向量检索信息]
-    {formatted_vector_str}
-
-    [知识图谱信息]
-    {formatted_kg_str}
-
-    [你的任务]
-    请综合以上所有信息，给出最终的详细回答。
-    """
-
-    # 为知识图谱查询定义一个更明确的 NL2GraphQuery 提示
-    kg_gen_query_prompt_template = """
-    你是一个图数据库专家。根据提供的图谱模式和自然语言问题，生成一个 Cypher 查询语句来回答问题。
-    只输出 Cypher 查询语句，不要有任何解释或代码块标记。
-
-    图谱模式:
-    {schema}
-
-    问题: {query_str}
-
-    Cypher 查询:
-    """
-    kg_nl2graphquery_prompt = PromptTemplate(template=kg_gen_query_prompt_template)
-
-    final_answer = hybrid_query(
-        retrieval_query_text=retrieval_query_text,
-        synthesis_query_text=synthesis_query_text,
-        synthesis_system_prompt=synthesis_system_prompt,
-        synthesis_user_prompt=synthesis_user_prompt,
-        vector_store=vector_store,
-        graph_store=graph_store,
-        kg_nl2graphquery_prompt=kg_nl2graphquery_prompt,
-    )
-    logger.success("\n--- 最终综合回答 ---")
-    logger.info(f"\n{final_answer}")

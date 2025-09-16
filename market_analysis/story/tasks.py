@@ -1,6 +1,6 @@
 import os
 import sys
-from typing import Any, Tuple
+from typing import Any, Optional, Tuple
 from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
 from loguru import logger
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
@@ -12,6 +12,7 @@ from market_analysis.story.common import (
 )
 from utils.vector import vector_add, vector_query
 from utils.llm import call_ReActAgent
+from utils.file import data_market_dir
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import task
 
@@ -93,14 +94,17 @@ def task_platform_briefing(platform: str) -> str:
 )
 def task_new_author_opportunity(platform: str) -> str:
     logger.info(f"为平台 '{platform}' 生成新人机会评估报告...")
+
     system_prompt = ASSESS_NEW_AUTHOR_OPPORTUNITY_system_prompt.format(platform=platform)
     user_prompt = f"请开始为平台 '{platform}' 生成新人机会评估报告。"
+
     report = call_ReActAgent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         tools=get_market_tools(),
         temperature=0.1,
     )
+
     if report:
         logger.success(f"Agent为 '{platform}' 完成了新人机会评估报告生成，报告长度: {len(report)}。")
         return report
@@ -111,29 +115,38 @@ def task_new_author_opportunity(platform: str) -> str:
 
 
 @task(
-    name="task_save_data",
+    name="task_save_vector",
     persist_result=True,
     result_storage=local_storage,
     result_serializer=readable_json_serializer,
     cache_expiration=604800,
-    retries=2,
+    retries=1,
     retry_delay_seconds=10,
 )
-def task_save_data(
-    content: str, doc_type: str, content_format: str = "text", **metadata: Any
-) -> bool:
-    logger.info(f"准备将类型为 '{doc_type}' (格式: {content_format}) 的报告存入向量库...")
+def task_save_vector(content: str, doc_type: str, content_format: str = "text", **metadata: Any) -> bool:
     final_metadata = metadata.copy()
     final_metadata["type"] = doc_type
-    success = vector_add(
+    return vector_add(
         vector_store =get_market_vector_store(),
         content=content,
         metadata=final_metadata,
         content_format=content_format,
     )
-    if success:
-        logger.success(f"任务 'task_save_data' (类型: {doc_type}) 成功完成。")
-    else:
-        logger.warning(f"任务 'task_save_data' (类型: {doc_type}) 执行失败或内容为空被跳过。")
-    return success
+
+
+@task(
+    name="task_save_md",
+    retries=1,
+    retry_delay_seconds=10,
+)
+def task_save_md(filename: str, content: Optional[str]) -> Optional[str]:
+    if not content:
+        return None
+    filename_md = f"{filename.replace(' ', '_')}.md"
+    file_path_md = data_market_dir / "story" / filename_md
+    file_path_md.write_text(content, encoding="utf-8")
+    return str(file_path_md.resolve())
+
+
+
 

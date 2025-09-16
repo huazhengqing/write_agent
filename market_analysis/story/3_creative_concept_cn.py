@@ -14,7 +14,7 @@ from utils.file import data_market_dir
 from utils.llm import call_ReActAgent, get_llm_messages, get_llm_params, llm_completion
 from utils.vector import vector_query
 from market_analysis.story.common import get_market_vector_store, get_market_tools
-from market_analysis.story.tasks import task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, task_save_data
+from market_analysis.story.tasks import task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, task_save_vector
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import flow, task
 
@@ -37,6 +37,7 @@ class RankedConcept(BaseModel):
 class FinalDecisionResult(BaseModel):
     final_choice: FinalDecision = Field(description="根据综合排序最终选定的最佳方案。")
     ranking: List[RankedConcept] = Field(description="所有候选方案的完整排名列表。")
+
 
 FINAL_DECISION_system_prompt_JSON = """
 # 角色
@@ -129,6 +130,7 @@ DEEP_DIVE_system_prompt = """
 - **可执行性 (1-5分)**: [报告建议的清晰度和可用性]
 - **综合评价**: [总结报告优缺点]
 """
+
 # 机会生成的提示词
 OPPORTUNITY_GENERATION_system_prompt = """
 # 角色
@@ -160,6 +162,7 @@ OPPORTUNITY_GENERATION_system_prompt = """
 - **难度理由**: [世界观, 角色, 情节, 资料]
 """
 
+
 OPPORTUNITY_GENERATION_user_prompt = """
 ---
 # 市场深度分析报告
@@ -169,6 +172,7 @@ OPPORTUNITY_GENERATION_user_prompt = """
 # 历史创意参考
 {historical_concepts}
 """
+
 
 # 小说创意生成提示词
 NOVEL_CONCEPT_system_prompt = """
@@ -259,6 +263,7 @@ NOVEL_CONCEPT_system_prompt = """
 - **规避策略**: [提出具体的规避建议]
 """
 
+
 NOVEL_CONCEPT_user_prompt = """
 ---
 # 初步选题列表
@@ -267,6 +272,7 @@ NOVEL_CONCEPT_user_prompt = """
 # 历史成功案例参考
 {historical_success_cases}
 """
+
 
 @task(name="final_decision",
     persist_result=True,
@@ -295,6 +301,7 @@ def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionResult:
         raise ValueError("最终决策失败。")
     logger.success(f"最终决策完成。选择: 【{decision.final_choice.platform}】 - 【{decision.final_choice.genre}】")
     return decision
+
 
 @task(name="deep_dive_analysis",
     persist_result=True,
@@ -333,6 +340,7 @@ def task_deep_dive_analysis(platform: str, genre: str, platform_profile: str, br
 
     logger.success("深度分析完成！")
     return report
+
 
 @task(name="generate_opportunities",
     persist_result=True,
@@ -374,6 +382,7 @@ def task_generate_opportunities(market_report: str, genre: str) -> Optional[str]
     else:
         logger.error("生成小说选题失败。")
     return opportunities
+
 
 @task(name="generate_novel_concept",
     persist_result=True,
@@ -420,6 +429,7 @@ def task_generate_novel_concept(opportunities_report: str, platform: str, genre:
         logger.error("生成详细小说创意失败。")
         return None
     return concept
+
 
 @task(
     name="save_markdown",
@@ -512,7 +522,7 @@ def creative_concept(candidates_to_explore: List[Candidate]):
         try:
             report_content = future.result()
             if report_content:
-                task_save_data(
+                task_save_vector(
                     content=report_content,
                     doc_type="deep_dive_report",
                     platform=candidate.platform,
@@ -562,7 +572,7 @@ def creative_concept(candidates_to_explore: List[Candidate]):
         logger.info(f"选择: 【{final_choice_obj.platform}】 - 【{final_choice_obj.genre}】")
         logger.info(f"理由: {final_choice_obj.reasoning}")
 
-        task_save_data(
+        task_save_vector(
             content=final_decision_result.model_dump_json(indent=2, ensure_ascii=False),
             doc_type="final_decision_report",
             platform=final_choice_data["platform"],
@@ -581,7 +591,7 @@ def creative_concept(candidates_to_explore: List[Candidate]):
         logger.info(f"选择: 【{final_choice_obj.platform}】 - 【{final_choice_obj.genre}】")
         logger.info(f"理由: {final_choice_obj.reasoning}")
         logger.info(f"完整排名:\n{json.dumps([r.model_dump() for r in final_decision_result.ranking], indent=2, ensure_ascii=False)}")
-        task_save_data(
+        task_save_vector(
             content=final_decision_result.model_dump_json(indent=2, ensure_ascii=False),
             doc_type="final_decision_report",
             platform=final_choice_obj.platform,
@@ -606,7 +616,7 @@ def creative_concept(candidates_to_explore: List[Candidate]):
         logger.error(f"生成小说选题失败，工作流终止。")
         return
 
-    task_save_data(
+    task_save_vector(
         content=final_opportunities,
         doc_type="opportunity_generation_report",
         platform=chosen_platform,
@@ -622,7 +632,7 @@ def creative_concept(candidates_to_explore: List[Candidate]):
         logger.error(f"深化小说创意失败，工作流终止。")
         return
 
-    task_save_data(
+    task_save_vector(
         content=detailed_concept,
         doc_type="novel_concept",
         platform=chosen_platform,

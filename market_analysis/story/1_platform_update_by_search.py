@@ -10,7 +10,7 @@ from utils.file import data_market_dir
 from utils.llm import call_ReActAgent
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import task, flow
-from market_analysis.story.tasks import task_save_data
+from market_analysis.story.tasks import task_save_md, task_save_vector
 
 
 PLATFORM_RESEARCH_system_prompt = """
@@ -100,52 +100,46 @@ PLATFORM_RESEARCH_system_prompt = """
 )
 async def search_platform(platform: str) -> Optional[str]:
     logger.info(f"为平台 '{platform}' 生成平台档案报告...")
+
     system_prompt = PLATFORM_RESEARCH_system_prompt.format(platform=platform)
     user_prompt = f"请开始为平台 '{platform}' 生成平台基础信息报告。" 
+
     md_content = await call_ReActAgent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         temperature=0.1
     )
+
     if not md_content:
         logger.error(f"为平台 '{platform}' 生成报告失败。")
         return None
+    
     logger.success(f"Agent为 '{platform}' 完成了报告生成，报告长度: {len(md_content)}。")
     return md_content
-
-@task(
-    name="save_to_md",
-    retries=1,
-    retry_delay_seconds=10,
-)
-def save_to_md(platform: str, md_content: Optional[str]) -> Optional[str]:
-    if not md_content:
-        logger.warning(f"内容为空，跳过为平台 '{platform}' 保存Markdown文件。")
-        return None
-    platform_filename_md = f"{platform.replace(' ', '_')}.md"
-    file_path_md = data_market_dir / platform_filename_md
-    file_path_md.write_text(md_content, encoding="utf-8")
-    logger.success(f"{platform} 平台基础信息已保存为Markdown文件: {file_path_md}")
-    return str(file_path_md.resolve())
 
 
 @flow(name="search_platform_all") 
 def search_platform_all(platforms: List[str]):
     logger.info(f"开始更新 {len(platforms)} 个平台的的基础信息...")
+
     report_futures = search_platform.map(platforms)
-    filepath_futures = save_to_md.map(
+
+    filepath_futures = task_save_md.map(
         platform=platforms,
         md_content=report_futures
     )
-    store_futures = task_save_data.map(
+
+    store_futures = task_save_vector.map(
         content=report_futures,
         doc_type="platform_profile",
         content_format="markdown",
         platform=platforms,
         source=filepath_futures
     )
+
     for future in store_futures:
         future.result()
+
     logger.info(f"已完成对 {len(platforms)} 个平台基础信息的更新流程。")
 
 
@@ -157,3 +151,6 @@ if __name__ == "__main__":
         search_platform_all(platforms)
 
     asyncio.run(run_flow())
+
+
+

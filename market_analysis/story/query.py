@@ -17,14 +17,12 @@ def market_story_query(
     num_results: int = 3,
 ) -> Tuple[Optional[str], Optional[List[NodeWithScore]]]:
     """
-    Args:
-        query_text (str): 核心查询问题。
-        query_date (Optional[str], optional): 按日期筛选，格式 "YYYY-MM-DD". Defaults to None.
-        num_results (int, optional): 最终用于合成答案的文档数量. Defaults to 3.
-    Returns:
-        Tuple[Optional[str], Optional[List[NodeWithScore]]]: 返回一个元组，包含 (合成的答案字符串, 来源节点列表)。如果失败则返回 (None, None)。
+    query_text (str): 核心查询问题。
+    query_date (Optional[str], optional): 按日期筛选，格式 "YYYY-MM-DD". Defaults to None.
+    num_results (int, optional): 最终用于合成答案的文档数量. Defaults to 3.
     """
     logger.info(f"🚀 开始市场报告查询: '{query_text}'")
+    
     filters = None
     if query_date:
         logger.info(f"  - 配置元数据过滤器，按日期筛选: {query_date}")

@@ -7,7 +7,7 @@ from loguru import logger
 from utils.file import sanitize_filename
 from utils.log import init_logger_by_runid
 from utils.models import Task
-from write_story import flow_write_story
+from story.story_write import flow_story_write
 
 
 init_logger_by_runid("write")
@@ -52,7 +52,7 @@ def write_all(tasks_data: list):
     if root_tasks:
         results = []
         with concurrent.futures.ThreadPoolExecutor() as executor:
-            future_to_task = {executor.submit(flow_write_story, task): task for task in root_tasks}
+            future_to_task = {executor.submit(flow_story_write, task): task for task in root_tasks}
             for future in concurrent.futures.as_completed(future_to_task):
                 task = future_to_task[future]
                 try:
