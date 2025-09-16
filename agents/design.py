@@ -37,6 +37,7 @@ def design(task: Task, category: str) -> Task:
     updated_task.results["design_reasoning"] = reasoning
     return updated_task
 
+
 def design_reflection(task: Task) -> Task:
     updated_task = task.model_copy(deep=True)
     if os.getenv("deployment_environment") == "test":
@@ -55,6 +56,7 @@ def design_reflection(task: Task) -> Task:
         updated_task.results["design_reflection_reasoning"] = reasoning
     return updated_task
 
+
 def design_aggregate(task: Task) -> Task:
     system_prompt, user_prompt = load_prompts(task.category, "design_aggregate_cn", "system_prompt", "user_prompt")
     context = get_story_rag().get_aggregate_design(task)
@@ -67,3 +69,4 @@ def design_aggregate(task: Task) -> Task:
     updated_task.results["design"] = content
     updated_task.results["design_reasoning"] = reasoning
     return updated_task
+

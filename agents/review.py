@@ -18,6 +18,7 @@ def review_design(task: Task) -> Task:
     updated_task.results["review_design_reasoning"] = reasoning
     return updated_task
 
+
 def review_write(task: Task) -> Task:
     system_prompt, user_prompt = load_prompts(task.category, "review_write_cn", "system_prompt", "user_prompt")
     context = get_story_rag().get_context(task)
@@ -32,3 +33,4 @@ def review_write(task: Task) -> Task:
     updated_task.results["review_write"] = message.content
     updated_task.results["review_write_reasoning"] = reasoning
     return updated_task
+

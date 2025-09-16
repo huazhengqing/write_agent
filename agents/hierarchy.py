@@ -18,6 +18,7 @@ def hierarchy(task: Task) -> Task:
     updated_task.results["design_reasoning"] = reasoning
     return updated_task
 
+
 def hierarchy_reflection(task: Task) -> Task:
     updated_task = task.model_copy(deep=True)
     if os.getenv("deployment_environment") == "test":

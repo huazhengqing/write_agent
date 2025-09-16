@@ -35,6 +35,7 @@ def plan(task: Task) -> Task:
     updated_task.results["plan_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
     return updated_task
 
+
 def plan_reflection(task: Task) -> Task:
     updated_task = task.model_copy(deep=True)
     if os.getenv("deployment_environment") == "test":
@@ -56,3 +57,4 @@ def plan_reflection(task: Task) -> Task:
         updated_task.results["plan_reflection"] = data.model_dump(exclude_none=True, exclude={'reasoning'})
         updated_task.results["plan_reflection_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
     return updated_task
+

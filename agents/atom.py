@@ -26,3 +26,4 @@ def atom(task: Task) -> Task:
         if task.task_type in ["design", "search"]:
             updated_task.results["atom_result"] = "atom"
     return updated_task
+

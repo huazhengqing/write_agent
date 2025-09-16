@@ -13,3 +13,4 @@ def route(task: Task) -> str:
     llm_params = get_llm_params(llm="fast", messages=messages, temperature=LLM_TEMPERATURES["classification"])
     message = llm_completion(llm_params, response_model=RouteOutput)
     return message.validated_data.category
+

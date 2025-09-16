@@ -24,6 +24,7 @@ def summary(task: Task) -> Task:
     updated_task.results["summary_reasoning"] = reasoning
     return updated_task
 
+
 def summary_aggregate(task: Task) -> Task:
     system_prompt, user_prompt = load_prompts(task.category, "summary_aggregate_cn", "system_prompt", "user_prompt")
     context = get_story_rag().get_aggregate_summary(task)
@@ -36,3 +37,4 @@ def summary_aggregate(task: Task) -> Task:
     updated_task.results["summary"] = content
     updated_task.results["summary_reasoning"] = reasoning
     return updated_task
+

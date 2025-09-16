@@ -25,6 +25,7 @@ def search(task: Task) -> Task:
     logger.info(f"搜索任务 '{task.id}' 完成。\n{search_result}")
     return updated_task
 
+
 def search_aggregate(task: Task) -> Task:
     system_prompt, user_prompt = load_prompts(task.category, "search_aggregate_cn", "system_prompt", "user_prompt")
     context = get_story_rag().get_aggregate_search(task)
@@ -37,3 +38,4 @@ def search_aggregate(task: Task) -> Task:
     updated_task.results["search"] = content
     updated_task.results["search_reasoning"] = reasoning
     return updated_task
+

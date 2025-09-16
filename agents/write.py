@@ -22,6 +22,7 @@ def write_before_reflection(task: Task) -> Task:
         updated_task.results["design_reflection_reasoning"] = reasoning
     return updated_task
 
+
 def write(task: Task) -> Task:
     system_prompt, user_prompt = load_prompts(task.category, "write_cn", "system_prompt", "user_prompt")
     context = get_story_rag().get_context(task)
@@ -34,6 +35,7 @@ def write(task: Task) -> Task:
     updated_task.results["write"] = content
     updated_task.results["write_reasoning"] = reasoning
     return updated_task
+
 
 def write_reflection(task: Task) -> Task:
     updated_task = task.model_copy(deep=True)
@@ -52,3 +54,4 @@ def write_reflection(task: Task) -> Task:
         updated_task.results["write_reflection"] = content
         updated_task.results["write_reflection_reasoning"] = reasoning
     return updated_task
+
