@@ -14,7 +14,6 @@ from utils.vector import vector_query, get_vector_store
 
 
 _vector_store: Optional[ChromaVectorStore] = None
-
 def get_market_vector_store() -> ChromaVectorStore:
     global _vector_store
     if _vector_store is None:
@@ -93,41 +92,36 @@ def story_market_vector(
         str: 格式化的搜索结果，包含元数据和内容。
     """
     logger.info(f"向量数据库搜索: query='{query}', type='{document_type}', platform='{platform}', genre='{genre}'")
-    try:
-        filters = []
-        if document_type: filters.append(ExactMatchFilter(key="type", value=document_type))
-        if platform: filters.append(ExactMatchFilter(key="platform", value=platform))
-        if genre: filters.append(ExactMatchFilter(key="genre", value=genre))
-        
-        metadata_filters = MetadataFilters(filters=filters) if filters else None
 
-        # 使用通用的 query 函数执行查询和重排序
-        # 在异步函数中调用同步函数，使用 asyncio.to_thread
-        _, final_results = query(
-            vector_store=get_market_vector_store(),
-            query_text=query,
-            filters=metadata_filters,
-            similarity_top_k=25, # 初步检索25个
-            rerank_top_n=5,      # 重排后保留5个
-        )
+    filters = []
+    if document_type: 
+        filters.append(ExactMatchFilter(key="type", value=document_type))
+    if platform: 
+        filters.append(ExactMatchFilter(key="platform", value=platform))
+    if genre: 
+        filters.append(ExactMatchFilter(key="genre", value=genre))
+    metadata_filters = MetadataFilters(filters=filters) if filters else None
 
-        if not final_results:
-            logger.warning("向量数据库未找到匹配的结果。")
-            return "在内部知识库中未找到相关信息。"
+    _, final_results = vector_query(
+        vector_store=get_market_vector_store(),
+        query_text=query,
+        filters=metadata_filters,
+        similarity_top_k=25, # 初步检索25个
+        rerank_top_n=5,      # 重排后保留5个
+    )
+    if not final_results:
+        logger.warning("向量数据库未找到匹配的结果。")
+        return "在内部知识库中未找到相关信息。"
 
-        content_parts = []
-        for i, node_with_score in enumerate(final_results):
-            node = node_with_score.node
-            metadata_str = json.dumps(node.metadata, ensure_ascii=False)
-            content_parts.append(f"--- 结果 {i+1} ---\n元数据: {metadata_str}\n内容:\n{node.get_content()}")
-        
-        final_content = "\n\n".join(content_parts)
-        logger.success(f"向量数据库搜索和重排序完成，找到 {len(final_results)} 个结果。")
-        return final_content
-
-    except Exception as e:
-        logger.error(f"向量数据库搜索出错: {e}")
-        return f"向量数据库搜索失败: {e}"
+    content_parts = []
+    for i, node_with_score in enumerate(final_results):
+        node = node_with_score.node
+        metadata_str = json.dumps(node.metadata, ensure_ascii=False)
+        content_parts.append(f"--- 结果 {i+1} ---\n元数据: {metadata_str}\n内容:\n{node.get_content()}")
+    
+    final_content = "\n\n".join(content_parts)
+    logger.success(f"向量数据库搜索和重排序完成，找到 {len(final_results)} 个结果。")
+    return final_content
 
 def get_story_market_search_tool() -> FunctionTool:
     tool_description = (

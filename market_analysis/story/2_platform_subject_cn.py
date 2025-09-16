@@ -236,18 +236,14 @@ def platform_subject(platforms_to_scan: list[str]):
             platform_reports[platform_name] = f"## {platform_name} 平台市场动态简报\n\n生成报告时出错: {e}"
             continue
 
-        try:
-            opportunity_report = opportunity_futures[i].result()
-            new_author_reports[platform_name] = opportunity_report
-            task_save_data(
-                content=opportunity_report,
-                doc_type="new_author_opportunity_report",
-                platform=platform_name,
-                content_format="markdown"
-            )
-        except Exception as e:
-            logger.error(f"评估平台 '{platform_name}' 新人机会失败: {e}")
-            new_author_reports[platform_name] = f"## {platform_name} 平台新人机会评估报告\n\n生成报告时出错: {e}"
+        opportunity_report = opportunity_futures[i].result()
+        new_author_reports[platform_name] = opportunity_report
+        task_save_data(
+            content=opportunity_report,
+            doc_type="new_author_opportunity_report",
+            platform=platform_name,
+            content_format="markdown"
+        )
 
     logger.info("--- 广域扫描对比报告 ---")
     for platform, report in platform_reports.items():
@@ -269,12 +265,9 @@ def platform_subject(platforms_to_scan: list[str]):
 
     platform_genre_pairs = []
     for future in parse_genre_futures:
-        try:
-            platform, genres = future.result()
-            for genre in genres:
-                platform_genre_pairs.append((platform, genre))
-        except Exception as e:
-            logger.error(f"解析题材任务失败: {e}")
+        platform, genres = future.result()
+        for genre in genres:
+            platform_genre_pairs.append((platform, genre))
 
     logger.info("分析各题材外部趋势...")
     if not platform_genre_pairs:
@@ -287,18 +280,15 @@ def platform_subject(platforms_to_scan: list[str]):
         )
         external_trend_reports = {}
         for future in trend_futures:
-            try:
-                platform, genre, trend_report = future.result()
-                external_trend_reports[f"{platform}-{genre}"] = trend_report
-                task_save_data(
-                    content=trend_report,
-                    doc_type="external_trend_report",
-                    platform=platform,
-                    genre=genre,
-                    content_format="markdown"
-                )
-            except Exception as e:
-                logger.error(f"分析外部趋势失败: {e}")
+            platform, genre, trend_report = future.result()
+            external_trend_reports[f"{platform}-{genre}"] = trend_report
+            task_save_data(
+                content=trend_report,
+                doc_type="external_trend_report",
+                platform=platform,
+                genre=genre,
+                content_format="markdown"
+            )
 
     logger.info("决策初步机会...")
     initial_decision = task_choose_best_opportunity(platform_reports, platform_profiles, new_author_reports, external_trend_reports)

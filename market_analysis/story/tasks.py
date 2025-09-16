@@ -29,32 +29,26 @@ from prefect import task
 def task_load_platform_profile(platform: str) -> Tuple[str, str]:
     logger.info(f"正在从向量库加载平台 '{platform}' 的基础信息...")
     profile_content = f"# {platform} 平台档案\n\n未在知识库中找到该平台的基础信息。"
-    try:
-        filters = MetadataFilters(
-            filters=[
-                ExactMatchFilter(key="type", value="platform_profile"),
-                ExactMatchFilter(key="platform", value=platform),
-            ]
+    filters = MetadataFilters(
+        filters=[
+            ExactMatchFilter(key="type", value="platform_profile"),
+            ExactMatchFilter(key="platform", value=platform),
+        ]
+    )
+    _, nodes = vector_query(
+        vector_store=get_market_vector_store(),
+        query_text=f"{platform} 平台档案",
+        filters=filters,
+        similarity_top_k=1,
+        rerank_top_n=None, # 无需重排
+    )
+    if nodes:
+        profile_content = nodes[0].get_content()
+        logger.success(f"已加载 '{platform}' 的基础信息。")
+    else:
+        logger.warning(
+            f"在向量库中未找到 '{platform}' 的基础信息。建议先运行 `story_platform_by_search.py`。"
         )
-        
-        _, nodes = vector_query(
-            vector_store=get_market_vector_store(),
-            query_text=f"{platform} 平台档案",
-            filters=filters,
-            similarity_top_k=1,
-            rerank_top_n=None, # 无需重排
-        )
-
-        if nodes:
-            profile_content = nodes[0].get_content()
-            logger.success(f"已加载 '{platform}' 的基础信息。")
-        else:
-            logger.warning(
-                f"在向量库中未找到 '{platform}' 的基础信息。建议先运行 `story_platform_by_search.py`。"
-            )
-    except Exception as e:
-        logger.error(f"加载 '{platform}' 的基础信息时出错: {e}")
-        profile_content = f"# {platform} 平台档案\n\n加载基础信息时出错: {e}"
     return platform, profile_content
 
 
@@ -142,3 +136,4 @@ def task_save_data(
     else:
         logger.warning(f"任务 'task_save_data' (类型: {doc_type}) 执行失败或内容为空被跳过。")
     return success
+

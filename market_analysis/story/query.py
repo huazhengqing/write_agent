@@ -55,7 +55,7 @@ def market_story_query(
 
 
 if __name__ == "__main__":
-    query = "起点小说平台的 签约审核流程 "
+    query = "起点的 签约流程 "
     market_story_query(query_text=query)
 
 

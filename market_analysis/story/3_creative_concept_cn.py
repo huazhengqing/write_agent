@@ -346,7 +346,7 @@ def task_generate_opportunities(market_report: str, genre: str) -> Optional[str]
     logger.info("启动创意脑暴，生成小说选题...")
     logger.info(f"正在查询【{genre}】相关的历史创意库，避免重复...")
     
-    _, historical_concepts_nodes = utils.vector.vector_query(
+    _, historical_concepts_nodes = vector_query(
         vector_store=get_market_vector_store(),
         query_text=f"{genre} 小说核心创意",
         filters=MetadataFilters(filters=[ExactMatchFilter(key="type", value="novel_concept")]),

@@ -1,3 +1,4 @@
+import asyncio
 import copy
 import os
 import re
@@ -29,16 +30,79 @@ LLM_TEMPERATURES = {
     "classification": 0.0,
 }
 
+# LLMs = {
+#     "reasoning": {
+#         "model": "openrouter/deepseek/deepseek-r1-0528:free",
+#         "api_key": os.getenv("OPENROUTER_API_KEY"),
+#         "context_window": 163840,
+#         "fallbacks": [
+#             {
+#                 "model": "openai/deepseek-ai/DeepSeek-R1-0528",
+#                 "api_base": "https://api-inference.modelscope.cn/v1/",
+#                 "api_key": os.getenv("modelscope_API_KEY"), 
+#                 "context_window": 163840,
+#             }, 
+#             {
+#                 "model": "gemini/gemini-2.5-flash-lite",
+#                 "api_key": os.getenv("GEMINI_API_KEY"), 
+#                 "context_window": 1048576,
+#             }, 
+#             {
+#                 "model": "groq/llama-3.1-8b-instant",
+#                 "api_key": os.getenv("GROQ_API_KEY"), 
+#                 "context_window": 131072,
+#             }, 
+#             {
+#                 "model": "groq/qwen/qwen3-32b",
+#                 "api_key": os.getenv("GROQ_API_KEY"), 
+#                 "context_window": 131072,
+#             }
+#             # "openrouter/deepseek/deepseek-r1-0528-qwen3-8b",
+#             # "openrouter/qwen/qwen3-32b",
+#             # "openrouter/qwen/qwen3-30b-a3b",
+#             # "openrouter/deepseek/deepseek-r1-distill-llama-70b",
+#         ]
+#     },
+#     "fast": {
+#         "model": "openrouter/deepseek/deepseek-chat-v3-0324:free",
+#         "api_key": os.getenv("OPENROUTER_API_KEY"),
+#         "context_window": 163840,
+#         "fallbacks": [
+#             {
+#                 "model": "openai/deepseek-ai/DeepSeek-V3",
+#                 "api_base": "https://api-inference.modelscope.cn/v1/",
+#                 "api_key": os.getenv("modelscope_API_KEY"), 
+#                 "context_window": 163840,
+#             }, 
+#             {
+#                 "model": "gemini/gemini-2.5-flash-lite",
+#                 "api_key": os.getenv("GEMINI_API_KEY"), 
+#                 "context_window": 1048576,
+#             }, 
+#             {
+#                 "model": "groq/llama-3.1-8b-instant",
+#                 "api_key": os.getenv("GROQ_API_KEY"), 
+#                 "context_window": 131072,
+#             }, 
+#             {
+#                 "model": "groq/qwen/qwen3-32b",
+#                 "api_key": os.getenv("GROQ_API_KEY"), 
+#                 "context_window": 131072,
+#             }
+#         ]
+#     },
+# }
+
 LLMs = {
     "reasoning": {
-        "model": "openrouter/deepseek/deepseek-r1-0528:free",
-        "api_key": os.getenv("OPENROUTER_API_KEY"),
-        "context_window": 16384,
+        "model": "openai/deepseek-ai/DeepSeek-R1-0528",
+        "api_base": "https://api-inference.modelscope.cn/v1/",
+        "api_key": os.getenv("modelscope_API_KEY"), 
+        "context_window": 163840,
         "fallbacks": [
             {
-                "model": "openai/deepseek-ai/DeepSeek-R1-0528",
-                "api_base": "https://api-inference.modelscope.cn/v1/",
-                "api_key": os.getenv("modelscope_API_KEY"), 
+                "model": "openrouter/deepseek/deepseek-r1-0528:free",
+                "api_key": os.getenv("OPENROUTER_API_KEY"),
                 "context_window": 163840,
             }, 
             {
@@ -63,14 +127,14 @@ LLMs = {
         ]
     },
     "fast": {
-        "model": "openrouter/deepseek/deepseek-chat-v3-0324:free",
-        "api_key": os.getenv("OPENROUTER_API_KEY"),
-        "context_window": 16384,
+        "model": "openai/deepseek-ai/DeepSeek-V3",
+        "api_base": "https://api-inference.modelscope.cn/v1/",
+        "api_key": os.getenv("modelscope_API_KEY"), 
+        "context_window": 163840,
         "fallbacks": [
             {
-                "model": "openai/deepseek-ai/DeepSeek-V3",
-                "api_base": "https://api-inference.modelscope.cn/v1/",
-                "api_key": os.getenv("modelscope_API_KEY"), 
+                "model": "openrouter/deepseek/deepseek-chat-v3-0324:free",
+                "api_key": os.getenv("OPENROUTER_API_KEY"),
                 "context_window": 163840,
             }, 
             {
@@ -254,7 +318,7 @@ PROMPT_SELF_CORRECTION = """
 # 新的要求
 1.  严格遵循原始任务的所有指令, 尤其是关于JSON Schema的指令。
 2.  严格根据 Pydantic 模型的要求, 修正并仅返回完整的、有效的 JSON 对象。
-3.  禁止在 JSON 前后添加任何额外解释或 markdown 代码块。
+3.  禁止在 JSON 前后添加任何额外解释或代码块。
 """
 
 def llm_completion(
@@ -350,10 +414,6 @@ def llm_completion(
                 raise
     raise RuntimeError("llm_completion 在所有重试后失败, 这是一个不应出现的情况。")
 
-async def llm_acompletion(*args, **kwargs):
-    # This is a placeholder for backward compatibility.
-    # All calls should be migrated to the synchronous llm_completion.
-    return llm_completion(*args, **kwargs)
 
 def call_agent(
     system_prompt: str,
@@ -373,8 +433,27 @@ def call_agent(
     )
     logger.info(f"系统提示词:\n{system_prompt}")
     logger.info(f"用户提示词:\n{user_prompt}")
-    response = agent.run(user_prompt)
-    raw_output = response.response
+    
+    async def async_task():
+        handler = agent.run(user_prompt)
+        # response_text = ""
+        # async for ev in handler.stream_events():
+        #     if hasattr(ev, 'delta'):
+        #         delta = ev.delta
+        #         if delta is not None:
+        #             response_text += str(delta)
+        #             print(f"{delta}", end="", flush=True)
+        final_response = await handler
+        # if response_text:
+        #     return response_text
+        if hasattr(final_response, 'response'):
+            return str(final_response.response)
+        elif hasattr(final_response, 'content'):
+            return str(final_response.content)
+        else:
+            return str(final_response)
+
+    raw_output = asyncio.run(async_task())
     cleaned_output = clean_markdown_fences(raw_output)
     if response_model:
         logger.info("Agent 执行完成，正在将自然语言输出转换为结构化 JSON...")
@@ -382,7 +461,7 @@ def call_agent(
         extraction_system_prompt = (
             "你是一个数据提取专家。你的任务是根据用户提供的文本，严格按照给定的 Pydantic JSON Schema 提取信息并生成一个 JSON 对象。"
             "你的输出必须是、且只能是一个完整的、有效的 JSON 对象。"
-            "不要添加任何解释、注释或 Markdown 代码块。"
+            "不要添加任何解释、注释或代码块。"
         )
         extraction_user_prompt = (
             f"请从以下文本中提取信息并生成 JSON 对象:\n\n"
@@ -407,4 +486,6 @@ def call_agent(
         _default_text_validator(cleaned_output)
         logger.success("Agent执行完成并生成了有效文本。")
         return cleaned_output
-    
+
+
+

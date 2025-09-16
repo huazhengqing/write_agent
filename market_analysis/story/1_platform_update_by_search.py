@@ -1,5 +1,6 @@
 import os
 import sys
+import asyncio
 from typing import List, Optional
 from loguru import logger
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -8,7 +9,7 @@ init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from utils.file import data_market_dir
 from utils.llm import call_agent
 from utils.prefect_utils import local_storage, readable_json_serializer
-from prefect import flow, task
+from prefect import task, flow
 from market_analysis.story.tasks import task_save_data
 
 
@@ -97,11 +98,11 @@ PLATFORM_RESEARCH_SYSTEM_PROMPT = """
     retry_delay_seconds=10,
     cache_expiration=604800,
 )
-def search_platform(platform: str) -> Optional[str]:
+async def search_platform(platform: str) -> Optional[str]:
     logger.info(f"为平台 '{platform}' 生成平台档案报告...")
     system_prompt = PLATFORM_RESEARCH_SYSTEM_PROMPT.format(platform=platform)
-    user_prompt = f"请开始为平台 '{platform}' 生成平台基础信息报告。"
-    md_content = call_agent(
+    user_prompt = f"请开始为平台 '{platform}' 生成平台基础信息报告。" 
+    md_content = await call_agent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         temperature=0.1
@@ -128,7 +129,7 @@ def save_to_md(platform: str, md_content: Optional[str]) -> Optional[str]:
     return str(file_path_md.resolve())
 
 
-@flow(name="search_platform_all")
+@flow(name="search_platform_all") 
 def search_platform_all(platforms: List[str]):
     logger.info(f"开始更新 {len(platforms)} 个平台的的基础信息...")
     report_futures = search_platform.map(platforms)
@@ -152,4 +153,7 @@ if __name__ == "__main__":
     platforms_cn = ["番茄小说", "起点中文网", "飞卢小说网", "晋江文学城", "七猫免费小说", "纵横中文网", "17K小说网", "刺猬猫", "掌阅"]
     platforms_en = ["Wattpad", "RoyalRoad", "AO3", "Webnovel", "Scribble Hub", "Tapas"]
     platforms = ["番茄小说"]
-    search_platform_all(platforms)
+    def run_flow():
+        search_platform_all(platforms)
+
+    asyncio.run(run_flow())
