@@ -13,6 +13,7 @@ Table: t_book_meta
 - run_id: TEXT (PRIMARY KEY) - 整个流程运行的唯一ID。
 - category: TEXT - 任务类别 ('story', 'book', 'report')。
 - language: TEXT - 任务语言 ('cn', 'en')。
+- goal: TEXT - 任务的核心目标。
 - root_name: TEXT - 根任务的名字, 书名, 报告名。
 - length: TEXT - 预估总字数。
 - day_wordcount_goal: INTEGER - 每日字数目标。
@@ -42,6 +43,7 @@ class BookMetaDB:
                 run_id TEXT PRIMARY KEY,
                 category TEXT,
                 language TEXT,
+                goal TEXT,
                 root_name TEXT,
                 length TEXT,
                 day_wordcount_goal INTEGER,
@@ -75,6 +77,7 @@ class BookMetaDB:
             "run_id": task.run_id,
             "category": task.category,
             "language": task.language,
+            "goal": task.goal,
             "root_name": task.root_name,
             "length": task.length,
             "day_wordcount_goal": task.day_wordcount_goal,
