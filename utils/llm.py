@@ -13,7 +13,7 @@ from loguru import logger
 from typing import List, Dict, Any, Literal, Optional, Type, Callable, Union
 from pydantic import BaseModel, ValidationError
 from llama_index.core.agent.workflow import ReActAgent
-from llama_index.llms.litellm import LiteLLM
+from llama_index.llms_api.litellm import LiteLLM
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.file import cache_dir
 from utils.search import web_search_tools
@@ -22,7 +22,7 @@ from utils.search import web_search_tools
 load_dotenv()
 
 
-LLM_TEMPERATURES = {
+llm_temperatures = {
     "creative": 0.75,
     "reasoning": 0.1,
     "summarization": 0.2,
@@ -31,7 +31,7 @@ LLM_TEMPERATURES = {
 }
 
 
-LLMs = {
+llms_api = {
     "reasoning": {
         "model": "openrouter/deepseek/deepseek-r1-0528:free",
         "api_key": os.getenv("OPENROUTER_API_KEY"),
@@ -94,7 +94,7 @@ LLMs = {
     },
 }
 
-LLMs2 = {
+llms_api_2 = {
     "reasoning": {
         "model": "openai/deepseek-ai/DeepSeek-R1-0528",
         "api_base": "https://api-inference.modelscope.cn/v1/",
@@ -158,8 +158,8 @@ LLMs2 = {
 }
 
 
-LLM_PARAMS_general = {
-    "temperature": LLM_TEMPERATURES["reasoning"],
+llm_params_general = {
+    "temperature": llm_temperatures["reasoning"],
     "caching": True,
     "max_tokens": 8000,
     "max_completion_tokens": 10000,
@@ -173,7 +173,7 @@ LLM_PARAMS_general = {
 }
 
 
-Embeddings = {
+embeddings_api = {
     "bge-m3": {
         "model": "openai/BAAI/bge-m3",
         "api_base": "https://api.siliconflow.cn/v1/",
@@ -187,7 +187,7 @@ Embeddings = {
     }
 }
 
-Embedding_PARAMS_general = {
+embedding_params_general = {
     "caching": True,
     "timeout": 300,
     "num_retries": 3,
@@ -199,8 +199,8 @@ def get_embedding_params(
         embedding: Literal['bge-m3', 'gemini'] = 'bge-m3',
         **kwargs: Any
     ) -> Dict[str, Any]:
-    embedding_params = Embeddings[embedding].copy()
-    embedding_params.update(**Embedding_PARAMS_general)
+    embedding_params = embeddings_api[embedding].copy()
+    embedding_params.update(**embedding_params_general)
     embedding_params.update(kwargs)
     return embedding_params
 
@@ -210,7 +210,7 @@ def custom_get_cache_key(**kwargs):
     仅根据 "messages" 和 "temperature" 生成缓存键。
     """
     messages = kwargs.get("messages", [])
-    temperature = kwargs.get("temperature", LLM_TEMPERATURES["reasoning"])
+    temperature = kwargs.get("temperature", llm_temperatures["reasoning"])
     messages_str = json.dumps(messages, sort_keys=True)
     key_data = {
         "messages": messages_str,
@@ -259,18 +259,17 @@ def get_llm_messages(
 
 
 def get_llm_params(
-        llm: Literal['reasoning', 'fast'] = 'reasoning',
-        messages: Optional[List[Dict[str, Any]]] = None,
-        temperature: Optional[float] = None,
-        tools: Optional[List[Dict[str, Any]]] = None,
-        **kwargs: Any
-    ) -> Dict[str, Any]:
-    llm_params = LLMs[llm].copy()
-    # llm_params = LLMs2[llm].copy()
-    llm_params.update(**LLM_PARAMS_general)
+    llm: Literal['reasoning', 'fast'] = 'reasoning',
+    messages: Optional[List[Dict[str, Any]]] = None,
+    temperature: float = llm_temperatures["reasoning"],
+    tools: Optional[List[Dict[str, Any]]] = None,
+    **kwargs: Any
+) -> Dict[str, Any]:
+    llm_params = llms_api[llm].copy()
+    # llm_params = llms_api_2[llm].copy()
+    llm_params.update(**llm_params_general)
     llm_params.update(kwargs)
-    if temperature is not None:
-        llm_params["temperature"] = temperature
+    llm_params["temperature"] = temperature
     if tools is not None:
         llm_params["tools"] = tools
     if messages is not None:
@@ -333,7 +332,7 @@ self_correction_prompt = """
 """
 
 
-def llm_completion(
+async def llm_completion(
     llm_params: Dict[str, Any], 
     response_model: Optional[Type[BaseModel]] = None, 
     validator: Optional[Callable[[Any], None]] = None
@@ -363,7 +362,7 @@ def llm_completion(
             logger.info(f"用户提示词:\n{user_prompt}")
         raw_output_for_correction = None
         try:
-            response = litellm.completion(**llm_params_for_api)
+            response = await litellm.acompletion(**llm_params_for_api)
             if not response.choices or not response.choices[0].message:
                 raise ValueError("LLM响应中缺少 choices 或 message。")
             message = response.choices[0].message
@@ -439,7 +438,7 @@ extraction_user_prompt = """
 """
 
 
-def txt_to_json(cleaned_output: str, response_model: Optional[Type[BaseModel]]):
+async def txt_to_json(cleaned_output: str, response_model: Optional[Type[BaseModel]]):
     extraction_messages = get_llm_messages(
         system_prompt=extraction_system_prompt,
         user_prompt=extraction_user_prompt.format(cleaned_output=cleaned_output)
@@ -447,19 +446,19 @@ def txt_to_json(cleaned_output: str, response_model: Optional[Type[BaseModel]]):
     extraction_llm_params = get_llm_params(
         llm='reasoning',
         messages=extraction_messages,
-        temperature=LLM_TEMPERATURES["classification"]
+        temperature=llm_temperatures["classification"]
     )
-    extraction_response = llm_completion(llm_params=extraction_llm_params, response_model=response_model)
+    extraction_response = await llm_completion(llm_params=extraction_llm_params, response_model=response_model)
     validated_data = extraction_response.validated_data
     return validated_data
 
 
-def call_ReActAgent(
-    system_prompt: str,
+async def call_react_agent(
+    system_prompt: Optional[str],
     user_prompt: str,
     tools: List[Any] = web_search_tools,
     llm_type: Literal['reasoning', 'fast'] = 'reasoning',
-    temperature: Optional[float] = None,
+    temperature: float = llm_temperatures["reasoning"],
     response_model: Optional[Type[BaseModel]] = None
 ) -> Optional[Union[BaseModel, str]]:
     llm_params = get_llm_params(llm=llm_type, temperature=temperature)
@@ -468,39 +467,37 @@ def call_ReActAgent(
         tools=tools,
         llm=llm,
         system_prompt=system_prompt,
+        max_iterations = 5, 
         verbose=True
     )
+
     logger.info(f"系统提示词:\n{system_prompt}")
     logger.info(f"用户提示词:\n{user_prompt}")
-    
-    async def async_task():
-        handler = agent.run(user_prompt)
-        # response_text = ""
-        # async for ev in handler.stream_events():
-        #     if hasattr(ev, 'delta'):
-        #         delta = ev.delta
-        #         if delta is not None:
-        #             response_text += str(delta)
-        #             print(f"{delta}", end="", flush=True)
-        final_response = await handler
-        # if response_text:
-        #     return response_text
-        if hasattr(final_response, 'response'):
-            return str(final_response.response)
-        elif hasattr(final_response, 'content'):
-            return str(final_response.content)
-        else:
-            return str(final_response)
 
-    raw_output = asyncio.run(async_task())
+    handler = agent.run(user_prompt)
+    # response_text = ""
+    # async for ev in handler.stream_events():
+    #     if hasattr(ev, 'delta'):
+    #         delta = ev.delta
+    #         if delta is not None:
+    #             response_text += str(delta)
+    #             print(f"{delta}", end="", flush=True)
+    final_response = await handler
+    # if response_text:
+    #     return response_text
+    raw_output = ""
+    if hasattr(final_response, 'response'):
+        raw_output = str(final_response.response)
+    elif hasattr(final_response, 'content'):
+        raw_output = str(final_response.content)
+    else:
+        raw_output = str(final_response)
     cleaned_output = clean_markdown_fences(raw_output)
+    
     logger.info(f"llm 返回\n{cleaned_output}")
+
     if response_model:
-        return txt_to_json(cleaned_output, response_model)
+        return await txt_to_json(cleaned_output, response_model)
     else:
         _default_text_validator(cleaned_output)
         return cleaned_output
-
-
-
-

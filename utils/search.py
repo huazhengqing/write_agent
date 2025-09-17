@@ -2,9 +2,10 @@ import os
 import sys
 import httpx
 from loguru import logger
+import asyncio
 from typing import List, Optional, Callable, Any, Tuple
 from dotenv import load_dotenv
-from playwright.sync_api import sync_playwright
+from playwright.async_api import async_playwright
 from ddgs import DDGS
 from diskcache import Cache
 from llama_index.core.tools import FunctionTool
@@ -16,7 +17,7 @@ from utils.file import cache_dir
 load_dotenv()
 
 
-SEARXNG_BASE_URL = os.getenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080")
+SEARXNG_BASE_URL = os.getenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080/search")
 
 
 cache_search_dir = cache_dir / "search"
@@ -24,8 +25,8 @@ cache_search_dir.mkdir(parents=True, exist_ok=True)
 cache_searh = Cache(str(cache_search_dir), expire=60 * 60 * 24 * 7)
 
 
-def _search_with_searxng(query: str, max_results: int) -> str:
-    with httpx.Client(follow_redirects=True) as client:
+async def _search_with_searxng(query: str, max_results: int) -> str:
+    async with httpx.AsyncClient(follow_redirects=True) as client:
         data = {"q": query, "format": "json"}
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -34,19 +35,29 @@ def _search_with_searxng(query: str, max_results: int) -> str:
         search_url = SEARXNG_BASE_URL.rstrip('/')
         if not search_url.endswith('/search'):
             search_url += '/search'
-        response = client.post(search_url, data=data, headers=headers, timeout=15.0)
-        response.raise_for_status()
+        
+        response = await client.post(
+            search_url,
+            data=data,
+            headers=headers,
+            timeout=15.0
+        )
+        response.raise_for_status()  # 处理HTTP错误状态码
         data = response.json()
+    
     results = data.get("results", [])
     if not results:
         raise ValueError("SearXNG 返回了空结果")
+    
     results = results[:max_results]
+    
     formatted_results = []
     for i, result in enumerate(results):
         title = result.get('title')
         href = result.get('url')
         body = result.get('content', '').strip()
         formatted_results.append(f"搜索结果 {i+1}:\n标题: {title}\n链接: {href}\n摘要: {body}")
+    
     return "\n\n---\n\n".join(formatted_results)
 
 
@@ -68,13 +79,13 @@ def _search_with_ddg(query: str, max_results: int) -> str:
     return "\n\n---\n\n".join(formatted_results)
 
 
-def web_search(query: str, max_results: int = 10) -> str:
+async def web_search(query: str, max_results: int = 10) -> str:
     cache_key = f"web_search:{query}:{max_results}"
     cached_result = cache_searh.get(cache_key)
     if cached_result:
         return cached_result
     
-    search_strategies: List[Tuple[str, Callable[[str, int], str]]] = [
+    search_strategies: List[Tuple[str, Callable[[str, int], Any]]] = [
         ("SearXNG", _search_with_searxng),
         ("DuckDuckGo", _search_with_ddg),
     ]
@@ -83,7 +94,10 @@ def web_search(query: str, max_results: int = 10) -> str:
     for name, strategy_func in search_strategies:
         try:
             logger.info(f"搜索策略: 正在尝试使用 {name} 执行搜索: '{query}'")
-            search_results = strategy_func(query, max_results)
+            if asyncio.iscoroutinefunction(strategy_func):
+                search_results = await strategy_func(query, max_results)
+            else:
+                search_results = strategy_func(query, max_results)
             if search_results:
                 cache_searh.set(cache_key, search_results)
                 return search_results
@@ -270,7 +284,7 @@ platform_site_map = {
 }
 
 
-def targeted_search(query: str, platforms: Optional[List[str]] = None, sites: Optional[List[str]] = None) -> str:
+async def targeted_search(query: str, platforms: Optional[List[str]] = None, sites: Optional[List[str]] = None) -> str:
     cache_key = f"targeted_search:{query}:{platforms}:{sites}"
     cached_result = cache_searh.get(cache_key)
     if cached_result:
@@ -301,7 +315,7 @@ def targeted_search(query: str, platforms: Optional[List[str]] = None, sites: Op
         search_query = f"({site_query_part}) {query}"
         logger.info(f"执行站内搜索: '{search_query}'")
 
-    search_result = web_search(query=search_query, max_results=5)
+    search_result = await web_search(query=search_query, max_results=5)
 
     cache_searh.set(cache_key, search_result)
     return search_result
@@ -334,12 +348,12 @@ def get_targeted_search_tool() -> FunctionTool:
 ###############################################################################
 
 
-def _scrape_static(url: str) -> Optional[str]:
-    with httpx.Client(follow_redirects=True, timeout=20.0) as client:
+async def _scrape_static(url: str) -> Optional[str]:
+    async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
         }
-        response = client.get(url, headers=headers)
+        response = await client.get(url, headers=headers)
         response.raise_for_status()
         html_content = response.text
 
@@ -359,14 +373,14 @@ def _scrape_static(url: str) -> Optional[str]:
     return None
 
 
-def _scrape_dynamic(url: str) -> Optional[str]:
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        page = browser.new_page()
-        page.goto(url, timeout=45000, wait_until="domcontentloaded")
-        page.wait_for_timeout(3000) 
-        html_content = page.content()
-        browser.close()
+async def _scrape_dynamic(url: str) -> Optional[str]:
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        page = await browser.new_page()
+        await page.goto(url, timeout=45000, wait_until="domcontentloaded")
+        await page.wait_for_timeout(3000)
+        html_content = await page.content()
+        await browser.close()
 
     if not html_content:
         raise RuntimeError(f"Playwright for URL '{url}' 未能获取到任何 HTML 内容。")
@@ -384,12 +398,12 @@ def _scrape_dynamic(url: str) -> Optional[str]:
     return html_content
 
 
-def scrape_and_extract(url: str) -> str:
+async def scrape_and_extract(url: str) -> str:
     cached_content = cache_searh.get(url)
     if cached_content:
         return cached_content
     
-    scrape_strategies: List[Tuple[str, Callable[[str], Optional[str]]]] = [
+    scrape_strategies: List[Tuple[str, Callable[[str], Any]]] = [
         ("静态抓取", _scrape_static),
         ("动态渲染抓取", _scrape_dynamic),
     ]
@@ -398,7 +412,7 @@ def scrape_and_extract(url: str) -> str:
     for name, strategy_func in scrape_strategies:
         try:
             logger.info(f"抓取策略: 正在尝试 {name}: {url}")
-            scraped_text = strategy_func(url)
+            scraped_text = await strategy_func(url)
             if scraped_text:
                 break
         except Exception as e:

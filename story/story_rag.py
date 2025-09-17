@@ -1,6 +1,7 @@
 import os
 import json
 import hashlib
+import asyncio
 import re
 from datetime import datetime
 import sys
@@ -18,15 +19,17 @@ from utils.sqlite import get_task_db
 from utils.file import get_text_file_path, text_file_append, text_file_read
 from utils.models import Task, get_sibling_ids_up_to_current
 from utils.prompt_loader import load_prompts
-from utils.kg import get_kg_store, kg_add, hybrid_query
-from utils.vector import vector_add, vector_query, get_vector_store
+from utils.kg import get_kg_query_engine, get_kg_store, kg_add
+from utils.hybrid_query import hybrid_query, hybrid_query_batch
+from utils.vector import vector_add, get_vector_store, get_vector_query_engine, index_query
 from utils.file import cache_dir, data_dir
 from utils.llm import (
-    LLM_TEMPERATURES,
+    llm_temperatures,
     get_llm_messages,
     get_llm_params,
     llm_completion
 )
+from story.base import get_story_kg_store, get_story_vector_store
 
 
 class story_rag:
@@ -44,44 +47,6 @@ class story_rag:
             'text_summary': Cache(os.path.join(cache_story_dir, "text_summary"), size_limit=int(128 * (1024**2))),
             'task_list': Cache(os.path.join(cache_story_dir, "task_list"), size_limit=int(32 * (1024**2))),
         }
-
-        self.vector_stores: Dict[str, ChromaVectorStore] = {}
-        self.graph_stores: Dict[str, KuzuGraphStore] = {}
-        self._storage_lock = threading.Lock()
-
-
-    def _get_vector_store(self, run_id: str, content_type: str) -> ChromaVectorStore:
-        context_key = f"{run_id}_{content_type}"
-        if context_key in self.vector_stores:
-            return self.vector_stores[context_key]
-
-        with self._storage_lock:
-            if context_key in self.vector_stores:
-                return self.vector_stores[context_key]
-
-            chroma_path = os.path.join(data_dir, run_id, content_type)
-            collection_name = f"{run_id}_{content_type}"
-            vector_store = get_vector_store(db_path=chroma_path, collection_name=collection_name)
-            
-            self.vector_stores[context_key] = vector_store
-            return vector_store
-
-
-    def _get_graph_store(self, run_id: str, content_type: str) -> KuzuGraphStore:
-        context_key = f"{run_id}_{content_type}"
-        if context_key in self.graph_stores:
-            return self.graph_stores[context_key]
-
-        with self._storage_lock:
-            if context_key in self.graph_stores:
-                return self.graph_stores[context_key]
-
-            kuzu_db_path = os.path.join(data_dir, run_id, content_type)
-            graph_store = get_kg_store(db_path=kuzu_db_path)
-            
-            self.graph_stores[context_key] = graph_store
-            return graph_store
-
 
     def save_data(self, task: Task, task_type: str):
         task_db = get_task_db(run_id=task.run_id)
@@ -204,12 +169,9 @@ class story_rag:
         ]
         header = " ".join(filter(None, header_parts))
         content = f"# 任务\n{header}\n\n{content}"
-        vector_store = self._get_vector_store(task.run_id, "design")
-        graph_store = self._get_graph_store(task.run_id, "design")
-        storage_context = StorageContext.from_defaults(
-            vector_store=vector_store,
-            graph_store=graph_store
-        )
+        vector_store = get_story_vector_store(task.run_id, "design")
+        kg_store = get_story_kg_store(task.run_id, "design_kg")
+        kg_vector_store = get_story_vector_store(task.run_id, "design_kg")
         doc_metadata = {
             "task_id": task.id,
             "hierarchical_position": task.hierarchical_position,
@@ -225,11 +187,12 @@ class story_rag:
         )
         logger.info(f"[{task.id}] design 内容向量化完成, 开始构建知识图谱...")
         kg_add(
-            storage_context=storage_context,
+            kg_store=kg_store,
+            vector_store=kg_vector_store,
             content=content,
             metadata=doc_metadata,
             doc_id=task.id,
-            kg_extraction_prompt=load_prompts(task.category, "graph_cn", "kg_extraction_prompt_design")[0],
+            kg_extraction_prompt=load_prompts(task.category, "kg_cn", "kg_extraction_prompt_design")[0],
             content_format="markdown",
             max_triplets_per_chunk=15,
         )
@@ -241,7 +204,7 @@ class story_rag:
         header_parts = [task.id, task.hierarchical_position, task.goal]
         header = " ".join(filter(None, header_parts))
         full_content = f"# 任务\n{header}\n\n{content}"
-        vector_store = self._get_vector_store(task.run_id, "search")
+        vector_store = get_story_vector_store(task.run_id, "search")
         doc_metadata = {
             "task_id": task.id,
             "created_at": datetime.now().isoformat()
@@ -258,19 +221,20 @@ class story_rag:
 
     def save_write(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 write 内容 (构建知识图谱)...")
-        graph_store = self._get_graph_store(task.run_id, "write")
-        storage_context = StorageContext.from_defaults(graph_store=graph_store)
+        kg_store = get_story_kg_store(task.run_id, "write_kg")
+        kg_vector_store = get_story_vector_store(task.run_id, "write_kg")
         doc_metadata = {
             "task_id": task.id,
             "hierarchical_position": task.hierarchical_position,
             "created_at": datetime.now().isoformat()
         }
         kg_add(
-            storage_context=storage_context,
+            kg_store=kg_store,
+            vector_store=kg_vector_store,
             content=content,
             metadata=doc_metadata,
             doc_id=task.id,
-            kg_extraction_prompt=load_prompts(task.category, "graph_cn", "kg_extraction_prompt_write")[0],
+            kg_extraction_prompt=load_prompts(task.category, "kg_cn", "kg_extraction_prompt_write")[0],
             content_format="text",
             max_triplets_per_chunk=15,
         )
@@ -287,7 +251,7 @@ class story_rag:
         ]
         header = " ".join(filter(None, header_parts))
         full_content = f"# 任务\n{header}\n\n{content}"
-        vector_store = self._get_vector_store(task.run_id, "summary")
+        vector_store = get_story_vector_store(task.run_id, "summary")
         doc_metadata = {
             "task_id": task.id,
             "hierarchical_position": task.hierarchical_position,
@@ -333,23 +297,31 @@ class story_rag:
         return ret
     
 
-    def get_context(self, task: Task) -> Dict[str, Any]:
+    async def get_context(self, task: Task) -> Dict[str, Any]:
         ret = self.get_context_base(task)
         if not task.parent_id:
             return ret
+    
         dependent_design = ret.get("dependent_design", "")
         dependent_search = ret.get("dependent_search", "")
         text_latest = ret.get("text_latest", "")
         task_list = ret.get("task_list", "")
-        rag_results = {}
+
+        tasks_to_run = {}
         current_level = len(task.id.split("."))
+    
         if current_level >= 3:
-            rag_results["upper_design"] = self.get_upper_design(task, dependent_design, dependent_search, text_latest, task_list)
-            rag_results["upper_search"] = self.get_upper_search(task, dependent_design, dependent_search, text_latest, task_list)
+            tasks_to_run["upper_design"] = self.get_upper_design(task, dependent_design, dependent_search, text_latest, task_list)
+            tasks_to_run["upper_search"] = self.get_upper_search(task, dependent_design, dependent_search, text_latest, task_list)
+    
         if len(text_latest) > 500:
-            rag_results["text_summary"] = self.get_text_summary(task, dependent_design, dependent_search, text_latest, task_list)
-        if rag_results:
+            tasks_to_run["text_summary"] = self.get_text_summary(task, dependent_design, dependent_search, text_latest, task_list)
+    
+        if tasks_to_run:
+            results = await asyncio.gather(*tasks_to_run.values())
+            rag_results = dict(zip(tasks_to_run.keys(), results))
             ret.update(rag_results)
+    
         return ret
 
 
@@ -383,7 +355,7 @@ class story_rag:
         return result
 
 
-    def get_text_latest(self, task: Task, length: int = 3000) -> str:
+    def get_text_latest(self, task: Task, length: int = 500) -> str:
         key = f"get_text_latest:{task.run_id}:{length}"
         cached_result = self.caches['text_latest'].get(key)
         if cached_result is not None:
@@ -453,7 +425,7 @@ class story_rag:
         return ret
 
 
-    def get_inquiry(
+    async def get_inquiry(
         self,
         task: Task,
         dependent_design: str,
@@ -484,12 +456,12 @@ class story_rag:
             "task_list": task_list
         }
         messages = get_llm_messages(system_prompt, user_prompt, None, context_dict_user)
-        llm_params = get_llm_params(messages=messages, temperature=LLM_TEMPERATURES["reasoning"])
-        message = llm_completion(llm_params, response_model=Inquiry)
+        llm_params = get_llm_params(messages=messages, temperature=llm_temperatures["reasoning"])
+        message = await llm_completion(llm_params, response_model=Inquiry)
         return message.validated_data.model_dump()
     
     
-    def get_upper_search(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
+    async def get_upper_search(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
         logger.info(f"[{task.id}] 开始获取上层搜索(upper_search)上下文...")
         cache_key = f"get_upper_search:{task.run_id}:{task.id}"
         cached_result = self.caches['upper_search'].get(cache_key)
@@ -497,46 +469,43 @@ class story_rag:
             logger.info(f"[{task.id}] 命中上层搜索(upper_search)缓存。")
             return cached_result
         
-        inquiry = self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'search')
-        if not inquiry or not inquiry.get("questions"):
-            logger.warning(f"[{task.id}] 生成的探询问题为空或无效, 跳过上层搜索。")
-            return ""
+        inquiry = await self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'search')
         all_questions = inquiry.get("questions", [])
         if not all_questions:
-            logger.warning(f"[{task.id}] 探询列表中没有问题, 无法执行上层搜索查询。")
+            logger.warning(f"[{task.id}] 生成的探询问题为空, 跳过上层搜索。")
             return ""
-        single_question = "\n".join(all_questions)
-        logger.info(f"[{task.id}] 整合后的上层搜索查询问题:\n{single_question}")
         
-        vector_store = self._get_vector_store(task.run_id, "search")
+        vector_store = get_story_vector_store(task.run_id, "search")
 
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
         if preceding_sibling_ids:
             active_filters.append(MetadataFilter(key='task_id', value=preceding_sibling_ids, operator='nin'))
-        
         filters = MetadataFilters(filters=active_filters) if active_filters else None
-        logger.info(f"[{task.id}] 上层搜索使用的过滤器: {filters.to_dict() if filters else 'None'}")
-
-        answer, _ = vector_query(
+        
+        query_engine = get_vector_query_engine(
             vector_store=vector_store,
-            query_text=single_question,
             filters=filters,
-            rerank_top_n=4,
+            similarity_top_k=150,
+            rerank_top_n=50,
         )
 
-        result = answer or ""
-        if not result:
+        retrieved_contents = await index_query(
+            query_engine=query_engine,
+            questions=all_questions
+        )
+        result = "\n\n---\n\n".join(retrieved_contents)
+        if not retrieved_contents:
             logger.warning(f"[{task.id}] 上层搜索(upper_search)未能生成答案或找到相关文档。")
         else:
-            logger.success(f"[{task.id}] 上层搜索(upper_search)成功完成，并生成了综合答案。")
+            logger.success(f"[{task.id}] 上层搜索(upper_search)成功完成。")
 
         self.caches['upper_search'].set(cache_key, result, tag=task.run_id)
         logger.info(f"[{task.id}] 获取上层搜索(upper_search)上下文的流程已结束。")
         return result
 
 
-    def get_upper_design(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
+    async def get_upper_design(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
         logger.info(f"[{task.id}] 开始获取上层设计(upper_design)上下文...")
 
         cache_key = f"get_upper_design:{task.run_id}:{task.id}"
@@ -544,17 +513,15 @@ class story_rag:
         if cached_result is not None:
             return cached_result
         
-        inquiry = self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'design')
-        if not inquiry or not inquiry.get("questions"):
-            logger.warning(f"[{task.id}] 生成的探询问题为空或无效, 跳过上层设计检索。")
-            return ""
+        inquiry = await self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'design')
         all_questions = inquiry.get("questions", [])
         if not all_questions:
-            logger.warning(f"[{task.id}] 探询列表中没有问题, 无法执行上层设计查询。")
+            logger.warning(f"[{task.id}] 生成的探询问题为空, 跳过上层设计检索。")
             return ""
 
-        vector_store = self._get_vector_store(task.run_id, "design")
-        graph_store = self._get_graph_store(task.run_id, "design")
+        vector_store = get_story_vector_store(task.run_id, "design")
+        kg_store = get_story_kg_store(task.run_id, "design_kg")
+        kg_vector_store = get_story_vector_store(task.run_id, "design_kg")
 
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
@@ -562,50 +529,35 @@ class story_rag:
             active_filters.append(MetadataFilter(key='task_id', value=preceding_sibling_ids, operator='nin'))
         vector_filters = MetadataFilters(filters=active_filters) if active_filters else None
 
-        kg_gen_query_prompt = load_prompts(task.category, "rag_cn", "kg_gen_query_prompt")[0]
-        kg_query_gen_prompt = PromptTemplate(template=kg_gen_query_prompt)
-
-        final_instruction = "角色: 首席故事架构师。\n任务: 整合上层设计, 提炼统一、无冲突的宏观设定和指导原则。"
-        rules_text = """
-# 整合规则
-1.  时序优先: 结果按时间倒序。遇直接矛盾, 采纳最新版本。
-2.  矛盾 vs. 细化:
-    - 矛盾: 无法共存的描述 (A是孤儿 vs A父母健在)。
-    - 细化: 补充细节, 不推翻核心 (A会用剑 -> A擅长流风剑法)。细化应融合, 不是矛盾。
-3.  输出要求: 融合非冲突信息, 报告被忽略的冲突旧信息, 禁止罗列, 聚焦问题。
-
-# 输出结构
-- 统一设定: [以要点形式, 清晰列出整合后的最终设定]
-- 设计演变与冲突: (可选) [简要说明关键设定的演变过程, 或指出已解决的重大设计矛盾]
-"""
-        synthesis_query_text = self.build_agent_query(all_questions, final_instruction, rules_text)
-        retrieval_query_text = "\n".join(all_questions)
-
-        synthesis_system_prompt, synthesis_user_prompt = load_prompts(task.category, "rag_cn", "synthesis_system_prompt", "synthesis_user_prompt")
-
-        result = hybrid_query(
+        # 创建向量查询引擎
+        vector_query_engine = get_vector_query_engine(
             vector_store=vector_store,
-            graph_store=graph_store,
-            retrieval_query_text=retrieval_query_text,
-            synthesis_query_text=synthesis_query_text,
-            synthesis_system_prompt=synthesis_system_prompt,
-            synthesis_user_prompt=synthesis_user_prompt,
-            kg_nl2graphquery_prompt=kg_query_gen_prompt,
-            vector_filters=vector_filters,
-            vector_similarity_top_k=150,
-            vector_rerank_top_n=50,
-            kg_similarity_top_k=300,
-            kg_rerank_top_n=100,
-            vector_sort_by='time',
-            kg_sort_by='time',
+            filters=vector_filters,
+            similarity_top_k=150,
+            rerank_top_n=30,
         )
+
+        # 创建知识图谱查询引擎
+        kg_query_engine = get_kg_query_engine(
+            kg_store=kg_store,
+            kg_vector_store=kg_vector_store,
+            kg_similarity_top_k=300,
+            kg_rerank_top_n=50,
+        )
+
+        results = await hybrid_query_batch(
+            vector_query_engine=vector_query_engine,
+            kg_query_engine=kg_query_engine,
+            questions=all_questions,
+        )
+        result = "\n\n---\n\n".join(results)
 
         self.caches['upper_design'].set(cache_key, result, tag=task.run_id)
         logger.info(f"[{task.id}] 获取上层设计(upper_design)上下文完成。")
         return result
  
 
-    def get_text_summary(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
+    async def get_text_summary(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
         logger.info(f"[{task.id}] 开始获取历史情节概要(text_summary)上下文...")
         cache_key = f"get_text_summary:{task.run_id}:{task.id}"
         cached_result = self.caches['text_summary'].get(cache_key)
@@ -613,82 +565,48 @@ class story_rag:
             logger.info(f"[{task.id}] 命中历史情节概要(text_summary)缓存。")
             return cached_result
 
-        inquiry = self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'write')
-        if not inquiry or not inquiry.get("questions"):
-            logger.warning(f"[{task.id}] 生成的探询问题为空或无效, 跳过历史情节概要检索。")
-            return ""
-
+        inquiry = await self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'write')
         all_questions = inquiry.get("questions", [])
         if not all_questions:
-            logger.warning(f"[{task.id}] 探询列表中没有问题, 无法执行历史情节概要查询。")
+            logger.warning(f"[{task.id}] 生成的探询问题为空, 跳过历史情节概要检索。")
             return ""
 
-        summary_vector_store = self._get_vector_store(task.run_id, "summary")
-        write_graph_store = self._get_graph_store(task.run_id, "write")
+        summary_vector_store = get_story_vector_store(task.run_id, "summary")
+        kg_store = get_story_kg_store(task.run_id, "write_kg")
+        kg_vector_store = get_story_vector_store(task.run_id, "write_kg")
 
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
         if preceding_sibling_ids:
             active_filters.append(MetadataFilter(key='task_id', value=preceding_sibling_ids, operator='nin'))
         vector_filters = MetadataFilters(filters=active_filters) if active_filters else None
-        logger.info(f"[{task.id}] 历史情节概要检索使用的过滤器: {vector_filters.to_dict() if vector_filters else 'None'}")
 
-        kg_gen_query_prompt = load_prompts(task.category, "rag_cn", "kg_gen_query_prompt")[0]
-        kg_query_gen_prompt = PromptTemplate(template=kg_gen_query_prompt)
-
-        final_instruction = "角色: 剧情连续性编辑。\n任务: 整合情节摘要(向量)与正文细节(图谱), 生成一份服务于续写的上下文报告。\n重点: 角色关系、关键伏笔、情节呼应。"
-        rules_text = """
-# 整合规则
-1.  冲突解决: 向量(摘要)与图谱(细节)冲突时, 以图谱为准。
-2.  排序依据:
-    - 向量: 章节顺序 (时间线)。
-    - 图谱: 章节顺序 (时间线)。
-3.  输出要求: 整合为连贯叙述, 禁止罗列。
-
-# 输出结构
-- 核心上下文: [一段连贯的叙述, 总结最重要的背景信息]
-- 关键要点: (可选) [以列表形式补充说明关键的角色状态、伏笔或设定]
-"""
-        
-        synthesis_query_text = self.build_agent_query(all_questions, final_instruction, rules_text)
-        retrieval_query_text = "\n".join(all_questions)
-        synthesis_system_prompt, synthesis_user_prompt = load_prompts(task.category, "rag_cn", "synthesis_system_prompt", "synthesis_user_prompt")
-        
-        result = hybrid_query(
+        # 创建摘要的向量查询引擎
+        vector_query_engine = get_vector_query_engine(
             vector_store=summary_vector_store,
-            graph_store=write_graph_store,
-            retrieval_query_text=retrieval_query_text,
-            synthesis_query_text=synthesis_query_text,
-            synthesis_system_prompt=synthesis_system_prompt,
-            synthesis_user_prompt=synthesis_user_prompt,
-            kg_nl2graphquery_prompt=kg_query_gen_prompt,
-            vector_filters=vector_filters,
-            vector_similarity_top_k=300,
-            vector_rerank_top_n=100,
-            kg_similarity_top_k=600,
-            kg_rerank_top_n=200,
-            vector_sort_by='narrative',
-            kg_sort_by='narrative',
+            filters=vector_filters,
+            similarity_top_k=300,
+            rerank_top_n=50,
         )
+
+        # 创建正文的知识图谱查询引擎
+        kg_query_engine = get_kg_query_engine(
+            kg_store=kg_store,
+            kg_vector_store=kg_vector_store,
+            kg_similarity_top_k=600,
+            kg_rerank_top_n=100,
+        )
+
+        results = await hybrid_query_batch(
+            vector_query_engine=vector_query_engine,
+            kg_query_engine=kg_query_engine,
+            questions=all_questions
+        )
+        result = "\n\n---\n\n".join(results)
 
         self.caches['text_summary'].set(cache_key, result, tag=task.run_id)
         logger.info(f"[{task.id}] 获取历史情节概要(text_summary)上下文完成。")
         return result
-
-
-    def build_agent_query(self, questions: List[str], final_instruction: str, rules_text: str) -> str:
-        main_inquiry = "请综合分析并回答以下问题。"
-        query_text = f"# 核心探询目标\n{main_inquiry}\n\n# 具体信息需求 (按优先级降序排列)\n"
-        for question in questions:
-            query_text += f"- {question}\n"
-        instruction_block = f"\n# 任务指令与规则\n"
-        instruction_block += f"## 最终目标\n{final_instruction}\n"
-        instruction_block += f"\n## 执行规则\n"
-        adapted_rules_text = re.sub(r'^\s*#\s+', '### ', rules_text.lstrip(), count=1)
-        instruction_block += adapted_rules_text
-        query_text += instruction_block
-        logger.debug(f"最终构建的 Agent 查询文本:\n{query_text}")
-        return query_text
 
 
 ###############################################################################
@@ -699,9 +617,3 @@ def get_story_rag():
     if _rag_instance is None:
         _rag_instance = story_rag()
     return _rag_instance
-
-
-
-
-
-

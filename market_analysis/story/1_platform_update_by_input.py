@@ -6,7 +6,7 @@ from datetime import datetime
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
-from market_analysis.story.common import get_market_vector_store
+from market_analysis.story.base import get_market_vector_store
 from utils.vector import vector_add_from_dir
 from utils.file import data_platform_dir
 

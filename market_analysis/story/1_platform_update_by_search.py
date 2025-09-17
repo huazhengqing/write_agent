@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from utils.file import data_market_dir
-from utils.llm import call_ReActAgent
+from utils.llm import call_react_agent
 from utils.prefect_utils import local_storage, readable_json_serializer
 from prefect import task, flow
 from market_analysis.story.tasks import task_save_md, task_save_vector
@@ -104,7 +104,7 @@ async def search_platform(platform: str) -> Optional[str]:
     system_prompt = PLATFORM_RESEARCH_system_prompt.format(platform=platform)
     user_prompt = f"请开始为平台 '{platform}' 生成平台基础信息报告。" 
 
-    md_content = await call_ReActAgent(
+    md_content = await call_react_agent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         temperature=0.1
@@ -125,8 +125,8 @@ def search_platform_all(platforms: List[str]):
     report_futures = search_platform.map(platforms)
 
     filepath_futures = task_save_md.map(
-        platform=platforms,
-        md_content=report_futures
+        filename=platforms,
+        content=report_futures
     )
 
     store_futures = task_save_vector.map(
@@ -147,10 +147,4 @@ if __name__ == "__main__":
     platforms_cn = ["番茄小说", "起点中文网", "飞卢小说网", "晋江文学城", "七猫免费小说", "纵横中文网", "17K小说网", "刺猬猫", "掌阅"]
     platforms_en = ["Wattpad", "RoyalRoad", "AO3", "Webnovel", "Scribble Hub", "Tapas"]
     platforms = ["番茄小说"]
-    def run_flow():
-        search_platform_all(platforms)
-
-    asyncio.run(run_flow())
-
-
-
+    search_platform_all(platforms)

@@ -1,33 +1,58 @@
 import os
-import re
 import sys
-from typing import Any, Dict, List, Literal, Optional, Tuple
+from typing import Any, Dict, List, Literal, Optional
 import threading
 import kuzu
 from loguru import logger
-from llama_index.core import (
-    Document,
-    KnowledgeGraphIndex,
-    Response,
-    StorageContext,
-    VectorStoreIndex,
-)
+from llama_index.core import Document, KnowledgeGraphIndex, StorageContext
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.indices.prompt_helper import PromptHelper
-from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
 from llama_index.core.postprocessor import LLMRerank
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core.response_synthesizers import BaseSynthesizer, CompactAndRefine
-from llama_index.core.vector_stores import MetadataFilters
+from llama_index.core.response_synthesizers import CompactAndRefine
+from llama_index.core.tools import QueryEngineTool
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.graph_stores.kuzu import KuzuGraphStore
-from llama_index.llms.litellm import LiteLLM
+from llama_index.llms_api.litellm import LiteLLM
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.llm import LLM_TEMPERATURES, get_llm_messages, get_llm_params, llm_completion
-from utils.models import natural_sort_key
-from utils.vector import get_embed_model
+from utils.llm import llm_temperatures, get_llm_params, call_react_agent
+from utils.vector import get_embed_model, get_nodes_from_document
 from utils.log import init_logger
+
+
+kg_gen_cypher_prompt = """
+# 角色
+你是一位精通 Cypher 的图数据库查询专家。
+
+# 任务
+根据用户提供的自然语言问题和图谱 Schema, 生成一条精确、高效、且符合所有规则的 Cypher 查询语句。
+
+# 上下文
+- 用户问题: '{query_str}'
+- 图谱 Schema:
+---
+{schema}
+---
+
+# 核心规则 (必须严格遵守)
+1.  强制过滤 (最重要!):
+    - 查询必须包含 `WHERE` 子句。
+    - `WHERE` 子句必须对查询路径中的 每一个节点 都应用以下所有属性过滤条件。
+    - 假设一个节点变量是 `n`, 那么过滤条件必须是: `n.status = 'active'`
+2.  Schema遵从: 仅使用 Schema 中定义的节点标签和关系类型。
+3.  字符串安全: 在Cypher查询中, 所有字符串值都必须是有效的。如果从用户问题中提取的实体名称包含双引号(`"`), 必须用反斜杠(`\`)进行转义(例如, `\"`)以防止语法错误。
+4.  单行输出: Cypher 查询必须是单行文本, 无换行。
+5.  效率优先: 生成的查询应尽可能高效。
+6.  无效处理: 若问题无法基于 Schema 回答, 固定返回字符串 "INVALID_QUERY"。
+
+# 示例
+- 用户问题: '角色"龙傲天"和"赵日天"是什么关系?'
+- Cypher 查询: MATCH (a:角色 {{name: "龙傲天"}})-[r]-(b:角色 {{name: "赵日天"}}) WHERE a.status = 'active' AND b.status = 'active' RETURN type(r)
+
+# 指令
+现在, 请为上述用户问题生成 Cypher 查询语句。
+"""
 
 
 _kg_stores: Dict[str, KuzuGraphStore] = {}
@@ -36,17 +61,19 @@ def get_kg_store(db_path: str) -> KuzuGraphStore:
     with _kg_store_lock:
         if db_path in _kg_stores:
             return _kg_stores[db_path]
+        logger.info(f"创建并缓存 KuzuGraphStore: path='{db_path}'")
         parent_dir = os.path.dirname(db_path)
         if parent_dir:
             os.makedirs(parent_dir, exist_ok=True)
         db = kuzu.Database(db_path)
-        graph_store = KuzuGraphStore(db)
-        _kg_stores[db_path] = graph_store
-        return graph_store
+        kg_store = KuzuGraphStore(db)
+        _kg_stores[db_path] = kg_store
+        return kg_store
 
 
 def kg_add(
-    storage_context: StorageContext,
+    kg_store: KuzuGraphStore,
+    vector_store: VectorStore,
     content: str,
     metadata: Dict[str, Any],
     doc_id: str,
@@ -54,118 +81,57 @@ def kg_add(
     content_format: Literal["markdown", "text", "json"] = "markdown",
     max_triplets_per_chunk: int = 15,
 ) -> None:
-
+    
     doc = Document(id_=doc_id, text=content, metadata=metadata)
-
-    transformations = []
-    if content_format == "markdown":
-        transformations.append(MarkdownNodeParser(include_metadata=True, include_prev_next_rel=True))
-    elif content_format == "text":
-        transformations.append(SentenceSplitter(chunk_size=512, chunk_overlap=100, include_metadata=True, include_prev_next_rel=True))
-    elif content_format == "json":
-        pass
+    
+    nodes = []
+    if content_format == "json":
+        nodes = [doc]
     else:
-        raise ValueError("格式错误")
+        nodes = get_nodes_from_document(doc)
+    if not nodes:
+        logger.warning(f"内容 (doc_id: {doc_id}) 未解析出任何节点，跳过添加。")
+        return
 
-    llm_extract_params = get_llm_params(llm="fast", temperature=LLM_TEMPERATURES["summarization"])
+    logger.info(f"内容被解析成 {len(nodes)} 个节点, max_triplets_per_chunk={max_triplets_per_chunk}")
+
+    storage_context = StorageContext.from_defaults(
+        kg_store=kg_store, 
+        vector_store=vector_store
+    )
+
+    llm_extract_params = get_llm_params(llm="fast", temperature=llm_temperatures["summarization"])
     llm = LiteLLM(**llm_extract_params)
 
     KnowledgeGraphIndex.from_documents(
-        [doc],
+        documents=nodes,
         storage_context=storage_context,
         llm=llm,
         embed_model=get_embed_model(),
         kg_extraction_prompt=PromptTemplate(kg_extraction_prompt),
         max_triplets_per_chunk=max_triplets_per_chunk,
         include_embeddings=True,
-        transformations=transformations,
+        show_progress=True,
     )
+    logger.success(f"成功将内容 (doc_id: {doc_id}) 添加到知识图谱。")
 
 
-def _format_response_with_sorting(response: Response, sort_by: Literal["time", "narrative", "relevance"]) -> str:
-    """
-    sort_by (Literal): 排序策略: 'time' (时间倒序), 'narrative' (章节顺序), 'relevance' (相关性)。
-    """
-    if not response.source_nodes:
-        return f"未找到相关来源信息, 但综合回答是: \n{str(response)}"
-
-    if sort_by == "narrative":
-        sorted_nodes = sorted(
-            list(response.source_nodes),
-            key=lambda n: natural_sort_key(n.metadata.get("task_id", "")),
-            reverse=False,  # 正序排列
-        )
-        sort_description = "按小说章节顺序排列 (从前到后)"
-    elif sort_by == "time":
-        sorted_nodes = sorted(
-            list(response.source_nodes),
-            key=lambda n: n.metadata.get("created_at", "1970-01-01T00:00:00"),
-            reverse=True,  # 倒序排列, 最新的在前
-        )
-        sort_description = "按时间倒序排列 (最新的在前)"
-    else:  # 'relevance' 或其他默认情况
-        sort_description = "按相关性排序"
-        sorted_nodes = list(response.source_nodes)
-
-    source_details = []
-    for node in sorted_nodes:
-        timestamp = node.metadata.get("created_at", "未知时间")
-        task_id = node.metadata.get("task_id", "未知章节")
-        score = node.get_score()
-        score_str = f"{score:.4f}" if score is not None else "N/A"
-        content = re.sub(r"\s+", " ", node.get_content()).strip()
-        source_details.append(
-            f"来源信息 (章节: {task_id}, 时间: {timestamp}, 相关性: {score_str}):\n---\n{content}\n---"
-        )
-
-    formatted_sources = "\n\n".join(source_details)
-
-    final_output = (
-        f"综合回答:\n{str(response)}\n\n详细来源 ({sort_description}):\n{formatted_sources}"
-    )
-    return final_output
-
-
-def hybrid_query(
-    vector_store: VectorStore,
-    graph_store: KuzuGraphStore,
-    retrieval_query_text: str,
-    synthesis_query_text: str,
-    synthesis_system_prompt: str,
-    synthesis_user_prompt: str,
-    kg_nl2graphquery_prompt: Optional[PromptTemplate] = None,
-    vector_filters: Optional[MetadataFilters] = None,
-    vector_similarity_top_k: int = 150,
-    vector_rerank_top_n: int = 50,
+def get_kg_query_engine(
+    kg_store: KuzuGraphStore,
+    kg_vector_store: VectorStore,
     kg_similarity_top_k: int = 300,
     kg_rerank_top_n: int = 100,
-    vector_sort_by: Literal["time", "narrative", "relevance"] = "relevance",
-    kg_sort_by: Literal["time", "narrative", "relevance"] = "relevance",
-) -> str:
-    """
-    retrieval_query_text (str): 用于向量和图谱检索的查询文本。
-    synthesis_query_text (str): 用于最终LLM综合的、更详细的代理查询文本。
-    synthesis_system_prompt (str): 综合阶段的系统提示。
-    synthesis_user_prompt (str): 综合阶段的用户提示模板。
-    vector_store (VectorStore): 用于向量检索的向量存储。
-    graph_store (KuzuGraphStore): 用于知识图谱检索的图存储。
-    kg_nl2graphquery_prompt (Optional[PromptTemplate], optional): KG中NL2GraphQuery的提示。 Defaults to None.
-    vector_filters (Optional[MetadataFilters]): 应用于向量检索的元数据过滤器。
-    vector_similarity_top_k (int): 向量检索的top_k。
-    vector_rerank_top_n (int): 向量检索后LLM重排的top_n。
-    kg_similarity_top_k (int): KG混合检索中向量部分的top_k。
-    kg_rerank_top_n (int): KG检索后LLM重排的top_n。
-    vector_sort_by (Literal): 向量结果的排序方式。
-    kg_sort_by (Literal): 知识图谱结果的排序方式。
-    """
-
-    embed_model = get_embed_model()
-
-    reasoning_llm_params = get_llm_params(llm="reasoning", temperature=LLM_TEMPERATURES["reasoning"])
+    kg_nl2graphquery_prompt: Optional[str] = kg_gen_cypher_prompt,
+) -> BaseQueryEngine:
+    
+    reasoning_llm_params = get_llm_params(llm="reasoning", temperature=llm_temperatures["reasoning"])
     reasoning_llm = LiteLLM(**reasoning_llm_params)
 
-    synthesis_llm_params = get_llm_params(llm="reasoning", temperature=LLM_TEMPERATURES["synthesis"])
+    synthesis_llm_params = get_llm_params(llm="reasoning", temperature=llm_temperatures["synthesis"])
     synthesis_llm = LiteLLM(**synthesis_llm_params)
+
+    rerank_llm_params = get_llm_params(llm="fast", temperature=0.0)
+    rerank_llm = LiteLLM(**rerank_llm_params)
 
     response_synthesizer = CompactAndRefine(
         llm=synthesis_llm,
@@ -176,62 +142,64 @@ def hybrid_query(
         )
     )
 
-    logger.info("构建向量查询引擎...")
-    vector_index = VectorStoreIndex.from_vector_store(
-        vector_store=vector_store, embed_model=embed_model
+    kg_storage_context = StorageContext.from_defaults(
+        graph_store=kg_store, 
+        vector_store=kg_vector_store
     )
-    vector_query_engine = vector_index.as_query_engine(
-        filters=vector_filters,
-        llm=reasoning_llm,
-        response_synthesizer=response_synthesizer,
-        similarity_top_k=vector_similarity_top_k,
-        node_postprocessors=[
-            LLMRerank(llm=reasoning_llm, top_n=vector_rerank_top_n)
-        ]
-    )
-    logger.info(f"正在执行向量查询: '{retrieval_query_text}'")
-    vector_response = vector_query_engine.query(retrieval_query_text)
-    formatted_vector_str = _format_response_with_sorting(vector_response, vector_sort_by)
-    logger.info(f"向量查询完成, 检索到 {len(vector_response.source_nodes)} 个节点。")
 
-    logger.info("构建知识图谱查询引擎...")
-    kg_storage_context = StorageContext.from_defaults(graph_store=graph_store)
     kg_index = KnowledgeGraphIndex.from_documents(
-        [],
-        storage_context=kg_storage_context,
+        [], 
+        storage_context=kg_storage_context, 
         llm=reasoning_llm,
-        include_embeddings=True,
-        embed_model=embed_model
+        include_embeddings=True, 
+        embed_model=get_embed_model()
     )
+
     kg_retriever = kg_index.as_retriever(
-        retriever_mode="hybrid",
+        retriever_mode="hybrid", 
         similarity_top_k=kg_similarity_top_k,
-        with_nl2graphquery=True,
+        with_nl2graphquery=True, 
         graph_traversal_depth=2,
-        nl2graphquery_prompt=kg_nl2graphquery_prompt,
+        nl2graphquery_prompt=PromptTemplate(kg_nl2graphquery_prompt) if kg_nl2graphquery_prompt else None,
     )
-    kg_query_engine = RetrieverQueryEngine(
-        retriever=kg_retriever,
+
+    return RetrieverQueryEngine(
+        retriever=kg_retriever, 
         response_synthesizer=response_synthesizer,
-        node_postprocessors=[
-            LLMRerank(llm=reasoning_llm, top_n=kg_rerank_top_n)
-        ]
+        node_postprocessors=[LLMRerank(llm=rerank_llm, top_n=kg_rerank_top_n, choice_batch_size=10)],
+        use_async=True
     )
-    logger.info(f"正在执行知识图谱查询: '{retrieval_query_text}'")
-    kg_response = kg_query_engine.query(retrieval_query_text)
-    formatted_kg_str = _format_response_with_sorting(kg_response, kg_sort_by)
-    logger.info(f"知识图谱查询完成, 检索到 {len(kg_response.source_nodes)} 个节点。")
 
-    context_dict_user = {
-        "query_text": synthesis_query_text,
-        "formatted_vector_str": formatted_vector_str,
-        "formatted_kg_str": formatted_kg_str,
-    }
-    messages = get_llm_messages(synthesis_system_prompt, synthesis_user_prompt, None, context_dict_user)
 
-    final_llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=LLM_TEMPERATURES["synthesis"])
-
-    final_message = llm_completion(final_llm_params)
-    result = final_message.content
-
+async def kg_query_react(
+    kg_query_engine: BaseQueryEngine,
+    query_str: str,
+    agent_system_prompt: Optional[str] = None,
+) -> str:
+    kg_tool = QueryEngineTool.from_defaults(
+        query_engine=kg_query_engine,
+        name="knowledge_graph_search",
+        description="用于探索实体及其关系 (例如: 角色A和角色B是什么关系? 事件C导致了什么后果?)。当问题比较复杂时, 你可以多次调用此工具来回答问题的不同部分, 然后综合答案。"
+    )
+    result = await call_react_agent(
+        system_prompt=agent_system_prompt,
+        user_prompt=query_str,
+        tools=[kg_tool],
+        llm_type="reasoning",
+        temperature=llm_temperatures["reasoning"]
+    )
+    if not isinstance(result, str):
+        logger.warning(f"Agent 返回了非字符串类型, 将其强制转换为字符串: {type(result)}")
+        result = str(result)
     return result
+
+
+
+
+
+
+
+
+
+
+

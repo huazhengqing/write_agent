@@ -27,10 +27,10 @@ from prefect import flow, task
     retries=1,
     task_run_name="{task.run_id}_{task.id}_atom",
 )
-def task_atom(task: Task) -> Task:
+async def task_atom(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return atom(task)
+        return await atom(task)
 
 
 @task(
@@ -42,10 +42,10 @@ def task_atom(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_plan",
 )
-def task_plan(task: Task) -> Task:
+async def task_plan(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return plan(task)
+        return await plan(task)
 
 
 @task(
@@ -57,10 +57,10 @@ def task_plan(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_plan_reflection",
 )
-def task_plan_reflection(task: Task) -> Task:
+async def task_plan_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return plan_reflection(task)
+        return await plan_reflection(task)
 
 
 @task(
@@ -72,10 +72,10 @@ def task_plan_reflection(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_route",
 )
-def task_route(task: Task) -> str:
+async def task_route(task: Task) -> str:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return route(task)
+        return await route(task)
 
 
 @task(
@@ -87,10 +87,10 @@ def task_route(task: Task) -> str:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_design_{category}",
 )
-def task_design(task: Task, category: str) -> Task:
+async def task_design(task: Task, category: str) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return design(task, category)
+        return await design(task, category)
 
 
 @task(
@@ -101,10 +101,10 @@ def task_design(task: Task, category: str) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_design_reflection",
 )
-def task_design_reflection(task: Task) -> Task:
+async def task_design_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return design_reflection(task)
+        return await design_reflection(task)
 
 
 @task(
@@ -116,10 +116,10 @@ def task_design_reflection(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_hierarchy",
 )
-def task_hierarchy(task: Task) -> Task:
+async def task_hierarchy(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return hierarchy(task)
+        return await hierarchy(task)
 
 
 @task(
@@ -131,10 +131,10 @@ def task_hierarchy(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_hierarchy_reflection",
 )
-def task_hierarchy_reflection(task: Task) -> Task:
+async def task_hierarchy_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return hierarchy_reflection(task)
+        return await hierarchy_reflection(task)
     
 
 @task(
@@ -146,10 +146,10 @@ def task_hierarchy_reflection(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_search",
 )
-def task_search(task: Task) -> Task:
+async def task_search(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return search(task)
+        return await search(task)
 
 
 @task(
@@ -161,10 +161,10 @@ def task_search(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_write_before_reflection",
 )
-def task_write_before_reflection(task: Task) -> Task:
+async def task_write_before_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return write_before_reflection(task)
+        return await write_before_reflection(task)
 
 
 @task(
@@ -176,10 +176,10 @@ def task_write_before_reflection(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_write",
 )
-def task_write(task: Task) -> Task:
+async def task_write(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        ret = write(task)
+        ret = await write(task)
         return ret
 
 
@@ -192,10 +192,10 @@ def task_write(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_write_reflection",
 )
-def task_write_reflection(task: Task) -> Task:
+async def task_write_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        ret = write_reflection(task)
+        ret = await write_reflection(task)
         return ret
 
 
@@ -208,10 +208,10 @@ def task_write_reflection(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_summary",
 )
-def task_summary(task: Task) -> Task:
+async def task_summary(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        ret = summary(task)
+        ret = await summary(task)
         return ret
 
 
@@ -224,10 +224,10 @@ def task_summary(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_aggregate_design",
 )
-def task_aggregate_design(task: Task) -> Task:
+async def task_aggregate_design(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return design_aggregate(task)
+        return await design_aggregate(task)
 
 
 @task(
@@ -239,10 +239,10 @@ def task_aggregate_design(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_aggregate_search",
 )
-def task_aggregate_search(task: Task) -> Task:
+async def task_aggregate_search(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return search_aggregate(task)
+        return await search_aggregate(task)
 
 
 @task(
@@ -254,10 +254,10 @@ def task_aggregate_search(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_aggregate_summary",
 )
-def task_aggregate_summary(task: Task) -> Task:
+async def task_aggregate_summary(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return summary_aggregate(task)
+        return await summary_aggregate(task)
 
 
 @task(
@@ -269,10 +269,10 @@ def task_aggregate_summary(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_review_design",
 )
-def task_review_design(task: Task) -> Task:
+async def task_review_design(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return review_design(task)
+        return await review_design(task)
 
 
 @task(
@@ -284,10 +284,10 @@ def task_review_design(task: Task) -> Task:
     retries=1,
     task_run_name="{task.run_id}_{task.id}_review_write",
 )
-def task_review_write(task: Task) -> Task:
+async def task_review_write(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return review_write(task)
+        return await review_write(task)
 
 
 @task(
@@ -314,7 +314,7 @@ def task_save_data(task: Task, operation_name: str) -> bool:
     name="flow_story_write", 
     flow_run_name="{current_task.run_id}_flow_story_write_{current_task.id}",
 )
-def flow_story_write(current_task: Task):
+async def flow_story_write(current_task: Task):
     ensure_task_logger(current_task.run_id)
     with logger.contextualize(run_id=current_task.run_id):
         logger.info(f"开始处理任务: {current_task.run_id} {current_task.id} {current_task.task_type} {current_task.goal}")
@@ -334,41 +334,41 @@ def flow_story_write(current_task: Task):
                 return
 
         logger.info(f"判断原子任务='{current_task.id}' ")
-        task_result = task_atom(current_task)
+        task_result = await task_atom(current_task)
         task_save_data(task_result, "task_atom")
         if task_result.results.get("atom_result") == "atom": 
             if task_result.task_type == "design":
                 logger.info(f"执行: design 任务='{current_task.id}'")
-                category = task_route(task_result)
+                category = await task_route(task_result)
                 logger.info(f"执行: design {category} 任务='{current_task.id}'")
-                task_result = task_design(task_result, category=category)
+                task_result = await task_design(task_result, category=category)
                 task_save_data(task_result, f"task_design_{category}")
             elif task_result.task_type == "search":
                 logger.info(f"执行: search 任务='{current_task.id}'")
-                task_result = task_search(task_result)
+                task_result = await task_search(task_result)
                 task_save_data(task_result, "task_search")
             elif task_result.task_type == "write":
                 logger.info(f"执行: 设计反思: write 任务='{current_task.id}'")
-                task_result = task_write_before_reflection(task_result)
+                task_result = await task_write_before_reflection(task_result)
                 task_save_data(task_result, "task_write_before_reflection")
 
                 logger.info(f"执行: 写作初稿: write 任务='{current_task.id}'")
-                task_result = task_write(task_result)
+                task_result = await task_write(task_result)
                 task_save_data(task_result, "task_write")
 
                 logger.info(f"执行: 反思初稿: write 任务='{current_task.id}'")
-                task_result = task_write_reflection(task_result)
+                task_result = await task_write_reflection(task_result)
                 task_save_data(task_result, "task_write_reflection")
 
                 logger.info(f"执行: 正文摘要: write 任务='{current_task.id}'")
-                task_result = task_summary(task_result)
+                task_result = await task_summary(task_result)
                 task_save_data(task_result, "task_summary")
                 
                 keywords_to_skip_review = ["全书", "卷", "幕", "段落", "场景"]
                 position = task_result.hierarchical_position
                 if position and "章" in position and not any(keyword in position for keyword in keywords_to_skip_review):
                     logger.info(f"执行: 审查正文: write 任务='{task_result.id}' ")
-                    task_result = task_review_write(task_result)
+                    task_result = await task_review_write(task_result)
                     task_save_data(task_result, "task_review_write")
             else:
                 raise ValueError(f"未知的原子任务类型: {task_result.task_type}")
@@ -377,24 +377,24 @@ def flow_story_write(current_task: Task):
             complex_reasons = task_result.results.get("complex_reasons", [])
             if (task_result.task_type == "write" and 'design_insufficient' not in complex_reasons):
                 logger.info(f"审查设计方案: write 任务='{task_result.id}' ")
-                task_result = task_review_design(task_result)
+                task_result = await task_review_design(task_result)
                 task_save_data(task_result, "task_review_design")
 
                 logger.info(f"划分结构: write 任务='{task_result.id}' ")
-                task_result = task_hierarchy(task_result)
+                task_result = await task_hierarchy(task_result)
                 task_save_data(task_result, "task_hierarchy")
 
                 logger.info(f"反思划分结构结果: write 任务='{task_result.id}' ")
-                task_result = task_hierarchy_reflection(task_result)
+                task_result = await task_hierarchy_reflection(task_result)
                 task_save_data(task_result, "task_hierarchy_reflection")
             
             logger.info(f"分解: write 任务='{task_result.id}' ")
-            task_result = task_plan(task_result)
+            task_result = await task_plan(task_result)
             task_save_data(task_result, "task_plan")
 
             if task_result.task_type in ["write", "design"]:
                 logger.info(f"反思分解结果: write 任务='{task_result.id}' ")
-                task_result = task_plan_reflection(task_result)
+                task_result = await task_plan_reflection(task_result)
                 task_save_data(task_result, "task_plan_reflection")
 
             if task_result.sub_tasks:
@@ -407,32 +407,31 @@ def flow_story_write(current_task: Task):
                         if word_count_24h >= day_wordcount_goal:
                             logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停处理后续子任务: {sub_task.run_id}")
                             return
-                    
-                    flow_story_write(sub_task)
+
+                    await flow_story_write(sub_task)
                 
                 if task_result.task_type == "write":
                     keywords_to_skip_review = ["全书", "卷", "幕", "段落", "场景"]
                     position = task_result.hierarchical_position
                     if position and "章" in position and not any(keyword in position for keyword in keywords_to_skip_review):
                         logger.info(f"审查正文: write 任务='{task_result.id}' ")
-                        task_result = task_review_write(task_result)
+                        task_result = await task_review_write(task_result)
                         task_save_data(task_result, "task_review_write")
 
                 if task_result.task_type == "design":
                     logger.info(f"聚合: design 任务='{task_result.id}' ")
-                    task_result = task_aggregate_design(task_result)
+                    task_result = await task_aggregate_design(task_result)
                     task_save_data(task_result, "task_aggregate_design")
                 elif task_result.task_type == "search":
                     logger.info(f"聚合: search 任务='{task_result.id}' ")
-                    task_result = task_aggregate_search(task_result)
+                    task_result = await task_aggregate_search(task_result)
                     task_save_data(task_result, "task_aggregate_search")
                 elif task_result.task_type == "write":
                     logger.info(f"聚合摘要: write 任务='{task_result.id}' ")
-                    task_result = task_aggregate_summary(task_result)
+                    task_result = await task_aggregate_summary(task_result)
                     task_save_data(task_result, "task_aggregate_summary")
                 else:
                     raise ValueError(f"未知的聚合任务类型: {task_result.task_type}")
             else:
                 logger.error(f"规划失败, 任务 '{task_result.id}' 没有产生任何子任务。")
                 raise Exception(f"任务 '{task_result.id}' 规划失败, 没有子任务。")
-
