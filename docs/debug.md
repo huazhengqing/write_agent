@@ -18,6 +18,24 @@
 ## prompt
 
 
+请审查并更新 `plan_write_cn.py` 的提示词，使其能够生成包含 `instructions` 和 `constraints` 的详细子任务。
+
+
+
+如何修改 `atom_cn.py` 的提示词，让它在判断任务复杂度时也考虑 `instructions` 和 `constraints` 的内容？
+
+
+请审查 `*_reflection_cn.py` 提示词，确保它们在反思和重写时也考虑了这些新增的详细字段。
+
+
+
+
+
+
+
+
+
+
 
 
 

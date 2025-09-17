@@ -19,9 +19,21 @@ async def atom(task: Task) -> Task:
     updated_task.results["atom_result"] = data.atom_result
     if hasattr(data, 'complex_reasons') and data.complex_reasons:
         updated_task.results["complex_reasons"] = data.complex_reasons
-    if data.goal_update and len(data.goal_update.strip()) > 10 and data.goal_update != task.goal:
-        updated_task.goal = data.goal_update
-        updated_task.results["goal_update"] = data.goal_update
+    if data.update_goal and len(data.update_goal.strip()) > 10 and data.update_goal != task.goal:
+        updated_task.goal = data.update_goal
+        updated_task.results["update_goal"] = data.update_goal
+    if data.update_instructions and data.update_instructions != task.instructions:
+        updated_task.instructions = data.update_instructions
+        updated_task.results["update_instructions"] = data.update_instructions
+    if data.update_input_brief and data.update_input_brief != task.input_brief:
+        updated_task.input_brief = data.update_input_brief
+        updated_task.results["update_input_brief"] = data.update_input_brief
+    if data.update_constraints and data.update_constraints != task.constraints:
+        updated_task.constraints = data.update_constraints
+        updated_task.results["update_constraints"] = data.update_constraints
+    if data.update_acceptance_criteria and data.update_acceptance_criteria != task.acceptance_criteria:
+        updated_task.acceptance_criteria = data.update_acceptance_criteria
+        updated_task.results["update_acceptance_criteria"] = data.update_acceptance_criteria
     if os.getenv("deployment_environment") == "test":
         if task.task_type in ["design", "search"]:
             updated_task.results["atom_result"] = "atom"

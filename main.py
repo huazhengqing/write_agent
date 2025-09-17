@@ -6,6 +6,7 @@ import argparse
 from loguru import logger
 from utils.file import sanitize_filename
 from utils.log import init_logger_by_runid
+from utils.sqlite_book_meta import get_book_meta_db
 from utils.models import Task
 from story.story_write import flow_story_write
 
@@ -35,6 +36,10 @@ async def write_all(tasks_data: list):
         language = task_info.get('language', 'error')
         root_name = task_info.get("name", "untitled")
         goal = task_info.get("goal", "")
+        instructions_str = task_info.get("instructions", "")
+        input_brief_str = task_info.get("input_brief", "")
+        constraints_str = task_info.get("constraints", "")
+        acceptance_criteria_str = task_info.get("acceptance_criteria", "")
 
         # 生成唯一的运行ID
         sanitized_category = sanitize_filename(category)
@@ -50,6 +55,10 @@ async def write_all(tasks_data: list):
             "task_type": "write",
             "hierarchical_position": "全书" if category in ["story", "book"] else "报告",
             "goal": goal,
+            "instructions": [line.strip() for line in instructions_str.split('\n') if line.strip()],
+            "input_brief": [line.strip() for line in input_brief_str.split('\n') if line.strip()],
+            "constraints": [line.strip() for line in constraints_str.split('\n') if line.strip()],
+            "acceptance_criteria": [line.strip() for line in acceptance_criteria_str.split('\n') if line.strip()],
             "length": task_info.get("length", "根据任务要求确定"),
             "category": category,
             "language": language,
@@ -58,6 +67,12 @@ async def write_all(tasks_data: list):
             "day_wordcount_goal": task_info.get("day_wordcount_goal", 0)
         }
         root_task = Task(**{k: v for k, v in task_params.items() if v is not None})
+
+        # 将书籍元信息写入数据库
+        book_meta_db = get_book_meta_db()
+        book_meta_db.add_or_update_book_meta(task=root_task)
+        logger.info(f"已为任务 {root_task.run_id} 添加/更新书籍元信息。")
+
         tasks_by_category[category].append(root_task)
 
     tasks_to_run = []

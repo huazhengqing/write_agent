@@ -2,11 +2,15 @@
     "tasks": [
         {
             "category": "story",
+            "language": "cn",
             "name": "侦探小说",
             "goal": "写一部关于赛博朋克侦探在雨夜都市追查神秘芯片的小说",
             "length": "100万字",
-            "language": "cn",
-            "day_wordcount_goal": 10000
+            "day_wordcount_goal": 3000,
+            "instructions": "1. 主角要有一个悲惨的过去, 这段经历是他追寻真相的根源。\n2. 故事节奏要快, 充满反转, 每个章节都要有钩子。",
+            "input_brief": "参考《赛博朋克2077》和《银翼杀手》的美术风格和世界观设定。",
+            "constraints": "禁止出现魔法元素, 所有超自然现象必须有科学或伪科学解释。",
+            "acceptance_criteria": "1. 故事结局要出人意料, 但又在情理之中, 所有伏笔都得到回收。\n2. 主角的人物弧光完整。"
         }
     ]
 }

@@ -66,7 +66,11 @@ AI小说规划师。
     - `id`: 父任务ID.子任务序号。
     - `task_type`: design | search。
     - `hierarchical_position`: 任务层级位置 (如: '全书', '第1卷'), 继承于父任务。
-    - `goal`: 具体任务目标, 禁止创作, 避免重复。
+    - `goal`: 任务需要达成的【核心目标】(一句话概括)。
+    - `instructions`: (可选) 任务的【具体指令】(HOW): 明确指出需要执行的步骤、包含的关键要素或信息点。
+    - `input_brief`: (可选) 任务的【输入指引】(FROM WHERE): 指导执行者应重点关注依赖项中的哪些关键信息。
+    - `constraints`: (可选) 任务的【限制和禁忌】(WHAT NOT): 明确指出需要避免的内容或必须遵守的规则。
+    - `acceptance_criteria`: (可选) 任务的【验收标准】(VERIFY HOW): 定义任务完成的衡量标准，用于后续评审。
     - `dependency`: 同层级的前置任务ID列表。
     - `sub_tasks`: 子任务列表。
 - JSON转义: `"` 和 `\\` 等特殊字符必须正确转义。
@@ -84,6 +88,10 @@ AI小说规划师。
             "task_type": "design",
             "hierarchical_position": "全书",
             "goal": "主角背景设计: 规划[主角名]的出身、关键经历, 明确其核心动机与内在矛盾。",
+            "instructions": ["设计主角的家庭背景、童年关键事件。", "明确其行动的核心驱动力。"],
+            "input_brief": ["参考`上层设计方案`中的时代背景。"],
+            "constraints": ["背景故事不能与主角的核心动机产生逻辑冲突。"],
+            "acceptance_criteria": ["产出的背景故事能够合理解释主角的核心动机。"],
             "dependency": [],
             "sub_tasks": []
         },

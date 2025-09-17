@@ -15,7 +15,7 @@ from llama_index.core import StorageContext
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.sqlite import get_task_db
+from utils.sqlite_task import get_task_db
 from utils.file import get_text_file_path, text_file_append, text_file_read
 from utils.models import Task, get_sibling_ids_up_to_current
 from utils.prompt_loader import load_prompts
@@ -51,7 +51,7 @@ class story_rag:
     def save_data(self, task: Task, task_type: str):
         task_db = get_task_db(run_id=task.run_id)
         if task_type == "task_atom":
-            if task.id == "1" or task.results.get("goal_update"):
+            if task.id == "1" or task.results.get("update_goal"):
                 self.caches['task_list'].evict(tag=task.run_id)
                 task_db.add_task(task)
             task_db.add_result(task)
@@ -416,7 +416,7 @@ class story_rag:
             "task": task.model_dump_json(
                 indent=2,
                 exclude_none=True,
-                include={'id', 'hierarchical_position', 'goal', 'length'}
+                include={'id', 'hierarchical_position', 'goal', 'length', 'dependency', 'instructions', 'input_brief', 'constraints', 'acceptance_criteria'}
             ),
         }
         if task.sub_tasks:
@@ -448,7 +448,7 @@ class story_rag:
             "task": task.model_dump_json(
                 indent=2,
                 exclude_none=True,
-                include={'id', 'task_type', 'hierarchical_position', 'goal', 'length'}
+                include={'id', 'parent_id', 'task_type', 'hierarchical_position', 'goal', 'length', 'dependency', 'instructions', 'input_brief', 'constraints', 'acceptance_criteria'}
             ),
             "dependent_design": dependent_design,
             "dependent_search": dependent_search,

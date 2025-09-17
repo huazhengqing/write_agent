@@ -44,7 +44,11 @@ AI小说研究员。
     - `id`: 父任务ID.子任务序号。
     - `task_type`: search。
     - `hierarchical_position`: 任务层级位置 (如: '全书', '第1卷'), 继承于父任务。
-    - `goal`: 具体任务目标, 禁止创作, 避免重复。
+    - `goal`: 任务需要达成的【核心目标】(一句话概括)。
+    - `instructions`: (可选) 任务的【具体指令】(HOW): 明确指出需要执行的步骤、包含的关键要素或信息点。
+    - `input_brief`: (可选) 任务的【输入指引】(FROM WHERE): 指导执行者应重点关注依赖项中的哪些关键信息。
+    - `constraints`: (可选) 任务的【限制和禁忌】(WHAT NOT): 明确指出需要避免的内容或必须遵守的规则。
+    - `acceptance_criteria`: (可选) 任务的【验收标准】(VERIFY HOW): 定义任务完成的衡量标准，用于后续评审。
     - `dependency`: 同层级的前置任务ID列表。
     - `sub_tasks`: 子任务列表。
 - JSON转义: `"` 和 `\\` 等特殊字符必须正确转义。
@@ -62,6 +66,10 @@ AI小说研究员。
             "task_type": "search",
             "hierarchical_position": "全书",
             "goal": "[研究背景]: 搜集[研究对象]的[宏观维度A, 如历史时期]和[宏观维度B, 如地理环境]。",
+            "instructions": ["确定[研究对象]所处的具体历史年代范围。", "搜集该时期的主要地理特征和气候条件。"],
+            "input_brief": ["参考`上层设计方案`中关于故事背景的设定。"],
+            "constraints": ["信息来源需权威, 避免小说或野史。"],
+            "acceptance_criteria": ["产出包含明确时间范围和地理环境描述的报告。"],
             "dependency": [],
             "sub_tasks": []
         },

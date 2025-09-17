@@ -4,7 +4,7 @@ from loguru import logger
 from utils.log import ensure_task_logger
 from utils.prefect_utils import get_cache_key, local_storage, readable_json_serializer
 from utils.models import Task
-from utils.sqlite import get_task_db
+from utils.sqlite_task import get_task_db
 from agents.atom import atom
 from agents.plan import plan, plan_reflection
 from agents.design import design, design_aggregate, design_reflection

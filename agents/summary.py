@@ -10,7 +10,7 @@ async def summary(task: Task) -> Task:
         "task": task.model_dump_json(
             indent=2,
             exclude_none=True,
-            include={'goal'}
+            include={'id', 'hierarchical_position', 'goal', 'length', 'dependency', 'instructions', 'input_brief', 'constraints', 'acceptance_criteria'}
         ),
         "text": task.results.get("write_reflection")
     }
