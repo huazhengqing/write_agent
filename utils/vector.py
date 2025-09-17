@@ -1,15 +1,12 @@
 import os
 import sys
+import threading
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 import chromadb
 from loguru import logger
-from llama_index.core import (
-    Document,
-    SimpleDirectoryReader,
-    VectorStoreIndex,
-)
+from llama_index.core import Document, SimpleDirectoryReader, VectorStoreIndex
 from llama_index.core import PromptTemplate
 from llama_index.core.indices.prompt_helper import PromptHelper
 from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter
@@ -21,9 +18,7 @@ from llama_index.core.vector_stores.types import VectorStore
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.llms.litellm import LiteLLM
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 from utils.llm import get_embedding_params, get_llm_params
 
 
@@ -37,12 +32,18 @@ def get_embed_model() -> LiteLLMEmbedding:
     return _embed_model
 
 
+_vector_stores: Dict[Tuple[str, str], ChromaVectorStore] = {}
+_vector_store_lock = threading.Lock()
 def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
-    os.makedirs(db_path, exist_ok=True)
-    db = chromadb.PersistentClient(path=db_path)
-    chroma_collection = db.get_or_create_collection(collection_name)
-    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-    return vector_store
+    with _vector_store_lock:
+        if (db_path, collection_name) in _vector_stores:
+            return _vector_stores[(db_path, collection_name)]
+        os.makedirs(db_path, exist_ok=True)
+        db = chromadb.PersistentClient(path=db_path)
+        chroma_collection = db.get_or_create_collection(collection_name)
+        vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+        _vector_stores[(db_path, collection_name)] = vector_store
+        return vector_store
 
 
 def vector_query(
@@ -64,38 +65,13 @@ def vector_query(
     synthesis_llm_params = get_llm_params(llm="reasoning")
     synthesis_llm = LiteLLM(**synthesis_llm_params)
 
-    # 定义中文提示词
-    TEXT_QA_TEMPLATE_CN = PromptTemplate(
-        """你是一个问答机器人。
-        你将根据以下上下文回答问题。
-        ---------------------
-        {context_str}
-        ---------------------
-        基于以上上下文，请回答以下问题：{query_str}
-        """
-    )
-
-    REFINE_TEMPLATE_CN = PromptTemplate(
-        """你是一个问答机器人，你正在改进一个已有的答案。
-        你已经提供了一个答案：{existing_answer}
-        你现在有更多的上下文信息：
-        ---------------------
-        {context_msg}
-        ---------------------
-        请根据新的上下文信息改进你的答案。
-        如果你不能改进你的答案，请直接返回已有的答案。
-        """
-    )
-
     response_synthesizer = CompactAndRefine(
         llm=synthesis_llm,
         prompt_helper=PromptHelper(
-            context_window=synthesis_llm_params['context_window'],
-            num_output=synthesis_llm_params['max_tokens'],
+            context_window=synthesis_llm_params.get('context_window', 4096),
+            num_output=synthesis_llm_params.get('max_tokens', 512),
             chunk_overlap_ratio=0.2
-        ),
-        text_qa_template=TEXT_QA_TEMPLATE_CN,
-        refine_template=REFINE_TEMPLATE_CN
+        )
     )
 
     query_engine = index.as_query_engine(
@@ -106,7 +82,8 @@ def vector_query(
         node_postprocessors=postprocessors
     )
 
-    response = query_engine.query(query_text)
+    final_query_text = f"{query_text}\n请使用中文回复"
+    response = query_engine.query(final_query_text)
     if not response.response or not response.source_nodes:
         logger.warning("🤷 未能生成答案或找到相关文档。")
         return None, None
@@ -133,6 +110,7 @@ def vector_add_from_dir(
     file_metadata_func: Optional[Callable[[str], dict]] = None,
 ) -> bool:
     metadata_func = file_metadata_func or _default_file_metadata
+
     reader = SimpleDirectoryReader(
         input_dir=input_dir,
         required_exts=[".md", ".txt", ".json"],
@@ -140,6 +118,7 @@ def vector_add_from_dir(
         recursive=True,
         exclude_hidden=False
     )
+
     documents = reader.load_data()
     if not documents:
         logger.warning(f"🤷 在 '{input_dir}' 目录中未找到任何符合要求的文件。")
@@ -204,5 +183,3 @@ def vector_add(
         index.insert_nodes(nodes)
 
     return True
-
-

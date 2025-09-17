@@ -2,7 +2,7 @@ import os
 import re
 import sys
 from typing import Any, Dict, List, Literal, Optional, Tuple
-
+import threading
 import kuzu
 from loguru import logger
 from llama_index.core import (
@@ -23,22 +23,26 @@ from llama_index.core.vector_stores import MetadataFilters
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.graph_stores.kuzu import KuzuGraphStore
 from llama_index.llms.litellm import LiteLLM
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 from utils.llm import LLM_TEMPERATURES, get_llm_messages, get_llm_params, llm_completion
 from utils.models import natural_sort_key
 from utils.vector import get_embed_model
 from utils.log import init_logger
 
 
+_kg_stores: Dict[str, KuzuGraphStore] = {}
+_kg_store_lock = threading.Lock()
 def get_kg_store(db_path: str) -> KuzuGraphStore:
-    parent_dir = os.path.dirname(db_path)
-    if parent_dir:
-        os.makedirs(parent_dir, exist_ok=True)
-    db = kuzu.Database(db_path)
-    graph_store = KuzuGraphStore(db)
-    return graph_store
+    with _kg_store_lock:
+        if db_path in _kg_stores:
+            return _kg_stores[db_path]
+        parent_dir = os.path.dirname(db_path)
+        if parent_dir:
+            os.makedirs(parent_dir, exist_ok=True)
+        db = kuzu.Database(db_path)
+        graph_store = KuzuGraphStore(db)
+        _kg_stores[db_path] = graph_store
+        return graph_store
 
 
 def kg_add(
@@ -76,7 +80,6 @@ def kg_add(
         include_embeddings=True,
         transformations=transformations,
     )
-
 
 
 def _format_response_with_sorting(response: Response, sort_by: Literal["time", "narrative", "relevance"]) -> str:
@@ -232,4 +235,3 @@ def hybrid_query(
     result = final_message.content
 
     return result
-

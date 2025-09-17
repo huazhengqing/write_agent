@@ -19,8 +19,8 @@ from utils.file import cache_dir
 from utils.search import web_search_tools
 
 
-
 load_dotenv()
+
 
 LLM_TEMPERATURES = {
     "creative": 0.75,
@@ -30,70 +30,71 @@ LLM_TEMPERATURES = {
     "classification": 0.0,
 }
 
-# LLMs = {
-#     "reasoning": {
-#         "model": "openrouter/deepseek/deepseek-r1-0528:free",
-#         "api_key": os.getenv("OPENROUTER_API_KEY"),
-#         "context_window": 163840,
-#         "fallbacks": [
-#             {
-#                 "model": "openai/deepseek-ai/DeepSeek-R1-0528",
-#                 "api_base": "https://api-inference.modelscope.cn/v1/",
-#                 "api_key": os.getenv("modelscope_API_KEY"), 
-#                 "context_window": 163840,
-#             }, 
-#             {
-#                 "model": "gemini/gemini-2.5-flash-lite",
-#                 "api_key": os.getenv("GEMINI_API_KEY"), 
-#                 "context_window": 1048576,
-#             }, 
-#             {
-#                 "model": "groq/llama-3.1-8b-instant",
-#                 "api_key": os.getenv("GROQ_API_KEY"), 
-#                 "context_window": 131072,
-#             }, 
-#             {
-#                 "model": "groq/qwen/qwen3-32b",
-#                 "api_key": os.getenv("GROQ_API_KEY"), 
-#                 "context_window": 131072,
-#             }
-#             # "openrouter/deepseek/deepseek-r1-0528-qwen3-8b",
-#             # "openrouter/qwen/qwen3-32b",
-#             # "openrouter/qwen/qwen3-30b-a3b",
-#             # "openrouter/deepseek/deepseek-r1-distill-llama-70b",
-#         ]
-#     },
-#     "fast": {
-#         "model": "openrouter/deepseek/deepseek-chat-v3-0324:free",
-#         "api_key": os.getenv("OPENROUTER_API_KEY"),
-#         "context_window": 163840,
-#         "fallbacks": [
-#             {
-#                 "model": "openai/deepseek-ai/DeepSeek-V3",
-#                 "api_base": "https://api-inference.modelscope.cn/v1/",
-#                 "api_key": os.getenv("modelscope_API_KEY"), 
-#                 "context_window": 163840,
-#             }, 
-#             {
-#                 "model": "gemini/gemini-2.5-flash-lite",
-#                 "api_key": os.getenv("GEMINI_API_KEY"), 
-#                 "context_window": 1048576,
-#             }, 
-#             {
-#                 "model": "groq/llama-3.1-8b-instant",
-#                 "api_key": os.getenv("GROQ_API_KEY"), 
-#                 "context_window": 131072,
-#             }, 
-#             {
-#                 "model": "groq/qwen/qwen3-32b",
-#                 "api_key": os.getenv("GROQ_API_KEY"), 
-#                 "context_window": 131072,
-#             }
-#         ]
-#     },
-# }
 
 LLMs = {
+    "reasoning": {
+        "model": "openrouter/deepseek/deepseek-r1-0528:free",
+        "api_key": os.getenv("OPENROUTER_API_KEY"),
+        "context_window": 163840,
+        "fallbacks": [
+            {
+                "model": "openai/deepseek-ai/DeepSeek-R1-0528",
+                "api_base": "https://api-inference.modelscope.cn/v1/",
+                "api_key": os.getenv("modelscope_API_KEY"), 
+                "context_window": 163840,
+            }, 
+            {
+                "model": "gemini/gemini-2.5-flash-lite",
+                "api_key": os.getenv("GEMINI_API_KEY"), 
+                "context_window": 1048576,
+            }, 
+            {
+                "model": "groq/llama-3.1-8b-instant",
+                "api_key": os.getenv("GROQ_API_KEY"), 
+                "context_window": 131072,
+            }, 
+            {
+                "model": "groq/qwen/qwen3-32b",
+                "api_key": os.getenv("GROQ_API_KEY"), 
+                "context_window": 131072,
+            }
+            # "openrouter/deepseek/deepseek-r1-0528-qwen3-8b",
+            # "openrouter/qwen/qwen3-32b",
+            # "openrouter/qwen/qwen3-30b-a3b",
+            # "openrouter/deepseek/deepseek-r1-distill-llama-70b",
+        ]
+    },
+    "fast": {
+        "model": "openrouter/deepseek/deepseek-chat-v3-0324:free",
+        "api_key": os.getenv("OPENROUTER_API_KEY"),
+        "context_window": 163840,
+        "fallbacks": [
+            {
+                "model": "openai/deepseek-ai/DeepSeek-V3",
+                "api_base": "https://api-inference.modelscope.cn/v1/",
+                "api_key": os.getenv("modelscope_API_KEY"), 
+                "context_window": 163840,
+            }, 
+            {
+                "model": "gemini/gemini-2.5-flash-lite",
+                "api_key": os.getenv("GEMINI_API_KEY"), 
+                "context_window": 1048576,
+            }, 
+            {
+                "model": "groq/llama-3.1-8b-instant",
+                "api_key": os.getenv("GROQ_API_KEY"), 
+                "context_window": 131072,
+            }, 
+            {
+                "model": "groq/qwen/qwen3-32b",
+                "api_key": os.getenv("GROQ_API_KEY"), 
+                "context_window": 131072,
+            }
+        ]
+    },
+}
+
+LLMs2 = {
     "reasoning": {
         "model": "openai/deepseek-ai/DeepSeek-R1-0528",
         "api_base": "https://api-inference.modelscope.cn/v1/",
@@ -156,6 +157,7 @@ LLMs = {
     },
 }
 
+
 LLM_PARAMS_general = {
     "temperature": LLM_TEMPERATURES["reasoning"],
     "caching": True,
@@ -169,6 +171,7 @@ LLM_PARAMS_general = {
     "safe_mode": False,
     "safe_prompt": False,
 }
+
 
 Embeddings = {
     "bge-m3": {
@@ -263,6 +266,7 @@ def get_llm_params(
         **kwargs: Any
     ) -> Dict[str, Any]:
     llm_params = LLMs[llm].copy()
+    # llm_params = LLMs2[llm].copy()
     llm_params.update(**LLM_PARAMS_general)
     llm_params.update(kwargs)
     if temperature is not None:

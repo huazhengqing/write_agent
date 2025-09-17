@@ -21,6 +21,7 @@ def init_logger(file_name):
         diagnose=True,
     )
 
+
 def init_logger_by_runid(file_name):
     logger.remove()
     class InterceptHandler(logging.Handler):
@@ -47,6 +48,7 @@ def init_logger_by_runid(file_name):
         backtrace=True,
         diagnose=True,
     )
+
 
 _SINK_IDS = {}
 def ensure_task_logger(run_id: str):
