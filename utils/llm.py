@@ -501,3 +501,62 @@ async def call_react_agent(
     else:
         _default_text_validator(cleaned_output)
         return cleaned_output
+
+
+if __name__ == '__main__':
+    from pydantic import BaseModel, Field
+    from typing import List
+    from utils.log import init_logger
+
+    init_logger("llm_test")
+
+    # 定义一个用于测试的 Pydantic 模型
+    class CharacterInfo(BaseModel):
+        name: str = Field(description="角色姓名")
+        abilities: List[str] = Field(description="角色的能力列表")
+        goal: str = Field(description="角色的主要目标")
+
+    async def main():
+        # 1. 测试 get_llm_messages
+        logger.info("--- 测试 get_llm_messages ---")
+        messages = get_llm_messages(
+            system_prompt="你是一个角色设定助手。",
+            user_prompt="请介绍一下角色：{name}",
+            context_dict_user={"name": "龙傲天"}
+        )
+        logger.info(f"get_llm_messages 生成的消息:\n{messages}")
+
+        # 2. 测试 llm_completion (纯文本)
+        logger.info("--- 测试 llm_completion (纯文本) ---")
+        text_params = get_llm_params(
+            llm='fast',
+            messages=get_llm_messages(user_prompt="写一句关于宇宙的诗。"),
+            temperature=0.7
+        )
+        text_response = await llm_completion(text_params)
+        logger.info(f"llm_completion (纯文本) 结果:\n{text_response.content}")
+
+        # 3. 测试 llm_completion (JSON Schema)
+        logger.info("--- 测试 llm_completion (JSON) ---")
+        json_prompt = "根据以下描述生成一个角色信息JSON：'龙傲天是一位强大的法师，他能操控火焰和冰霜，他的目标是找到失落的古代神器。'"
+        json_params = get_llm_params(
+            llm='reasoning',
+            messages=get_llm_messages(user_prompt=json_prompt),
+            temperature=0.1
+        )
+        json_response = await llm_completion(json_params, response_model=CharacterInfo)
+        logger.info(f"llm_completion (JSON) 验证后的Pydantic对象:\n{json_response.validated_data.model_dump_json(indent=2, ensure_ascii=False)}")
+
+        # 4. 测试 call_react_agent
+        logger.info("--- 测试 call_react_agent ---")
+        agent_prompt = "2024年AI领域有什么好玩的新东西？请用中文回答。"
+        agent_system_prompt = "你是一个AI科技观察家，利用工具来回答用户问题。"
+        agent_response = await call_react_agent(
+            system_prompt=agent_system_prompt,
+            user_prompt=agent_prompt,
+            tools=web_search_tools, # from utils.search
+            llm_type='reasoning'
+        )
+        logger.info(f"call_react_agent 结果:\n{agent_response}")
+
+    asyncio.run(main())

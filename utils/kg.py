@@ -194,12 +194,74 @@ async def kg_query_react(
     return result
 
 
+if __name__ == '__main__':
+    import asyncio
+    import tempfile
+    import shutil
+    from pathlib import Path
+    from utils.log import init_logger
+    from utils.vector import get_vector_store
 
+    init_logger("kg_test")
 
+    # 1. 初始化临时目录
+    test_dir = tempfile.mkdtemp()
+    kg_db_path = os.path.join(test_dir, "kuzu_db")
+    vector_db_path = os.path.join(test_dir, "chroma_for_kg")
+    logger.info(f"测试目录已创建: {test_dir}")
 
+    # 2. 准备测试数据和配置
+    kg_extraction_prompt_test = """
+    从以下文本中提取知识三元组 (主语, 谓语, 宾语)。
+    - 主语和宾语应该是实体。
+    - 谓语应该是它们之间的关系。
+    - 仅提取与角色、地点、事件、物品及其关系相关的信息。
+    - 忽略不重要的信息。
+    - 如果文本中没有可提取的信息, 返回空列表。
+    文本:
+    ---
+    {text}
+    ---
+    """
+    content_to_add = """
+    龙傲天是青云宗的首席大弟子。青云宗位于东海之滨的苍梧山。
+    龙傲天有一个宿敌，名叫叶良辰。叶良辰来自北冥魔殿。
+    龙傲天使用的武器是'赤霄剑'。
+    """
+    metadata = {"source": "test_doc_1"}
+    doc_id = "test_doc_1"
 
+    async def main():
+        # 3. 测试 get_kg_store 和 get_vector_store
+        logger.info("--- 测试 get_kg_store 和 get_vector_store ---")
+        kg_store = get_kg_store(db_path=kg_db_path)
+        vector_store = get_vector_store(db_path=vector_db_path, collection_name="kg_hybrid")
+        logger.info(f"成功获取 KuzuGraphStore: {kg_store}")
+        logger.info(f"成功获取 ChromaVectorStore for KG: {vector_store}")
 
+        # 4. 测试 kg_add
+        logger.info("--- 测试 kg_add ---")
+        kg_add(
+            kg_store=kg_store,
+            vector_store=vector_store,
+            content=content_to_add,
+            metadata=metadata,
+            doc_id=doc_id,
+            kg_extraction_prompt=kg_extraction_prompt_test,
+            max_triplets_per_chunk=10
+        )
+        logger.info("kg_add 调用完成")
 
+        # 5. 测试 get_kg_query_engine 和 kg_query_react
+        logger.info("--- 测试 get_kg_query_engine 和 kg_query_react ---")
+        kg_query_engine = get_kg_query_engine(kg_store=kg_store, kg_vector_store=vector_store)
+        question = "龙傲天的宿敌是谁？他来自哪里？"
+        answer = await kg_query_react(kg_query_engine=kg_query_engine, query_str=question)
+        logger.info(f"对于问题 '{question}', kg_query_react 的回答是:\n{answer}")
 
-
-
+    try:
+        asyncio.run(main())
+    finally:
+        # 6. 清理
+        shutil.rmtree(test_dir)
+        logger.info(f"测试目录已删除: {test_dir}")

@@ -455,3 +455,40 @@ web_search_tools = [
     get_targeted_search_tool(),
     get_web_scraper_tool(),
 ]
+
+
+if __name__ == '__main__':
+    import asyncio
+    from utils.log import init_logger
+
+    init_logger("search_test")
+
+    async def main():
+        # 1. 测试 web_search
+        logger.info("--- 测试 web_search ---")
+        query = "大型语言模型最新进展"
+        search_results = await web_search(query, max_results=3)
+        logger.info(f"web_search 查询 '{query}' 的结果:\n{search_results}")
+
+        # 2. 测试 targeted_search
+        logger.info("--- 测试 targeted_search ---")
+        targeted_query = "AIGC"
+        platforms = ["知乎", "36氪"]
+        targeted_results = await targeted_search(query=targeted_query, platforms=platforms)
+        logger.info(f"targeted_search 查询 '{targeted_query}' 在 {platforms} 上的结果:\n{targeted_results}")
+
+        # 3. 测试 scrape_and_extract
+        logger.info("--- 测试 scrape_and_extract ---")
+        # 从之前的搜索结果中找一个URL来测试
+        first_link = None
+        if "链接: " in targeted_results:
+            first_link = targeted_results.split("链接: ")[1].split("\n")[0]
+        
+        if first_link:
+            logger.info(f"将抓取URL: {first_link}")
+            scraped_content = await scrape_and_extract(first_link)
+            logger.info(f"抓取到的内容 (前500字符):\n{scraped_content[:500]}...")
+        else:
+            logger.warning("未能在搜索结果中找到链接，跳过 scrape_and_extract 测试。")
+
+    asyncio.run(main())

@@ -306,3 +306,62 @@ async def index_query_react(
         logger.warning(f"Agent 返回了非字符串类型, 将其强制转换为字符串: {type(result)}")
         result = str(result)
     return result
+
+
+if __name__ == '__main__':
+    import asyncio
+    import tempfile
+    import shutil
+    from pathlib import Path
+    from utils.log import init_logger
+
+    # 1. 初始化日志和临时目录
+    init_logger("vector_test")
+    test_dir = tempfile.mkdtemp()
+    db_path = os.path.join(test_dir, "chroma_db")
+    input_dir = os.path.join(test_dir, "input_data")
+    os.makedirs(input_dir, exist_ok=True)
+    logger.info(f"测试目录已创建: {test_dir}")
+
+    # 2. 准备测试数据
+    (Path(input_dir) / "doc1.md").write_text("# 角色：龙傲天\n龙傲天是一名来自异世界的穿越者。", encoding='utf-8')
+    (Path(input_dir) / "doc2.txt").write_text("世界树是宇宙的中心，连接着九大王国。", encoding='utf-8')
+    logger.info(f"测试文件已写入: {input_dir}")
+
+    # 3. 测试 get_vector_store
+    logger.info("--- 测试 get_vector_store ---")
+    vector_store = get_vector_store(db_path=db_path, collection_name="test_collection")
+    logger.info(f"成功获取 VectorStore: {vector_store}")
+
+    # 4. 测试 vector_add_from_dir
+    logger.info("--- 测试 vector_add_from_dir ---")
+    vector_add_from_dir(vector_store, input_dir)
+
+    # 5. 测试 vector_add
+    logger.info("--- 测试 vector_add ---")
+    vector_add(vector_store, "虚空之石是一个神秘物品。", {"category": "item"}, doc_id="item_void_stone")
+
+    # 6. 测试 get_vector_query_engine
+    logger.info("--- 测试 get_vector_query_engine ---")
+    query_engine = get_vector_query_engine(vector_store, similarity_top_k=5, rerank_top_n=2)
+    logger.info(f"成功创建查询引擎: {type(query_engine)}")
+
+    async def run_queries():
+        # 7. 测试 index_query
+        logger.info("--- 测试 index_query ---")
+        questions = ["龙傲天是谁？", "世界树有什么用？"]
+        results = await index_query(query_engine, questions)
+        logger.info(f"index_query 查询结果:\n{results}")
+
+        # 8. 测试 index_query_react
+        logger.info("--- 测试 index_query_react ---")
+        react_question = "请详细介绍一下龙傲天。"
+        react_result = await index_query_react(query_engine, react_question, "你是一个小说设定助手。")
+        logger.info(f"index_query_react 查询结果:\n{react_result}")
+
+    try:
+        asyncio.run(run_queries())
+    finally:
+        # 9. 清理
+        shutil.rmtree(test_dir)
+        logger.info(f"测试目录已删除: {test_dir}")
