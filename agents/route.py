@@ -1,11 +1,11 @@
 from utils.models import RouteOutput, Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures
 from story.story_rag import get_story_rag
-from utils.prompt_loader import load_prompts
+from utils.loader import load_prompts
 
 
 async def route(task: Task) -> str:
-    user_prompt = load_prompts(task.category, "route_cn", "user_prompt")[0]
+    user_prompt = load_prompts(task.category, "route", "user_prompt")[0]
     context_dict_user = {
         "goal": task.goal
     }

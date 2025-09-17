@@ -1,13 +1,13 @@
 from collections import defaultdict
 from loguru import logger
 from utils.models import Task
-from utils.prompt_loader import load_prompts
+from utils.loader import load_prompts
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures, call_react_agent
 from story.story_rag import get_story_rag
 
 
 async def search(task: Task) -> Task:
-    system_prompt = load_prompts(task.category, "search_cn", "system_prompt")[0]
+    system_prompt = load_prompts(task.category, "search", "system_prompt")[0]
     context = get_story_rag().get_context_base(task)
     context["goal"] = task.goal
     system_prompt = system_prompt.format_map(defaultdict(str, context))
@@ -27,7 +27,7 @@ async def search(task: Task) -> Task:
 
 
 async def search_aggregate(task: Task) -> Task:
-    system_prompt, user_prompt = load_prompts(task.category, "search_aggregate_cn", "system_prompt", "user_prompt")
+    system_prompt, user_prompt = load_prompts(task.category, "search_aggregate", "system_prompt", "user_prompt")
     context = get_story_rag().get_aggregate_search(task)
     messages = get_llm_messages(system_prompt=system_prompt, user_prompt=user_prompt, context_dict_user=context)
     llm_params = get_llm_params(messages=messages, temperature=llm_temperatures["reasoning"])

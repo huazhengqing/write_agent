@@ -8,7 +8,7 @@ from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from utils.file import data_market_dir
 from utils.llm import call_react_agent
-from utils.prefect_utils import local_storage, readable_json_serializer
+from utils.prefect import local_storage, readable_json_serializer
 from prefect import task, flow
 from market_analysis.story.tasks import task_save_md, task_save_vector
 
@@ -144,7 +144,7 @@ def search_platform_all(platforms: List[str]):
 
 
 if __name__ == "__main__":
-    platforms_cn = ["番茄小说", "起点中文网", "飞卢小说网", "晋江文学城", "七猫免费小说", "纵横中文网", "17K小说网", "刺猬猫", "掌阅"]
-    platforms_en = ["Wattpad", "RoyalRoad", "AO3", "Webnovel", "Scribble Hub", "Tapas"]
+    platforms1 = ["番茄小说", "起点中文网", "飞卢小说网", "晋江文学城", "七猫免费小说", "纵横中文网", "17K小说网", "刺猬猫", "掌阅"]
+    platforms2 = ["Wattpad", "RoyalRoad", "AO3", "Webnovel", "Scribble Hub", "Tapas"]
     platforms = ["番茄小说"]
     search_platform_all(platforms)

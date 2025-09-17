@@ -2,11 +2,11 @@ import os
 from utils.models import AtomOutput, Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures
 from story.story_rag import get_story_rag
-from utils.prompt_loader import load_prompts
+from utils.loader import load_prompts
 
 
 async def atom(task: Task) -> Task:
-    system_prompt, user_prompt = load_prompts(task.category, f"atom_{task.task_type}_cn", "system_prompt", "user_prompt")
+    system_prompt, user_prompt = load_prompts(task.category, f"atom_{task.task_type}", "system_prompt", "user_prompt")
     context = get_story_rag().get_context_base(task)
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=llm_temperatures["classification"])

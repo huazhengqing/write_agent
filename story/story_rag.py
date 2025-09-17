@@ -9,20 +9,16 @@ import threading
 from loguru import logger
 from diskcache import Cache
 from typing import Dict, Any, List, Literal, Optional, Callable
-from llama_index.graph_stores.kuzu import KuzuGraphStore
-from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.core import StorageContext
-from llama_index.core.prompts import PromptTemplate
 from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.sqlite_task import get_task_db
 from utils.file import get_text_file_path, text_file_append, text_file_read
 from utils.models import Task, get_sibling_ids_up_to_current
-from utils.prompt_loader import load_prompts
-from utils.kg import get_kg_query_engine, get_kg_store, kg_add
-from utils.hybrid_query import hybrid_query, hybrid_query_batch
-from utils.vector import vector_add, get_vector_store, get_vector_query_engine, index_query
-from utils.file import cache_dir, data_dir
+from utils.loader import load_prompts
+from utils.kg import get_kg_query_engine, kg_add
+from utils.hybrid_query import hybrid_query_batch
+from utils.vector import vector_add, get_vector_query_engine, index_query
+from utils.file import cache_dir
 from utils.llm import (
     llm_temperatures,
     get_llm_messages,
@@ -32,7 +28,7 @@ from utils.llm import (
 from story.base import get_story_kg_store, get_story_vector_store
 
 
-class story_rag:
+class StoryRAG:
 
     def __init__(self):
         cache_story_dir = cache_dir / "story"
@@ -192,7 +188,7 @@ class story_rag:
             content=content,
             metadata=doc_metadata,
             doc_id=task.id,
-            kg_extraction_prompt=load_prompts(task.category, "kg_cn", "kg_extraction_prompt_design")[0],
+            kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_design")[0],
             content_format="markdown",
             max_triplets_per_chunk=15,
         )
@@ -234,7 +230,7 @@ class story_rag:
             content=content,
             metadata=doc_metadata,
             doc_id=task.id,
-            kg_extraction_prompt=load_prompts(task.category, "kg_cn", "kg_extraction_prompt_write")[0],
+            kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_write")[0],
             content_format="text",
             max_triplets_per_chunk=15,
         )
@@ -435,13 +431,13 @@ class story_rag:
         inquiry_type: Literal['search', 'design', 'write']
     ) -> Dict[str, Any]:
         if inquiry_type == 'search':
-            system_prompt, user_prompt, Inquiry = load_prompts(task.category, "query_cn", "system_prompt_search", "user_prompt_search", "Inquiry")
+            system_prompt, user_prompt, Inquiry = load_prompts(task.category, "query", "system_prompt_search", "user_prompt_search", "Inquiry")
         elif inquiry_type == 'design':
-            system_prompt, user_prompt, system_prompt_design_for_write, Inquiry = load_prompts(task.category, "query_cn", "system_prompt_design", "user_prompt_design", "system_prompt_design_for_write", "Inquiry")
+            system_prompt, user_prompt, system_prompt_design_for_write, Inquiry = load_prompts(task.category, "query", "system_prompt_design", "user_prompt_design", "system_prompt_design_for_write", "Inquiry")
             if task.task_type == 'write' and task.results.get("atom_result") == "atom":
                 system_prompt = system_prompt_design_for_write
         elif inquiry_type == 'write':
-            system_prompt, user_prompt, Inquiry = load_prompts(task.category, "query_cn", "system_prompt_write", "user_prompt_write", "Inquiry")
+            system_prompt, user_prompt, Inquiry = load_prompts(task.category, "query", "system_prompt_write", "user_prompt_write", "Inquiry")
         else:
             raise ValueError(f"不支持的探询类型: {inquiry_type}")
         context_dict_user = {
@@ -615,5 +611,5 @@ _rag_instance = None
 def get_story_rag():
     global _rag_instance
     if _rag_instance is None:
-        _rag_instance = story_rag()
+        _rag_instance = StoryRAG()
     return _rag_instance

@@ -2,12 +2,12 @@ import os
 from utils.models import PlanOutput, Task, convert_plan_to_tasks
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures
 from story.story_rag import get_story_rag
-from utils.prompt_loader import load_prompts
+from utils.loader import load_prompts
 
 
 async def plan(task: Task) -> Task:
     # if task.category == "story" and task.task_type == "write":
-    #     system_prompt, user_prompt, get_task_level, test_get_task_level = load_prompts(task.category, f"plan_{task.task_type}_cn", "system_prompt", "user_prompt", "get_task_level", "test_get_task_level")
+    #     system_prompt, user_prompt, get_task_level, test_get_task_level = load_prompts(task.category, f"plan_{task.task_type}", "system_prompt", "user_prompt", "get_task_level", "test_get_task_level")
     #     if os.getenv("deployment_environment") == "test":
     #         task_level_func = test_get_task_level
     #     else:
@@ -15,7 +15,7 @@ async def plan(task: Task) -> Task:
     #     context = await get_story_rag().get_context(task)
     #     messages = get_llm_messages(system_prompt, user_prompt, task_level_func(task.hierarchical_position), context)
     # else:
-    system_prompt, user_prompt = load_prompts(task.category, f"plan_{task.task_type}_cn", "system_prompt", "user_prompt")
+    system_prompt, user_prompt = load_prompts(task.category, f"plan_{task.task_type}", "system_prompt", "user_prompt")
     if task.task_type == "search":
         context = get_story_rag().get_context_base(task)
     else:
@@ -42,7 +42,7 @@ async def plan_reflection(task: Task) -> Task:
         updated_task.results["plan_reflection"] = task.results["plan"]
         updated_task.results["plan_reflection_reasoning"] = ""
     else:
-        system_prompt, user_prompt = load_prompts(task.category, f"plan_{task.task_type}_reflection_cn", "system_prompt", "user_prompt")
+        system_prompt, user_prompt = load_prompts(task.category, f"plan_{task.task_type}_reflection", "system_prompt", "user_prompt")
         if task.task_type == "search":
             context = get_story_rag().get_context_base(task)
         else:

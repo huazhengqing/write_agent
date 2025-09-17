@@ -13,7 +13,7 @@ init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from market_analysis.story.base import query_react
 from market_analysis.story.tasks import task_load_platform_profile, task_platform_briefing, task_new_author_opportunity, task_save_vector
 from utils.llm import llm_completion, get_llm_params, get_llm_messages
-from utils.prefect_utils import local_storage, readable_json_serializer
+from utils.prefect import local_storage, readable_json_serializer
 from prefect import flow, task
 
 

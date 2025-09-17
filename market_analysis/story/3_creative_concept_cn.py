@@ -15,7 +15,7 @@ from utils.llm import call_react_agent, get_llm_messages, get_llm_params, llm_co
 from utils.vector import get_vector_query_engine, index_query, get_vector_store
 from market_analysis.story.base import get_market_vector_store, get_market_tools, query_react
 from market_analysis.story.tasks import task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, task_save_vector
-from utils.prefect_utils import local_storage, readable_json_serializer
+from utils.prefect import local_storage, readable_json_serializer
 from prefect import flow, task
 
 

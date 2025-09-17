@@ -1,11 +1,11 @@
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures
-from utils.prompt_loader import load_prompts
+from utils.loader import load_prompts
 from story.story_rag import get_story_rag
 
 
 async def summary(task: Task) -> Task:
-    system_prompt, user_prompt = load_prompts(task.category, "summary_cn", "system_prompt", "user_prompt")
+    system_prompt, user_prompt = load_prompts(task.category, "summary", "system_prompt", "user_prompt")
     context_dict_user = {
         "task": task.model_dump_json(
             indent=2,
@@ -26,7 +26,7 @@ async def summary(task: Task) -> Task:
 
 
 async def summary_aggregate(task: Task) -> Task:
-    system_prompt, user_prompt = load_prompts(task.category, "summary_aggregate_cn", "system_prompt", "user_prompt")
+    system_prompt, user_prompt = load_prompts(task.category, "summary_aggregate", "system_prompt", "user_prompt")
     context = get_story_rag().get_aggregate_summary(task)
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=llm_temperatures["summarization"])

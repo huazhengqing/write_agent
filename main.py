@@ -6,7 +6,7 @@ import argparse
 from loguru import logger
 from utils.file import sanitize_filename
 from utils.log import init_logger_by_runid
-from utils.sqlite_book_meta import get_book_meta_db
+from utils.sqlite_meta import get_meta_db
 from utils.models import Task
 from story.story_write import flow_story_write
 
@@ -69,7 +69,7 @@ async def write_all(tasks_data: list):
         root_task = Task(**{k: v for k, v in task_params.items() if v is not None})
 
         # 将书籍元信息写入数据库
-        book_meta_db = get_book_meta_db()
+        book_meta_db = get_meta_db()
         book_meta_db.add_or_update_book_meta(task=root_task)
         logger.info(f"已为任务 {root_task.run_id} 添加/更新书籍元信息。")
 

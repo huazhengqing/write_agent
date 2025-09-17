@@ -12,7 +12,7 @@ from market_analysis.story.base import (
 )
 from utils.vector import vector_add, get_vector_query_engine, index_query
 from utils.file import data_market_dir
-from utils.prefect_utils import local_storage, readable_json_serializer
+from utils.prefect import local_storage, readable_json_serializer
 from prefect import task
 
 
