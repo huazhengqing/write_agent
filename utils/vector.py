@@ -183,3 +183,4 @@ def vector_add(
         index.insert_nodes(nodes)
 
     return True
+
