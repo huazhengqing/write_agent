@@ -106,6 +106,13 @@ if __name__ == '__main__':
 
     mock_tool = FunctionTool.from_defaults(fn=get_city_info)
 
+    # 创建一个总是失败的模拟工具
+    def failing_tool(query: str) -> str:
+        """这是一个总是会失败并抛出异常的工具。"""
+        raise ValueError(f"工具故意失败，输入为: '{query}'")
+
+    mock_failing_tool = FunctionTool.from_defaults(fn=failing_tool, name="failing_tool")
+
     async def main():
         # 1. 测试成功返回字符串
         logger.info("--- 1. 测试 call_react_agent (成功返回字符串) ---")
@@ -150,5 +157,23 @@ if __name__ == '__main__':
         except ValueError as e:
             logger.success(f"测试3成功捕获到预期错误: {e}")
             assert "内容为空或过短" in str(e)
+
+        # 4. 测试工具调用失败时 Agent 的反应
+        logger.info("\n--- 4. 测试 call_react_agent (工具调用失败) ---")
+        question4 = "使用 failing_tool 查询一些信息。"
+        system_prompt4 = "你必须使用 failing_tool 来回答问题。"
+        try:
+            result4 = await call_react_agent(
+                system_prompt=system_prompt4,
+                user_prompt=question4,
+                tools=[mock_failing_tool]
+            )
+            logger.success(f"测试4 Agent 在工具失败后返回: {result4}")
+            # Agent 应该能观察到工具的错误并报告它
+            assert "失败" in result4 or "错误" in result4 or "failed" in result4
+        except Exception as e:
+            logger.error(f"测试4失败，Agent未能处理工具异常: {e}", exc_info=True)
+            # 如果 call_react_agent 抛出异常，说明 Agent 没有优雅地处理它
+            assert False, "Agent 应该能优雅地处理工具异常，而不是崩溃。"
 
     asyncio.run(main())

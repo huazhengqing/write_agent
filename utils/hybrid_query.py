@@ -161,6 +161,8 @@ async def hybrid_query_react(
 
 
 if __name__ == '__main__':
+    import nest_asyncio
+    nest_asyncio.apply()
     import tempfile
     import shutil
     from utils.log import init_logger
@@ -199,6 +201,22 @@ if __name__ == '__main__':
             doc_id="char_lat_relation",
         )
         logger.info("数据已添加到向量库和知识图谱。")
+        # 添加仅存在于 KG 的数据
+        kg_add(
+            kg_store,
+            vector_store_for_kg,
+            "叶良辰居住在'北境之巅'。",
+            {"type": "character_location", "source": "test_location_1"},
+            doc_id="char_ylc_location",
+        )
+        # 添加仅存在于 Vector Store 的数据
+        vector_add(
+            vector_store,
+            "风清扬是一位隐世高人，剑术超凡，但从不参与江湖纷争。",
+            {"type": "character_profile", "source": "test_profile_2"},
+            doc_id="char_fqy_profile"
+        )
+        logger.info("已添加部分缺失的测试数据。")
 
         # 4. 创建查询引擎
         vector_query_engine = get_vector_query_engine(vector_store)
@@ -227,9 +245,25 @@ if __name__ == '__main__':
         result3 = await hybrid_query(auto_vector_query_engine, kg_query_engine, question3)
         logger.info(f"带有自动元数据过滤的 hybrid_query 对 '{question3}' 的回答:\n{result3}")
 
+        # 8. 测试混合查询 (部分结果为空)
+        logger.info("--- 8. 测试混合查询 (部分结果为空) ---")
+        
+        logger.info("--- 8.1. 仅知识图谱有结果 ---")
+        question4 = "叶良辰住在哪里？"
+        result4 = await hybrid_query(vector_query_engine, kg_query_engine, question4)
+        logger.info(f"对 '{question4}' 的回答:\n{result4}")
+        assert "北境之巅" in result4
+
+        logger.info("--- 8.2. 仅向量库有结果 ---")
+        question5 = "风清扬是个怎样的人？"
+        result5 = await hybrid_query(vector_query_engine, kg_query_engine, question5)
+        logger.info(f"对 '{question5}' 的回答:\n{result5}")
+        assert "隐世高人" in result5 and "剑术超凡" in result5
+
     try:
         asyncio.run(main())
+        logger.success("所有 hybrid_query.py 测试用例通过！")
     finally:
-        # 8. 清理
+        # 9. 清理
         shutil.rmtree(test_dir)
         logger.info(f"测试目录已删除: {test_dir}")

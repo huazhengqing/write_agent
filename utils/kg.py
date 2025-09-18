@@ -17,7 +17,7 @@ from llama_index.llms.litellm import LiteLLM
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.llm import llm_temperatures, get_llm_params, get_rerank_params
 from utils.agent import call_react_agent
-from utils.vector import LiteLLMReranker, get_embed_model, get_nodes_from_document
+from utils.vector import LiteLLMReranker, get_nodes_from_document
 from utils.log import init_logger
 
 
@@ -157,18 +157,6 @@ def kg_add(
         if cache_key in _kg_indices:
             del _kg_indices[cache_key]
 
-    logger.info(f"开始为 doc_id '{doc_id}' 更新知识图谱, 首先将旧数据标记为非活动状态。")
-    try:
-        update_query = """
-        MATCH (n)
-        WHERE n.doc_id = $doc_id
-        SET n.status = 'inactive'
-        """
-        kg_store.query(update_query, params={"doc_id": doc_id})
-        logger.info(f"已将 doc_id '{doc_id}' 的旧节点标记为 inactive。")
-    except Exception as e:
-        logger.warning(f"标记旧节点为 inactive 时出错 (可能是首次添加): {e}")
-
     doc = Document(id_=doc_id, text=content, metadata=metadata)
     nodes = []
     if content_format == "json":
@@ -181,7 +169,7 @@ def kg_add(
 
     logger.info(f"内容被解析成 {len(nodes)} 个节点, max_triplets_per_chunk={max_triplets_per_chunk}")
 
-    vector_index = VectorStoreIndex.from_vector_store(vector_store, embed_model=get_embed_model())
+    vector_index = VectorStoreIndex.from_vector_store(vector_store)
 
     try:
         logger.info(f"正在从知识图谱的向量库中删除 doc_id '{doc_id}' 的旧节点...")
@@ -202,9 +190,8 @@ def kg_add(
         nodes=nodes,
         storage_context=temp_storage_context,
         llm=llm,
-        embed_model=get_embed_model(),
         kg_extraction_prompt=PromptTemplate(final_kg_extraction_prompt),
-        max_triplets_per_chunk=max_triplets_per_chunk, # type: ignore
+        max_triplets_per_chunk=max_triplets_per_chunk,
         include_embeddings=False,  # 不需要在临时索引中创建嵌入
         show_progress=True,
     )
@@ -218,29 +205,48 @@ def kg_add(
         for rel, obj in rel_objs:
             triplets.append((subj, rel, obj))
 
+    # 统一更新逻辑：无论是否提取到新三元组，都先清理与该 doc_id 相关的旧数据。
+    logger.info(f"开始为 doc_id '{doc_id}' 更新知识图谱，首先清理旧数据。")
+    try:
+        # 步骤 1: 删除所有源自此 doc_id 的旧关系，防止关系残留和图谱膨胀。
+        delete_rels_query = "MATCH (:__Entity__ {doc_id: $doc_id})-[r]->() DELETE r"
+        kg_store.query(delete_rels_query, params={"doc_id": doc_id})
+        logger.info(f"已删除 doc_id '{doc_id}' 的旧关系。")
+
+        # 步骤 2: 将与此 doc_id 关联的节点标记为非活动。后续插入时会重新激活它们。
+        update_nodes_query = "MATCH (n:__Entity__ {doc_id: $doc_id}) SET n.status = 'inactive'"
+        kg_store.query(update_nodes_query, params={"doc_id": doc_id})
+        logger.info(f"已将 doc_id '{doc_id}' 的旧节点标记为 inactive。")
+    except Exception as e:
+        logger.warning(f"清理旧图谱数据时出错 (可能是首次添加): {e}")
+
     if not triplets:
         logger.warning(f"未能从内容 (doc_id: {doc_id}) 中提取任何三元组。")
-        logger.success(f"成功将内容 (doc_id: {doc_id}) 添加到向量库, 但未提取到知识图谱三元组。")
+        logger.success(f"成功将内容 (doc_id: {doc_id}) 添加到向量库，旧图谱数据已清理。")
         return
 
-    logger.info(f"提取了 {len(triplets)} 个三元组。正在写入主知识图谱...")
+    # 优化：使用 UNWIND 进行批量插入，显著减少数据库交互次数
+    from collections import defaultdict
+    logger.info(f"提取了 {len(triplets)} 个三元组。正在批量写入主知识图谱...")
+    
+    triplets_by_rel = defaultdict(list)
     for subj, rel, obj in triplets:
-        # Cypher 不支持参数化关系类型, 因此我们对其进行清理以防止注入,
-        # 同时保留反引号以处理特殊字符。
         safe_rel = rel.replace('`', '')
-        
-        # 使用参数化查询来防止 Cypher 注入, 并确保所有值都得到正确转义。
-        # 这也修复了一个bug, 即错误地将 s.status 应用于对象 o。
+        triplets_by_rel[safe_rel].append({"subj": subj, "obj": obj})
+
+    for rel, pairs in triplets_by_rel.items():
+        # MERGE 语句会智能地创建或更新节点, 并通过 SET 重新激活它们。
         query = f"""
-        MERGE (s:__Entity__ {{name: $subj}}) SET s.doc_id = $doc_id, s.status = 'active'
-        MERGE (o:__Entity__ {{name: $obj}}) SET o.doc_id = $doc_id, o.status = 'active'
+        UNWIND $pairs AS pair
+        MERGE (s:__Entity__ {{name: pair.subj}}) SET s.doc_id = $doc_id, s.status = 'active'
+        MERGE (o:__Entity__ {{name: pair.obj}}) SET o.doc_id = $doc_id, o.status = 'active'
         MERGE (s)-[:`{safe_rel}`]->(o)
         """
-        params = {"subj": subj, "obj": obj, "doc_id": doc_id}
+        params = {"pairs": pairs, "doc_id": doc_id}
         try:
             kg_store.query(query, params=params)
         except Exception as e:
-            logger.error(f"写入三元组 ('{subj}', '{rel}', '{obj}') 时出错: {e}")
+            logger.error(f"批量写入关系 '{rel}' 的三元组时出错: {e}")
             continue
 
     logger.success(f"成功将内容 (doc_id: {doc_id}) 添加到知识图谱和向量库。")
@@ -281,8 +287,7 @@ def get_kg_query_engine(
                 [], 
                 storage_context=kg_storage_context, 
                 llm=reasoning_llm,
-                include_embeddings=True, 
-                embed_model=get_embed_model()
+                include_embeddings=True
             )
             _kg_indices[cache_key] = kg_index
 
@@ -333,8 +338,11 @@ if __name__ == '__main__':
     from pathlib import Path
     from utils.log import init_logger
     from utils.vector import get_vector_store
+    import nest_asyncio
  
     init_logger("kg_test")
+
+    nest_asyncio.apply()
 
     # 1. 初始化临时目录
     test_dir = tempfile.mkdtemp()

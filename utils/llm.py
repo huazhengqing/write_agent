@@ -208,7 +208,7 @@ def get_embedding_params(
 
 rerank_api = {
     "bge": {
-        "model": "openai/BAAI/bge-reranker-v2-m3",
+        "model": "BAAI/bge-reranker-v2-m3",
         "api_base": "https://api.siliconflow.cn/v1/",
         "api_key": os.getenv("siliconflow_API_KEY"),
         "context_window": 8000,
@@ -478,6 +478,9 @@ if __name__ == '__main__':
     import asyncio
     from pydantic import Field
     from utils.log import init_logger
+    from unittest.mock import patch, AsyncMock
+    from litellm.types.llms.base import LLMMessage, Choice, ModelResponse
+
 
     init_logger("llm_test")
 
@@ -531,5 +534,64 @@ if __name__ == '__main__':
                 logger.error("返回结果不是 UserInfo 对象！")
         except Exception as e:
             logger.error(f"测试3失败: {e}", exc_info=True)
+
+        # --- Test 4: Self-correction for Pydantic model ---
+        logger.info("\n--- 测试 llm_completion (JSON自我修正) ---")
+        
+        # 1. 定义格式错误和正确的响应
+        malformed_json_str = '{"name": "Bad JSON", "age": 30, "is_student": tru' # 无效的布尔值
+        correct_json_str = '{"name": "Corrected JSON", "age": 30, "is_student": true}'
+
+        mock_response_fail = ModelResponse(
+            choices=[
+                Choice(
+                    finish_reason="stop",
+                    index=0,
+                    message=LLMMessage(
+                        content=f"```json\n{malformed_json_str}\n```",
+                        role="assistant"
+                    )
+                )
+            ],
+            model="mock_model"
+        )
+
+        mock_response_success = ModelResponse(
+            choices=[
+                Choice(
+                    finish_reason="stop",
+                    index=0,
+                    message=LLMMessage(
+                        content=correct_json_str,
+                        role="assistant"
+                    )
+                )
+            ],
+            model="mock_model"
+        )
+
+        # 2. 使用 patch 模拟 acompletion
+        with patch('litellm.acompletion', new_callable=AsyncMock) as mock_acompletion:
+            # 3. 设置模拟的副作用 (第一次返回失败，第二次返回成功)
+            mock_acompletion.side_effect = [mock_response_fail, mock_response_success]
+
+            # 4. 运行测试
+            try:
+                messages4 = get_llm_messages(
+                    system_prompt="请根据用户信息生成JSON。",
+                    user_prompt="用户信息：姓名Corrected JSON，年龄30岁，是一名学生。"
+                )
+                params4 = get_llm_params(messages=messages4, temperature=0.1)
+                result4 = await llm_completion(params4, response_model=UserInfo)
+                validated_data4 = result4.validated_data
+
+                logger.success(f"自我修正测试成功: {validated_data4}")
+                assert isinstance(validated_data4, UserInfo)
+                assert validated_data4.name == "Corrected JSON"
+                assert mock_acompletion.call_count == 2
+                
+            except Exception as e:
+                logger.error(f"测试4失败: {e}", exc_info=True)
+                assert False, "自我修正测试不应抛出异常"
 
     asyncio.run(main())

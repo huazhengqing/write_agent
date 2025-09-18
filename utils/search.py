@@ -127,7 +127,9 @@ def get_web_search_tool() -> FunctionTool:
         )
     )
 
+
 ###############################################################################
+
 
 platform_categories = {
     # 社交与内容
@@ -548,6 +550,7 @@ web_search_tools = [
 if __name__ == '__main__':
     import asyncio
     from utils.log import init_logger
+    from unittest.mock import patch, AsyncMock
 
     init_logger("search_test")
 
@@ -559,14 +562,39 @@ if __name__ == '__main__':
         logger.info(f"web_search 查询 '{query}' 的结果:\n{search_results}")
 
         # 2. 测试 targeted_search
-        logger.info("--- 测试 targeted_search ---")
+        logger.info("--- 2. 测试 targeted_search (常规) ---")
         targeted_query = "AIGC"
         platforms = ["知乎", "36氪"]
         targeted_results = await targeted_search(query=targeted_query, platforms=platforms)
         logger.info(f"targeted_search 查询 '{targeted_query}' 在 {platforms} 上的结果:\n{targeted_results}")
 
-        # 3. 测试 scrape_and_extract
-        logger.info("--- 测试 scrape_and_extract ---")
+        # 3. 测试 targeted_search (别名和分类解析)
+        logger.info("--- 3. 测试 targeted_search (别名和分类解析) ---")
+        with patch('utils.search.web_search', new_callable=AsyncMock) as mock_web_search:
+            mock_web_search.return_value = "Mocked search result"
+            
+            alias_query = "二次元"
+            # 'b站' 是别名, '小说' 是分类
+            alias_platforms = ["b站", "小说"]
+            
+            await targeted_search(query=alias_query, platforms=alias_platforms)
+            
+            # 验证 mock_web_search 是否被正确调用
+            mock_web_search.assert_called_once()
+            call_args, call_kwargs = mock_web_search.call_args
+            
+            final_query = call_kwargs.get('query')
+            logger.info(f"针对别名和分类生成的最终查询: {final_query}")
+
+            # 验证 'b站' (别名) -> 'bilibili.com'
+            assert "site:bilibili.com" in final_query
+            # 验证 '小说' (分类) 被展开
+            assert "site:qidian.com" in final_query
+            assert "site:jjwxc.net" in final_query
+            logger.info("别名和分类解析测试成功。")
+
+        # 4. 测试 scrape_and_extract
+        logger.info("--- 4. 测试 scrape_and_extract ---")
         # 从之前的搜索结果中找一个URL来测试
         first_link = None
         if "链接: " in targeted_results:
