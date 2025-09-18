@@ -86,7 +86,7 @@ async def hybrid_query(
     messages = get_llm_messages(system_prompt, user_prompt, None, context_dict_user)
 
     logger.info("开始调用LLM进行信息整合...")
-    final_llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=llm_temperatures["synthesis"])
+    final_llm_params = get_llm_params(llm_group='reasoning', messages=messages, temperature=llm_temperatures["synthesis"])
     final_message = await llm_completion(final_llm_params)
 
     logger.success(f"混合查询完成，生成回答长度: {len(final_message.content)}")
@@ -145,7 +145,7 @@ async def hybrid_query_react(
         system_prompt=agent_system_prompt,
         user_prompt=query_str,
         tools=[vector_tool, kg_tool],
-        llm_type="reasoning",
+        llm_group="reasoning",
         temperature=llm_temperatures["reasoning"]
     )
     if not isinstance(result, str):

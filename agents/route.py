@@ -10,6 +10,6 @@ async def route(task: Task) -> str:
         "goal": task.goal
     }
     messages = get_llm_messages(None, user_prompt, None, context_dict_user)
-    llm_params = get_llm_params(llm="fast", messages=messages, temperature=llm_temperatures["classification"])
+    llm_params = get_llm_params(llm_group="fast", messages=messages, temperature=llm_temperatures["classification"])
     message = await llm_completion(llm_params, response_model=RouteOutput)
     return message.validated_data.category

@@ -195,7 +195,7 @@ def kg_add(
 
     logger.info("正在提取知识三元组...")
     temp_storage_context = StorageContext.from_defaults(graph_store=SimpleGraphStore())
-    llm_extract_params = get_llm_params(llm="fast", temperature=llm_temperatures["summarization"])
+    llm_extract_params = get_llm_params(llm_group="fast", temperature=llm_temperatures["summarization"])
     llm = LiteLLM(**llm_extract_params)
 
     temp_index = KnowledgeGraphIndex(
@@ -254,10 +254,10 @@ def get_kg_query_engine(
     kg_nl2graphquery_prompt: Optional[str] = kg_gen_cypher_prompt,
 ) -> BaseQueryEngine:
     
-    reasoning_llm_params = get_llm_params(llm="reasoning", temperature=llm_temperatures["reasoning"])
+    reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
     reasoning_llm = LiteLLM(**reasoning_llm_params)
 
-    synthesis_llm_params = get_llm_params(llm="reasoning", temperature=llm_temperatures["synthesis"])
+    synthesis_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["synthesis"])
     synthesis_llm = LiteLLM(**synthesis_llm_params)
 
     response_synthesizer = CompactAndRefine(
@@ -319,7 +319,7 @@ async def kg_query_react(
         system_prompt=agent_system_prompt,
         user_prompt=query_str,
         tools=[kg_tool],
-        llm_type="reasoning",
+        llm_group="reasoning",
         temperature=llm_temperatures["reasoning"]
     )
     if not isinstance(result, str):

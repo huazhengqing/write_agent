@@ -293,7 +293,7 @@ async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionRes
         )
     user_prompt = "".join(user_prompt_parts)
     messages = get_llm_messages(system_prompt=FINAL_DECISION_system_prompt_JSON, user_prompt=user_prompt)
-    llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=0.1)
+    llm_params = get_llm_params(llm_group='reasoning', messages=messages, temperature=0.1)
     response_message = await llm_completion(llm_params=llm_params, response_model=FinalDecisionResult)
     decision = response_message.validated_data
     if not decision:
@@ -373,7 +373,7 @@ async def task_generate_opportunities(market_report: str, genre: str) -> Optiona
             historical_concepts=historical_concepts_str
     )
     messages = get_llm_messages(system_prompt=OPPORTUNITY_GENERATION_system_prompt, user_prompt=user_prompt)
-    llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=0.5)
+    llm_params = get_llm_params(llm_group='reasoning', messages=messages, temperature=0.5)
     response_message = await llm_completion(llm_params=llm_params)
     opportunities = response_message.content
     if opportunities:
@@ -423,7 +423,7 @@ async def task_generate_novel_concept(opportunities_report: str, platform: str, 
     concept = await call_react_agent(
         system_prompt=NOVEL_CONCEPT_system_prompt,
         user_prompt=user_prompt,
-        llm_type='reasoning',
+        llm_group='reasoning',
         tools=get_market_tools(),
         temperature=0.7
     )

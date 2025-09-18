@@ -166,7 +166,7 @@ async def task_parse_genres_from_report(platform: str, report: str) -> tuple[str
     logger.info(f"为平台 '{platform}' 的报告解析热门题材...")
     user_prompt = f"# 市场动态简报\n\n{report}"
     messages = get_llm_messages(system_prompt=PARSE_GENRES_system_prompt, user_prompt=user_prompt)
-    llm_params = get_llm_params(llm='fast', messages=messages, temperature=0.0)
+    llm_params = get_llm_params(llm_group='fast', messages=messages, temperature=0.0)
     response_message = await llm_completion(llm_params=llm_params, response_model=ParsedGenres)
     parsed_genres_result = response_message.validated_data
     if parsed_genres_result and parsed_genres_result.genres:
@@ -205,7 +205,7 @@ async def task_choose_best_opportunity(
         full_context += "无外部趋势分析报告。"
     user_prompt = CHOOSE_OPPORTUNITY_user_prompt.format(all_reports=full_context)
     messages = get_llm_messages(system_prompt=CHOOSE_BEST_OPPORTUNITY_system_prompt, user_prompt=user_prompt)
-    llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=0.1)
+    llm_params = get_llm_params(llm_group='reasoning', messages=messages, temperature=0.1)
     response_message = await llm_completion(llm_params=llm_params, response_model=MarketAnalysisResult)
     decision = response_message.validated_data
     if decision and decision.opportunities:

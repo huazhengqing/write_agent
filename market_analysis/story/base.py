@@ -150,7 +150,7 @@ async def query_react(
         system_prompt=agent_system_prompt,
         user_prompt=query_str,
         tools=get_market_tools(),
-        llm_type="reasoning",
+        llm_group="reasoning",
         temperature=llm_temperatures["reasoning"]
     )
     if not isinstance(result, str):

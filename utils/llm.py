@@ -13,13 +13,8 @@ from litellm import RateLimitError, Timeout, APIConnectionError, ServiceUnavaila
 from loguru import logger
 from typing import List, Dict, Any, Literal, Optional, Type, Callable, Union
 from pydantic import BaseModel, ValidationError
-from llama_index.core.agent.workflow import ReActAgent
-from llama_index.llms.litellm import LiteLLM
-from llama_index.core import Settings
-from llama_index.embeddings.litellm import LiteLLMEmbedding
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.file import cache_dir
-from utils.search import web_search_tools
 
 
 load_dotenv()
@@ -32,6 +27,7 @@ llm_temperatures = {
     "synthesis": 0.4,
     "classification": 0.0,
 }
+
 
 llms_api = {
     "reasoning": {
@@ -155,13 +151,13 @@ def get_llm_messages(
 
 
 def get_llm_params(
-    llm: Literal['reasoning', 'fast'] = 'reasoning',
+    llm_group: Literal['reasoning', 'fast'] = 'reasoning',
     messages: Optional[List[Dict[str, Any]]] = None,
     temperature: float = llm_temperatures["reasoning"],
     tools: Optional[List[Dict[str, Any]]] = None,
     **kwargs: Any
 ) -> Dict[str, Any]:
-    llm_params = llms_api[llm].copy()
+    llm_params = llms_api[llm_group].copy()
     llm_params.update(**llm_params_general)
     llm_params.update(kwargs)
     llm_params["temperature"] = temperature
@@ -262,24 +258,7 @@ litellm.REPEATED_STREAMING_CHUNK_LIMIT = 20
 ###############################################################################
 
 
-def setup_global_settings():
-    if getattr(Settings, '_llm', None) is None:
-        default_llm_params = get_llm_params(llm="fast", temperature=llm_temperatures["summarization"])
-        Settings.llm = LiteLLM(**default_llm_params)
-
-    if getattr(Settings, '_embed_model', None) is None:
-        embedding_params = get_embedding_params()
-        embed_model_name = embedding_params.pop('model')
-        Settings.embed_model = LiteLLMEmbedding(model_name=embed_model_name, **embedding_params)
-
-
-setup_global_settings()
-
-
-###############################################################################
-
-
-def _format_json_content(content: str) -> str:
+def format_json_content(content: str) -> str:
     try:
         parsed = json.loads(content)
         return json.dumps(parsed, indent=2, ensure_ascii=False)
@@ -287,9 +266,9 @@ def _format_json_content(content: str) -> str:
         return content
 
 
-def _format_message_content(content: str) -> str:
+def format_message_content(content: str) -> str:
     if content.strip().startswith("{") or content.strip().startswith("["):
-        return _format_json_content(content)
+        return format_json_content(content)
     return content
 
 
@@ -309,7 +288,7 @@ def clean_markdown_fences(content: str) -> str:
     return text.strip()
 
 
-def _default_text_validator(content: str):
+def text_validator_default(content: str):
     if not content or len(content.strip()) < 20:
         raise ValueError("生成的内容为空或过短。")
 
@@ -389,12 +368,12 @@ async def llm_completion(
                     raise ValueError("LLM响应既无tool_calls也无有效content可供解析。")
             else:
                 message.content = clean_markdown_fences(message.content)
-                active_validator = validator or _default_text_validator
+                active_validator = validator or text_validator_default
                 active_validator(message.content)
             reasoning = message.get("reasoning_content") or message.get("reasoning", "")
             if reasoning:
                 logger.info(f"推理过程:\n{reasoning}")
-            logger.info(f"返回内容 (尝试 {attempt + 1}):\n{_format_message_content(message.content)}")
+            logger.info(f"返回内容 (尝试 {attempt + 1}):\n{format_message_content(message.content)}")
             return message
         except Exception as e:
             logger.warning(f"LLM调用或验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
@@ -450,7 +429,7 @@ async def txt_to_json(cleaned_output: str, response_model: Optional[Type[BaseMod
         user_prompt=extraction_user_prompt.format(cleaned_output=cleaned_output)
     )
     extraction_llm_params = get_llm_params(
-        llm='reasoning',
+        llm_group='reasoning',
         messages=extraction_messages,
         temperature=llm_temperatures["classification"]
     )
@@ -461,115 +440,4 @@ async def txt_to_json(cleaned_output: str, response_model: Optional[Type[BaseMod
 
 ###############################################################################
 
-
-async def call_react_agent(
-    system_prompt: Optional[str],
-    user_prompt: str,
-    tools: List[Any] = web_search_tools,
-    llm_type: Literal['reasoning', 'fast'] = 'reasoning',
-    temperature: float = llm_temperatures["reasoning"],
-    response_model: Optional[Type[BaseModel]] = None
-) -> Optional[Union[BaseModel, str]]:
-    llm_params = get_llm_params(llm=llm_type, temperature=temperature)
-    llm = LiteLLM(**llm_params)
-    agent = ReActAgent(
-        tools=tools,
-        llm=llm,
-        system_prompt=system_prompt,
-        max_iterations = 5, 
-        verbose=True
-    )
-
-    logger.info(f"系统提示词:\n{system_prompt}")
-    logger.info(f"用户提示词:\n{user_prompt}")
-
-    handler = agent.run(user_prompt)
-    # response_text = ""
-    # async for ev in handler.stream_events():
-    #     if hasattr(ev, 'delta'):
-    #         delta = ev.delta
-    #         if delta is not None:
-    #             response_text += str(delta)
-    #             print(f"{delta}", end="", flush=True)
-    final_response = await handler
-    # if response_text:
-    #     return response_text
-    raw_output = ""
-    if hasattr(final_response, 'response'):
-        raw_output = str(final_response.response)
-    elif hasattr(final_response, 'content'):
-        raw_output = str(final_response.content)
-    else:
-        raw_output = str(final_response)
-    cleaned_output = clean_markdown_fences(raw_output)
-    
-    logger.info(f"llm 返回\n{cleaned_output}")
-
-    if response_model:
-        return await txt_to_json(cleaned_output, response_model)
-    else:
-        _default_text_validator(cleaned_output)
-        return cleaned_output
-
-
-###############################################################################
-
-
-if __name__ == '__main__':
-    from pydantic import BaseModel, Field
-    from typing import List
-    from utils.log import init_logger
-
-    init_logger("llm_test")
-
-    # 定义一个用于测试的 Pydantic 模型
-    class CharacterInfo(BaseModel):
-        name: str = Field(description="角色姓名")
-        abilities: List[str] = Field(description="角色的能力列表")
-        goal: str = Field(description="角色的主要目标")
-
-    async def main():
-        # 1. 测试 get_llm_messages
-        logger.info("--- 测试 get_llm_messages ---")
-        messages = get_llm_messages(
-            system_prompt="你是一个角色设定助手。",
-            user_prompt="请介绍一下角色：{name}",
-            context_dict_user={"name": "龙傲天"}
-        )
-        logger.info(f"get_llm_messages 生成的消息:\n{messages}")
-
-        # 2. 测试 llm_completion (纯文本)
-        logger.info("--- 测试 llm_completion (纯文本) ---")
-        text_params = get_llm_params(
-            llm='fast',
-            messages=get_llm_messages(user_prompt="写一句关于宇宙的诗。"),
-            temperature=0.7
-        )
-        text_response = await llm_completion(text_params)
-        logger.info(f"llm_completion (纯文本) 结果:\n{text_response.content}")
-
-        # 3. 测试 llm_completion (JSON Schema)
-        logger.info("--- 测试 llm_completion (JSON) ---")
-        json_prompt = "根据以下描述生成一个角色信息JSON：'龙傲天是一位强大的法师，他能操控火焰和冰霜，他的目标是找到失落的古代神器。'"
-        json_params = get_llm_params(
-            llm='reasoning',
-            messages=get_llm_messages(user_prompt=json_prompt),
-            temperature=0.1
-        )
-        json_response = await llm_completion(json_params, response_model=CharacterInfo)
-        logger.info(f"llm_completion (JSON) 验证后的Pydantic对象:\n{json.dumps(json_response.validated_data.model_dump(), indent=2, ensure_ascii=False)}")
-
-        # 4. 测试 call_react_agent
-        logger.info("--- 测试 call_react_agent ---")
-        agent_prompt = "2024年AI领域有什么好玩的新东西？请用中文回答。"
-        agent_system_prompt = "你是一个AI科技观察家，利用工具来回答用户问题。"
-        agent_response = await call_react_agent(
-            system_prompt=agent_system_prompt,
-            user_prompt=agent_prompt,
-            tools=web_search_tools, # from utils.search
-            llm_type='reasoning'
-        )
-        logger.info(f"call_react_agent 结果:\n{agent_response}")
-
-    asyncio.run(main())
 

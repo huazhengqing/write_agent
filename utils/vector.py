@@ -1,6 +1,6 @@
 import os
 import sys
-import re  # 确保 re 模块被导入
+import re
 import threading
 import asyncio
 from datetime import datetime
@@ -9,6 +9,7 @@ from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 from pydantic import Field
 import chromadb
 from loguru import logger
+from llama_index.core import Settings
 from llama_index.core import Document, SimpleDirectoryReader, VectorStoreIndex
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.indices.prompt_helper import PromptHelper
@@ -29,6 +30,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.llm import call_react_agent, llm_temperatures, get_embedding_params, get_llm_params, get_rerank_params
 
 
+def setup_global_settings():
+    if getattr(Settings, '_llm', None) is None:
+        default_llm_params = get_llm_params(llm_group="fast", temperature=llm_temperatures["summarization"])
+        Settings.llm = LiteLLM(**default_llm_params)
+
+setup_global_settings()
+
+
 _embed_model: Optional[LiteLLMEmbedding] = None
 _embed_model_lock = threading.Lock()
 def get_embed_model() -> LiteLLMEmbedding:
@@ -39,6 +48,8 @@ def get_embed_model() -> LiteLLMEmbedding:
                 embedding_params = get_embedding_params()
                 embed_model_name = embedding_params.pop('model')
                 _embed_model = LiteLLMEmbedding(model_name=embed_model_name, **embedding_params)
+                if getattr(Settings, '_embed_model', None) is None:
+                    Settings.embed_model = _embed_model
     return _embed_model
 
 
@@ -54,6 +65,7 @@ def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
         vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
         _vector_stores[(db_path, collection_name)] = vector_store
         return vector_store
+
 
 _vector_indices: Dict[int, VectorStoreIndex] = {}
 _vector_index_lock = threading.Lock()
@@ -73,7 +85,7 @@ def _default_file_metadata(file_path_str: str) -> dict:
 
 
 def get_nodes_from_document(doc: Document) -> List[Document]:
-    summary_llm_params = get_llm_params(llm="fast", temperature=llm_temperatures["summarization"])
+    summary_llm_params = get_llm_params(llm_group="fast", temperature=llm_temperatures["summarization"])
     summary_llm = LiteLLM(**summary_llm_params)
     parser = MarkdownElementNodeParser(
         llm=summary_llm,
@@ -315,10 +327,10 @@ def get_vector_query_engine(
         f"use_auto_retriever={use_auto_retriever}, filters={filters}"
     )
     
-    reasoning_llm_params = get_llm_params(llm="reasoning", temperature=llm_temperatures["reasoning"])
+    reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
     reasoning_llm = LiteLLM(**reasoning_llm_params)
 
-    synthesis_llm_params = get_llm_params(llm="reasoning", temperature=llm_temperatures["synthesis"])
+    synthesis_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["synthesis"])
     synthesis_llm = LiteLLM(**synthesis_llm_params)
 
     postprocessors = []
@@ -434,7 +446,7 @@ async def index_query_react(
         system_prompt=agent_system_prompt,
         user_prompt=query_str,
         tools=[vector_tool],
-        llm_type="reasoning",
+        llm_group="reasoning",
         temperature=llm_temperatures["reasoning"]
     )
     if not isinstance(result, str):
