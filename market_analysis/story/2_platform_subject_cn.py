@@ -2,6 +2,7 @@ import os
 import sys
 from typing import Optional, Dict, List
 import asyncio
+import json
 from pydantic import BaseModel, Field
 from loguru import logger
 from datetime import datetime
@@ -307,14 +308,14 @@ async def platform_subject(platforms_to_scan: list[str]):
         return
 
     task_save_vector(
-        content=initial_decision.model_dump_json(indent=2, ensure_ascii=False),
+        content=json.dumps(initial_decision.model_dump(), indent=2, ensure_ascii=False),
         doc_type="market_analysis_result",
         platform="summary",
         content_format="json"
     )
 
     logger.info("--- 初步市场机会决策报告 (JSON) ---")
-    logger.info(f"\n{initial_decision.model_dump_json(indent=2, ensure_ascii=False)}")
+    logger.info(f"\n{json.dumps(initial_decision.model_dump(), indent=2, ensure_ascii=False)}")
 
 
 

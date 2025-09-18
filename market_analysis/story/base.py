@@ -20,8 +20,8 @@ from llama_index.core.schema import NodeWithScore
 from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.embeddings_api.litellm import LiteLLMEmbedding
-from llama_index.llms_api.litellm import LiteLLM
+from llama_index.embeddings.litellm import LiteLLMEmbedding
+from llama_index.llms.litellm import LiteLLM
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 from utils.llm import call_react_agent, llm_temperatures, get_embedding_params, get_llm_params
 from utils.llm import call_react_agent

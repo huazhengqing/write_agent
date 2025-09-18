@@ -61,10 +61,13 @@ async def hybrid_query(
     if not question or not isinstance(question, str):
         logger.warning("查询问题为空或类型不正确, 无法执行混合查询。")
         return ""
-        
+
+    logger.info(f"开始对问题 '{question}' 执行混合查询...")
+
     system_prompt = synthesis_system_prompt or synthesis_system_prompt_default
     user_prompt = synthesis_user_prompt or synthesis_user_prompt_default
 
+    logger.debug("正在并行执行向量查询和知识图谱查询...")
     vector_task = index_query(vector_query_engine, [question])
     kg_task = index_query(kg_query_engine, [question])
     vector_contents, kg_contents = await asyncio.gather(vector_task, kg_task)
@@ -76,11 +79,20 @@ async def hybrid_query(
     formatted_vector_str = "\n\n---\n\n".join(vector_contents)
     formatted_kg_str = "\n\n---\n\n".join(kg_contents)
 
+    logger.debug(f"向量查询结果 (片段数: {len(vector_contents)}):\n{formatted_vector_str[:500]}...")
+    logger.debug(f"知识图谱查询结果 (片段数: {len(kg_contents)}):\n{formatted_kg_str[:500]}...")
+
     context_dict_user = {"vector_str": formatted_vector_str, "kg_str": formatted_kg_str, "question": question}
     messages = get_llm_messages(system_prompt, user_prompt, None, context_dict_user)
+
+    logger.info("开始调用LLM进行信息整合...")
     final_llm_params = get_llm_params(llm='reasoning', messages=messages, temperature=llm_temperatures["synthesis"])
     final_message = await llm_completion(final_llm_params)
-    return final_message.content
+
+    logger.success(f"混合查询完成，生成回答长度: {len(final_message.content)}")
+    logger.debug(f"最终回答:\n{final_message.content}")
+
+    return final_message.content.strip()
 
 
 async def hybrid_query_batch(
@@ -93,6 +105,7 @@ async def hybrid_query_batch(
     if not questions:
         return []
 
+    logger.info(f"开始执行 {len(questions)} 个问题的批量混合查询...")
     tasks = [
         hybrid_query(
             vector_query_engine,
@@ -104,8 +117,11 @@ async def hybrid_query_batch(
         for q in questions
     ]
     results = await asyncio.gather(*tasks)
+    logger.success(f"批量混合查询完成。")
     return results
 
+
+###############################################################################
 
 
 async def hybrid_query_react(
@@ -114,6 +130,7 @@ async def hybrid_query_react(
     query_str: str,
     agent_system_prompt: Optional[str] = None,
 ) -> str:
+    logger.info(f"开始对问题 '{query_str}' 执行基于ReAct的混合查询...")
     vector_tool = QueryEngineTool.from_defaults(
         query_engine=vector_query_engine,
         name="vector_search",
@@ -134,7 +151,12 @@ async def hybrid_query_react(
     if not isinstance(result, str):
         logger.warning(f"Agent 返回了非字符串类型, 将其强制转换为字符串: {type(result)}")
         result = str(result)
-    return result
+
+    logger.success(f"基于ReAct的混合查询完成。")
+    return result.strip()
+
+
+###############################################################################
 
 
 if __name__ == '__main__':
@@ -164,18 +186,16 @@ if __name__ == '__main__':
         vector_add(
             vector_store,
             "龙傲天是一位性格孤傲的剑客，他身着白衣，常年游走于江湖，寻找着能与自己匹敌的对手。他的剑法出神入化，被誉为'天下第一剑'。",
-            {"doc_type": "character_profile"},
+            {"type": "character_profile", "source": "test_profile_1"},
             doc_id="char_lat_profile"
         )
         # 知识图谱数据 (偏向事实和关系)
-        kg_extraction_prompt_test = "从文本中提取(主语, 谓语, 宾语)三元组: {text}"
         kg_add(
             kg_store,
             vector_store_for_kg,
             "龙傲天是'青云剑派'的弟子。龙傲天的师父是'风清扬'。龙傲天有一个宿敌叫'叶良辰'。",
-            {"doc_type": "character_relation"},
+            {"type": "character_relation", "source": "test_relation_1"},
             doc_id="char_lat_relation",
-            kg_extraction_prompt=kg_extraction_prompt_test
         )
         logger.info("数据已添加到向量库和知识图谱。")
 
@@ -196,9 +216,19 @@ if __name__ == '__main__':
         result2 = await hybrid_query_react(vector_query_engine, kg_query_engine, question2, "你是一个角色档案分析师。")
         logger.info(f"hybrid_query_react 对 '{question2}' 的回答:\n{result2}")
 
+        # 7. 测试带有自动元数据过滤的混合查询
+        logger.info("--- 测试带有自动元数据过滤的混合查询 ---")
+        # 创建一个启用了 auto_retriever 的向量查询引擎
+        auto_vector_query_engine = get_vector_query_engine(vector_store, use_auto_retriever=True)
+        # 这个问题会触发元数据过滤, 因为它明确要求 "角色简介" (character_profile)
+        question3 = "请根据龙傲天的角色简介，介绍一下他的性格。"
+        # 使用常规的 hybrid_query, 但传入的是启用了自动过滤的引擎
+        result3 = await hybrid_query(auto_vector_query_engine, kg_query_engine, question3)
+        logger.info(f"带有自动元数据过滤的 hybrid_query 对 '{question3}' 的回答:\n{result3}")
+
     try:
         asyncio.run(main())
     finally:
-        # 7. 清理
+        # 8. 清理
         shutil.rmtree(test_dir)
         logger.info(f"测试目录已删除: {test_dir}")

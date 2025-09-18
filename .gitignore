@@ -1,6 +1,7 @@
 .bakup/
 .bug/
 .data/
+.cache/
 .vscode/
 .logs/*
 models/

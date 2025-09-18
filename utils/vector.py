@@ -1,30 +1,32 @@
 import os
 import sys
-import re
+import re  # 确保 re 模块被导入
 import threading
 import asyncio
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
+from pydantic import Field
 import chromadb
 from loguru import logger
 from llama_index.core import Document, SimpleDirectoryReader, VectorStoreIndex
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.indices.prompt_helper import PromptHelper
 from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter, get_leaf_nodes
-from llama_index.core.postprocessor import LLMRerank
+from llama_index.core.node_parser import MarkdownElementNodeParser
+from llama_index.core.postprocessor.types import BaseNodePostprocessor
 from llama_index.core.retrievers import VectorIndexAutoRetriever
 from llama_index.core.tools import QueryEngineTool
 from llama_index.core.response_synthesizers import CompactAndRefine
-from llama_index.core.schema import NodeWithScore
-from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo
+from llama_index.core.schema import NodeWithScore, QueryBundle
+from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo, MetadataInfo
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.embeddings_api.litellm import LiteLLMEmbedding
-from llama_index.llms_api.litellm import LiteLLM
+from litellm import arerank, rerank
+from llama_index.embeddings.litellm import LiteLLMEmbedding
+from llama_index.llms.litellm import LiteLLM
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.llm import call_react_agent, llm_temperatures, get_embedding_params, get_llm_params
+from utils.llm import call_react_agent, llm_temperatures, get_embedding_params, get_llm_params, get_rerank_params
 
 
 _embed_model: Optional[LiteLLMEmbedding] = None
@@ -53,6 +55,9 @@ def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
         _vector_stores[(db_path, collection_name)] = vector_store
         return vector_store
 
+_vector_indices: Dict[int, VectorStoreIndex] = {}
+_vector_index_lock = threading.Lock()
+
 
 def _default_file_metadata(file_path_str: str) -> dict:
     file_path = Path(file_path_str)
@@ -68,24 +73,15 @@ def _default_file_metadata(file_path_str: str) -> dict:
 
 
 def get_nodes_from_document(doc: Document) -> List[Document]:
-    """
-    使用混合策略将文档解析为细粒度节点的辅助函数。
-    - 结构化解析器：优先使用Markdown解析器保持文档结构。
-    - 细粒度解析器：对结构化块进行二次切分，确保能检索到小片段信息。
-    """
-    structural_parser = MarkdownNodeParser(include_metadata=True, include_prev_next_rel=True)
-    fine_grained_parser = SentenceSplitter(
+    summary_llm_params = get_llm_params(llm="fast", temperature=llm_temperatures["summarization"])
+    summary_llm = LiteLLM(**summary_llm_params)
+    parser = MarkdownElementNodeParser(
+        llm=summary_llm,
         chunk_size=256,
-        chunk_overlap=50,
-        include_metadata=True,
-        include_prev_next_rel=True
+        chunk_overlap=50
     )
-    # 步骤 1: 结构化分块
-    structural_nodes = structural_parser.get_nodes_from_documents([doc])
-    # 步骤 2: 对大块进行细粒度切分
-    fine_grained_nodes = fine_grained_parser.get_nodes_from_documents(structural_nodes)
-    # 使用叶子节点进行索引
-    return get_leaf_nodes(fine_grained_nodes)
+    nodes = parser.get_nodes_from_documents([doc])
+    return nodes
 
 
 def vector_add_from_dir(
@@ -93,6 +89,12 @@ def vector_add_from_dir(
     input_dir: str,
     file_metadata_func: Optional[Callable[[str], dict]] = None,
 ) -> bool:
+    with _vector_index_lock:
+        cache_key = id(vector_store)
+        if cache_key in _vector_indices:
+            logger.info(f"向量库内容变更, 使缓存的 VectorStoreIndex 失效 (key: {cache_key})。")
+            del _vector_indices[cache_key]
+
     metadata_func = file_metadata_func or _default_file_metadata
 
     reader = SimpleDirectoryReader(
@@ -148,6 +150,25 @@ def vector_add(
         logger.warning(f"🤷 内容为空或包含错误，跳过存入向量库。元数据: {metadata}")
         return False
     
+    with _vector_index_lock:
+        cache_key = id(vector_store)
+        if cache_key in _vector_indices:
+            logger.info(f"向量库内容变更, 使缓存的 VectorStoreIndex 失效 (key: {cache_key})。")
+            del _vector_indices[cache_key]
+    
+    index = VectorStoreIndex.from_vector_store(
+        vector_store, 
+        embed_model=get_embed_model()
+    )
+
+    if doc_id:
+        try:
+            logger.info(f"正在从向量库中删除 doc_id '{doc_id}' 的旧节点...")
+            index.delete_ref_doc(doc_id, delete_from_docstore=True)
+            logger.info(f"已删除 doc_id '{doc_id}' 的旧节点。")
+        except Exception as e:
+            logger.warning(f"删除 doc_id '{doc_id}' 的旧节点时出错 (可能是首次添加): {e}")
+
     final_metadata = metadata.copy()
     if "date" not in final_metadata:
         final_metadata["date"] = datetime.now().strftime("%Y-%m-%d")
@@ -163,13 +184,121 @@ def vector_add(
         logger.warning(f"内容 (doc_id: {doc_id}) 未解析出任何节点，跳过添加。")
         return False
 
-    index = VectorStoreIndex.from_vector_store(
-        vector_store, 
-        embed_model=get_embed_model()
-    )
     index.insert_nodes(nodes)
     logger.success(f"成功将内容 (doc_id: {doc_id}, {len(nodes)}个节点) 添加到向量库。")
     return True
+
+
+class LiteLLMReranker(BaseNodePostprocessor):
+    top_n: int = 3
+    rerank_params: Dict[str, Any] = Field(default_factory=dict)
+    
+    def _postprocess_nodes(
+        self,
+        nodes: List[NodeWithScore],
+        query_bundle: Optional[QueryBundle] = None,
+    ) -> List[NodeWithScore]:
+        if query_bundle is None:
+            raise ValueError("必须提供查询信息 (QueryBundle) 才能进行重排。")
+        if not nodes:
+            return []
+
+        query_str = query_bundle.query_str
+        documents = [node.get_content() for node in nodes]
+
+        rerank_request_params = self.rerank_params.copy()
+        rerank_request_params.update({
+            "query": query_str,
+            "documents": documents,
+            "top_n": self.top_n,
+        })
+        
+        logger.debug(f"向 LiteLLM Reranker 发送同步请求: model={rerank_request_params.get('model')}, top_n={self.top_n}, num_docs={len(documents)}")
+        
+        response = rerank(**rerank_request_params)
+
+        new_nodes_with_scores = []
+        for result in response.results:
+            original_node = nodes[result.index]
+            original_node.score = result.relevance_score
+            new_nodes_with_scores.append(original_node)
+        
+        logger.debug(f"重排后返回 {len(new_nodes_with_scores)} 个节点。")
+        return new_nodes_with_scores
+
+
+    async def _aprocess_nodes(
+        self,
+        nodes: List[NodeWithScore],
+        query_bundle: Optional[QueryBundle] = None,
+    ) -> List[NodeWithScore]:
+        if query_bundle is None:
+            raise ValueError("必须提供查询信息 (QueryBundle) 才能进行重排。")
+        if not nodes:
+            return []
+
+        query_str = query_bundle.query_str
+        documents = [node.get_content() for node in nodes]
+
+        rerank_request_params = self.rerank_params.copy()
+        rerank_request_params.update({
+            "query": query_str,
+            "documents": documents,
+            "top_n": self.top_n,
+        })
+        
+        logger.debug(f"向 LiteLLM Reranker 发送异步请求: model={rerank_request_params.get('model')}, top_n={self.top_n}, num_docs={len(documents)}")
+        
+        response = await arerank(**rerank_request_params)
+
+        new_nodes_with_scores = []
+        for result in response.results:
+            original_node = nodes[result.index]
+            original_node.score = result.relevance_score
+            new_nodes_with_scores.append(original_node)
+        
+        logger.debug(f"重排后返回 {len(new_nodes_with_scores)} 个节点。")
+        return new_nodes_with_scores
+
+
+def get_default_vector_store_info() -> VectorStoreInfo:
+    """
+    为项目创建一个默认的 VectorStoreInfo, 定义了常见的元数据字段。
+    这使得自动检索器 (AutoRetriever) 能够理解元数据结构并生成过滤查询。
+    """
+    metadata_field_info = [
+
+        MetadataInfo(
+            name="source",
+            type="str",
+            description="文档来源的标识符, 例如 'test_doc_1' 或文件名。",
+        ),
+        MetadataInfo(
+            name="type",
+            type="str",
+            description="文档的类型, 例如 'platform_profile', 'character_relation'。用于区分不同种类的内容。",
+        ),
+        MetadataInfo(
+            name="platform",
+            type="str",
+            description="内容相关的平台名称, 例如 '知乎', 'B站', '起点中文网'。",
+        ),
+        MetadataInfo(
+            name="date",
+            type="str",
+            description="内容的创建或关联日期，格式为 'YYYY-MM-DD'。",
+        ),
+        MetadataInfo(
+            name="word_count",
+            type="int",
+            description="文档的字数统计",
+
+        ),
+    ]
+    return VectorStoreInfo(
+        content_info="关于故事、书籍、报告、市场分析等的文本片段。",
+        metadata_info=metadata_field_info,
+    )
 
 
 def get_vector_query_engine(
@@ -192,13 +321,11 @@ def get_vector_query_engine(
     synthesis_llm_params = get_llm_params(llm="reasoning", temperature=llm_temperatures["synthesis"])
     synthesis_llm = LiteLLM(**synthesis_llm_params)
 
-    rerank_llm_params = get_llm_params(llm="fast", temperature=0.0)
-    rerank_llm = LiteLLM(**rerank_llm_params)
-
     postprocessors = []
     if rerank_top_n and rerank_top_n > 0:
-        logger.info(f"配置 LLMRerank 后处理器, top_n={rerank_top_n}")
-        reranker = LLMRerank(choice_batch_size=5, top_n=rerank_top_n, llm=rerank_llm)
+        logger.info(f"配置 LiteLLM Reranker 后处理器, top_n={rerank_top_n}")
+        rerank_params = get_rerank_params()
+        reranker = LiteLLMReranker(top_n=rerank_top_n, rerank_params=rerank_params)
         postprocessors.append(reranker)
 
     response_synthesizer = CompactAndRefine(
@@ -210,20 +337,30 @@ def get_vector_query_engine(
         )
     )
 
-    index = VectorStoreIndex.from_vector_store(
-        vector_store, 
-        embed_model=get_embed_model()
-    )
+    with _vector_index_lock:
+        cache_key = id(vector_store)
+        if cache_key in _vector_indices:
+            logger.info(f"从缓存中获取 VectorStoreIndex (key: {cache_key})。")
+            index = _vector_indices[cache_key]
+        else:
+            logger.info(f"缓存中未找到 VectorStoreIndex, 正在创建并缓存 (key: {cache_key})。")
+            index = VectorStoreIndex.from_vector_store(
+                vector_store, 
+                embed_model=get_embed_model()
+            )
+            _vector_indices[cache_key] = index
 
     if use_auto_retriever:
         logger.info("使用 VectorIndexAutoRetriever 模式。")
-        if not vector_store_info:
-            raise ValueError("使用自动检索器时, 必须提供 vector_store_info。")
+        # 如果用户没有提供 vector_store_info, 则使用默认的。
+        # 这使得自动元数据过滤功能开箱即用。
+        final_vector_store_info = vector_store_info or get_default_vector_store_info()
         
         retriever = VectorIndexAutoRetriever(
             index,
-            vector_store_info=vector_store_info,
+            vector_store_info=final_vector_store_info,
             similarity_top_k=similarity_top_k,
+            llm=reasoning_llm,
             verbose=True
         )
         
@@ -232,7 +369,6 @@ def get_vector_query_engine(
             retriever=retriever,
             response_synthesizer=response_synthesizer,
             node_postprocessors=postprocessors,
-            use_async=True,
         )
     else:
         logger.info("使用标准 as_query_engine 模式。")
@@ -243,7 +379,6 @@ def get_vector_query_engine(
             filters=filters,
             similarity_top_k=similarity_top_k,
             node_postprocessors=postprocessors,
-            use_async=True,
         )
 
 
@@ -306,6 +441,9 @@ async def index_query_react(
         logger.warning(f"Agent 返回了非字符串类型, 将其强制转换为字符串: {type(result)}")
         result = str(result)
     return result
+
+
+###############################################################################
 
 
 if __name__ == '__main__':

@@ -575,7 +575,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
         logger.info(f"理由: {final_choice_obj.reasoning}")
 
         task_save_vector(
-            content=final_decision_result.model_dump_json(indent=2, ensure_ascii=False),
+            content=json.dumps(final_decision_result.model_dump(), indent=2, ensure_ascii=False),
             doc_type="final_decision_report",
             platform=final_choice_data["platform"],
             genre=final_choice_data["genre"],
@@ -594,7 +594,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
         logger.info(f"理由: {final_choice_obj.reasoning}")
         logger.info(f"完整排名:\n{json.dumps([r.model_dump() for r in final_decision_result.ranking], indent=2, ensure_ascii=False)}")
         task_save_vector(
-            content=final_decision_result.model_dump_json(indent=2, ensure_ascii=False),
+            content=json.dumps(final_decision_result.model_dump(), indent=2, ensure_ascii=False),
             doc_type="final_decision_report",
             platform=final_choice_obj.platform,
             genre=final_choice_obj.genre,

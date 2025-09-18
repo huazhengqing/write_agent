@@ -9,11 +9,14 @@ import sys
 import litellm
 from dotenv import load_dotenv
 from litellm.caching.caching import Cache
+from litellm import RateLimitError, Timeout, APIConnectionError, ServiceUnavailableError
 from loguru import logger
 from typing import List, Dict, Any, Literal, Optional, Type, Callable, Union
 from pydantic import BaseModel, ValidationError
 from llama_index.core.agent.workflow import ReActAgent
-from llama_index.llms_api.litellm import LiteLLM
+from llama_index.llms.litellm import LiteLLM
+from llama_index.core import Settings
+from llama_index.embeddings.litellm import LiteLLMEmbedding
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.file import cache_dir
 from utils.search import web_search_tools
@@ -29,7 +32,6 @@ llm_temperatures = {
     "synthesis": 0.4,
     "classification": 0.0,
 }
-
 
 llms_api = {
     "reasoning": {
@@ -91,70 +93,7 @@ llms_api = {
                 "context_window": 131072,
             }
         ]
-    },
-}
-
-llms_api_2 = {
-    "reasoning": {
-        "model": "openai/deepseek-ai/DeepSeek-R1-0528",
-        "api_base": "https://api-inference.modelscope.cn/v1/",
-        "api_key": os.getenv("modelscope_API_KEY"), 
-        "context_window": 163840,
-        "fallbacks": [
-            {
-                "model": "openrouter/deepseek/deepseek-r1-0528:free",
-                "api_key": os.getenv("OPENROUTER_API_KEY"),
-                "context_window": 163840,
-            }, 
-            {
-                "model": "gemini/gemini-2.5-flash-lite",
-                "api_key": os.getenv("GEMINI_API_KEY"), 
-                "context_window": 1048576,
-            }, 
-            {
-                "model": "groq/llama-3.1-8b-instant",
-                "api_key": os.getenv("GROQ_API_KEY"), 
-                "context_window": 131072,
-            }, 
-            {
-                "model": "groq/qwen/qwen3-32b",
-                "api_key": os.getenv("GROQ_API_KEY"), 
-                "context_window": 131072,
-            }
-            # "openrouter/deepseek/deepseek-r1-0528-qwen3-8b",
-            # "openrouter/qwen/qwen3-32b",
-            # "openrouter/qwen/qwen3-30b-a3b",
-            # "openrouter/deepseek/deepseek-r1-distill-llama-70b",
-        ]
-    },
-    "fast": {
-        "model": "openai/deepseek-ai/DeepSeek-V3",
-        "api_base": "https://api-inference.modelscope.cn/v1/",
-        "api_key": os.getenv("modelscope_API_KEY"), 
-        "context_window": 163840,
-        "fallbacks": [
-            {
-                "model": "openrouter/deepseek/deepseek-chat-v3-0324:free",
-                "api_key": os.getenv("OPENROUTER_API_KEY"),
-                "context_window": 163840,
-            }, 
-            {
-                "model": "gemini/gemini-2.5-flash-lite",
-                "api_key": os.getenv("GEMINI_API_KEY"), 
-                "context_window": 1048576,
-            }, 
-            {
-                "model": "groq/llama-3.1-8b-instant",
-                "api_key": os.getenv("GROQ_API_KEY"), 
-                "context_window": 131072,
-            }, 
-            {
-                "model": "groq/qwen/qwen3-32b",
-                "api_key": os.getenv("GROQ_API_KEY"), 
-                "context_window": 131072,
-            }
-        ]
-    },
+    }
 }
 
 
@@ -170,62 +109,19 @@ llm_params_general = {
     "disable_safety_check": True,
     "safe_mode": False,
     "safe_prompt": False,
+    "exceptions_to_fallback_on": [
+        RateLimitError,
+        Timeout,
+        APIConnectionError,
+        ServiceUnavailableError,
+    ]
+    # "context_window_fallback_dict": {
+    #     "openai/deepseek-ai/DeepSeek-R1-0528": "openrouter/deepseek/deepseek-r1-0528:free", 
+    #     "openrouter/deepseek/deepseek-r1-0528:free": "openai/deepseek-ai/DeepSeek-R1-0528", 
+    #     "openai/deepseek-ai/DeepSeek-V3": "openrouter/deepseek/deepseek-chat-v3-0324:free", 
+    #     "openrouter/deepseek/deepseek-chat-v3-0324:free": "openai/deepseek-ai/DeepSeek-V3", 
+    # }
 }
-
-
-embeddings_api = {
-    "bge-m3": {
-        "model": "openai/BAAI/bge-m3",
-        "api_base": "https://api.siliconflow.cn/v1/",
-        "api_key": os.getenv("siliconflow_API_KEY"),
-        # "dims": 1024,
-    },
-    "gemini": {
-        "model": "gemini/gemini-embedding-001",
-        "api_key": os.getenv("GEMINI_API_KEY"),
-        # "dims": 3072,
-    }
-}
-
-embedding_params_general = {
-    "caching": True,
-    "timeout": 300,
-    "num_retries": 3,
-    "respect_retry_after": True
-}
-
-
-def get_embedding_params(
-        embedding: Literal['bge-m3', 'gemini'] = 'bge-m3',
-        **kwargs: Any
-    ) -> Dict[str, Any]:
-    embedding_params = embeddings_api[embedding].copy()
-    embedding_params.update(**embedding_params_general)
-    embedding_params.update(kwargs)
-    return embedding_params
-
-
-def custom_get_cache_key(**kwargs):
-    """
-    仅根据 "messages" 和 "temperature" 生成缓存键。
-    """
-    messages = kwargs.get("messages", [])
-    temperature = kwargs.get("temperature", llm_temperatures["reasoning"])
-    messages_str = json.dumps(messages, sort_keys=True)
-    key_data = {
-        "messages": messages_str,
-        "temperature": temperature
-    }
-    key_string = json.dumps(key_data, sort_keys=True)
-    return hashlib.sha256(key_string.encode("utf-8")).hexdigest()
-
-
-cache = Cache(type="disk", disk_cache_dir=cache_dir)
-cache.get_cache_key = custom_get_cache_key
-litellm.cache = cache
-litellm.enable_json_schema_validation=True
-litellm.drop_params = True
-litellm.telemetry = False
 
 
 def get_llm_messages(
@@ -266,7 +162,6 @@ def get_llm_params(
     **kwargs: Any
 ) -> Dict[str, Any]:
     llm_params = llms_api[llm].copy()
-    # llm_params = llms_api_2[llm].copy()
     llm_params.update(**llm_params_general)
     llm_params.update(kwargs)
     llm_params["temperature"] = temperature
@@ -275,6 +170,113 @@ def get_llm_params(
     if messages is not None:
         llm_params["messages"] = copy.deepcopy(messages)
     return llm_params
+
+
+###############################################################################
+
+
+embeddings_api = {
+    "bge-m3": {
+        "model": "openai/BAAI/bge-m3",
+        "api_base": "https://api.siliconflow.cn/v1/",
+        "api_key": os.getenv("siliconflow_API_KEY"),
+        # "dims": 1024,
+    },
+    "gemini": {
+        "model": "gemini/gemini-embedding-001",
+        "api_key": os.getenv("GEMINI_API_KEY"),
+        # "dims": 3072,
+    }
+}
+
+embedding_params_general = {
+    "caching": True,
+    "timeout": 300,
+    "num_retries": 3,
+    "respect_retry_after": True
+}
+
+
+def get_embedding_params(
+        embedding: Literal['bge-m3', 'gemini'] = 'bge-m3',
+        **kwargs: Any
+    ) -> Dict[str, Any]:
+    embedding_params = embeddings_api[embedding].copy()
+    embedding_params.update(**embedding_params_general)
+    embedding_params.update(kwargs)
+    return embedding_params
+
+
+###############################################################################
+
+
+rerank_api = {
+    "bge": {
+        "model": "openai/BAAI/bge-reranker-v2-m3",
+        "api_base": "https://api.siliconflow.cn/v1/",
+        "api_key": os.getenv("siliconflow_API_KEY"),
+        "context_window": 8000,
+    }
+}
+
+
+def get_rerank_params(
+        rerank: Literal['bge'] = 'bge',
+        **kwargs: Any
+    ) -> Dict[str, Any]:
+    rerank_params = rerank_api[rerank].copy()
+    rerank_params.update(**embedding_params_general)
+    rerank_params.update(kwargs)
+    return rerank_params
+
+
+###############################################################################
+
+
+def custom_get_cache_key(**kwargs):
+    """
+    仅根据 "messages" 和 "temperature" 生成缓存键。
+    """
+    messages = kwargs.get("messages", [])
+    temperature = kwargs.get("temperature", llm_temperatures["reasoning"])
+    messages_str = json.dumps(messages, sort_keys=True)
+    key_data = {
+        "messages": messages_str,
+        "temperature": temperature
+    }
+    key_string = json.dumps(key_data, sort_keys=True)
+    return hashlib.sha256(key_string.encode("utf-8")).hexdigest()
+
+
+cache = Cache(type="disk", disk_cache_dir=cache_dir)
+cache.get_cache_key = custom_get_cache_key
+litellm.cache = cache
+litellm.enable_cache()
+litellm.enable_json_schema_validation=True
+litellm.drop_params = True
+litellm.telemetry = False
+litellm.REPEATED_STREAMING_CHUNK_LIMIT = 20
+# litellm._turn_on_debug()
+
+
+###############################################################################
+
+
+def setup_global_settings():
+    if getattr(Settings, '_llm', None) is None:
+        default_llm_params = get_llm_params(llm="fast", temperature=llm_temperatures["summarization"])
+        Settings.llm = LiteLLM(**default_llm_params)
+
+    if getattr(Settings, '_embed_model', None) is None:
+        embedding_params = get_embedding_params()
+        embed_model_name = embedding_params.pop('model')
+        Settings.embed_model = LiteLLMEmbedding(model_name=embed_model_name, **embedding_params)
+
+
+setup_global_settings()
+
+
+###############################################################################
 
 
 def _format_json_content(content: str) -> str:
@@ -346,6 +348,7 @@ async def llm_completion(
             "type": "json_object",
             "schema": response_model.model_json_schema()
         }
+
     max_retries = 6
     for attempt in range(max_retries):
         system_prompt = ""
@@ -426,6 +429,9 @@ async def llm_completion(
     raise RuntimeError("llm_completion 在所有重试后失败, 这是一个不应出现的情况。")
 
 
+###############################################################################
+
+
 extraction_system_prompt = """
 你是一个数据提取专家。你的任务是根据用户提供的文本，严格按照给定的 Pydantic JSON Schema 提取信息并生成一个 JSON 对象。
 你的输出必须是、且只能是一个完整的、有效的 JSON 对象。
@@ -451,6 +457,9 @@ async def txt_to_json(cleaned_output: str, response_model: Optional[Type[BaseMod
     extraction_response = await llm_completion(llm_params=extraction_llm_params, response_model=response_model)
     validated_data = extraction_response.validated_data
     return validated_data
+
+
+###############################################################################
 
 
 async def call_react_agent(
@@ -503,6 +512,9 @@ async def call_react_agent(
         return cleaned_output
 
 
+###############################################################################
+
+
 if __name__ == '__main__':
     from pydantic import BaseModel, Field
     from typing import List
@@ -545,7 +557,7 @@ if __name__ == '__main__':
             temperature=0.1
         )
         json_response = await llm_completion(json_params, response_model=CharacterInfo)
-        logger.info(f"llm_completion (JSON) 验证后的Pydantic对象:\n{json_response.validated_data.model_dump_json(indent=2, ensure_ascii=False)}")
+        logger.info(f"llm_completion (JSON) 验证后的Pydantic对象:\n{json.dumps(json_response.validated_data.model_dump(), indent=2, ensure_ascii=False)}")
 
         # 4. 测试 call_react_agent
         logger.info("--- 测试 call_react_agent ---")
@@ -560,3 +572,4 @@ if __name__ == '__main__':
         logger.info(f"call_react_agent 结果:\n{agent_response}")
 
     asyncio.run(main())
+

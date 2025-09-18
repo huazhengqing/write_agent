@@ -537,8 +537,8 @@ class StoryRAG:
         kg_query_engine = get_kg_query_engine(
             kg_store=kg_store,
             kg_vector_store=kg_vector_store,
-            kg_similarity_top_k=300,
-            kg_rerank_top_n=50,
+            kg_similarity_top_k=600,
+            kg_rerank_top_n=100,
         )
 
         results = await hybrid_query_batch(

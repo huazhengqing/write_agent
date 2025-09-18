@@ -93,6 +93,7 @@ async def web_search(query: str, max_results: int = 10) -> str:
     last_exception = None
     for name, strategy_func in search_strategies:
         try:
+            logger.info(f"开始使用 {name} 搜索")
             logger.info(f"搜索策略: 正在尝试使用 {name} 执行搜索: '{query}'")
             if asyncio.iscoroutinefunction(strategy_func):
                 search_results = await strategy_func(query, max_results)
@@ -100,10 +101,12 @@ async def web_search(query: str, max_results: int = 10) -> str:
                 search_results = strategy_func(query, max_results)
             if search_results:
                 cache_searh.set(cache_key, search_results)
+                logger.info(f"使用 {name} 搜索成功")
                 return search_results
         except Exception as e:
             last_exception = e
             logger.warning(f"使用 {name} 搜索失败: {e}")
+            logger.warning(f"{name} 搜索失败的错误信息: {last_exception}")
             continue
         
     error_msg = f"所有搜索策略均失败。查询: '{query}'。最后错误: {last_exception}"
@@ -152,6 +155,61 @@ platform_categories = {
     "资讯": ["今日头条", "36氪", "虎嗅", "品玩", "少数派"],
     "社区与评论": ["龙空", "橙瓜", "优书网", "什么值得买", "酷安", "Product Hunt", "Trustpilot", "G2"],
     "作家社区": ["龙空", "橙瓜", "优书网"],
+}
+
+# 平台别名映射，用于将用户的模糊输入（如拼音、英文、简称）标准化为规范名称
+# 格式: "别名": "规范名" (规范名应存在于 platform_site_map 或 platform_categories 中)
+platform_aliases = {
+    # 别名: 规范名
+    # 社交
+    "bilibili": "B站",
+    "b站": "B站",
+    "weibo": "微博",
+    "douyin": "抖音",
+    "tiktok": "抖音", # 国内版
+    "zhihu": "知乎",
+    "xiaohongshu": "小红书",
+    "red": "小红书",
+    "douban": "豆瓣",
+    "tieba": "贴吧",
+    "reddit": "Reddit",
+    "twitter": "Twitter",
+    "x": "X",
+    "quora": "Quora",
+    "facebook": "Facebook",
+    "youtube": "YouTube",
+    "yt": "YouTube",
+    "discord": "Discord",
+    "patreon": "Patreon",
+    
+    # 小说
+    "qidian": "起点中文网",
+    "jjwxc": "晋江文学城",
+    "fanqie": "番茄小说",
+    "faloo": "飞卢小说网",
+    "qimao": "七猫免费小说",
+    "zongheng": "纵横中文网",
+    "17k": "17K小说网",
+    "ciweimao": "刺猬猫",
+    "hbooker": "刺猬猫",
+    "sfacg": "SF轻小说",
+    "ireader": "掌阅",
+    "shuqi": "书旗小说",
+    "cmread": "咪咕阅读",
+    "popo": "POPO原創",
+    "royalroad": "RoyalRoad",
+    "rr": "RoyalRoad",
+    "ao3": "AO3",
+    "archiveofourown": "AO3",
+    "webnovel": "Webnovel",
+    "scribblehub": "Scribble Hub",
+    "tapas": "Tapas",
+
+    # 其他
+    "github": "GitHub",
+    "lk": "龙空",
+    "longkong": "龙空",
+    "google scholar": "谷歌学术",
 }
 
 platform_site_map = {
@@ -293,19 +351,33 @@ async def targeted_search(query: str, platforms: Optional[List[str]] = None, sit
     all_sites = set(sites or [])
     if platforms:
         for p_user in platforms:
+            # 1. 标准化用户输入：转小写并通过别名映射
+            normalized_p = platform_aliases.get(p_user.lower(), p_user)
+            
             matched_sites_for_p = set()
-            if p_user in platform_categories:
-                for platform_name in platform_categories[p_user]:
+
+            # 2. 优先进行精确匹配
+            # 2.1. 匹配分类
+            if normalized_p in platform_categories:
+                for platform_name in platform_categories[normalized_p]:
                     site = platform_site_map.get(platform_name)
                     if site:
                         matched_sites_for_p.add(site)
-            for p_key, site in platform_site_map.items():
-                if p_user in p_key:
-                    matched_sites_for_p.add(site)
+            
+            # 2.2. 匹配平台规范名
+            if normalized_p in platform_site_map:
+                matched_sites_for_p.add(platform_site_map[normalized_p])
+
+            # 3. 如果没有精确匹配结果，则尝试模糊匹配（子字符串）
+            if not matched_sites_for_p:
+                for p_key, site in platform_site_map.items():
+                    if normalized_p in p_key:
+                        matched_sites_for_p.add(site)
+
             if matched_sites_for_p:
                 all_sites.update(matched_sites_for_p)
             else:
-                logger.warning(f"未找到与 '{p_user}' 匹配的平台或分类，将被忽略。")
+                logger.warning(f"未找到与 '{p_user}' (normalized to '{normalized_p}') 匹配的平台或分类，将被忽略。")
 
     if not all_sites:
         search_query = query
@@ -399,8 +471,10 @@ async def _scrape_dynamic(url: str) -> Optional[str]:
 
 
 async def scrape_and_extract(url: str) -> str:
+    logger.info(f"开始抓取 URL: {url}")
     cached_content = cache_searh.get(url)
     if cached_content:
+        logger.info(f"从缓存中获取 URL 内容: {url}")
         return cached_content
     
     scrape_strategies: List[Tuple[str, Callable[[str], Any]]] = [
@@ -414,22 +488,27 @@ async def scrape_and_extract(url: str) -> str:
             logger.info(f"抓取策略: 正在尝试 {name}: {url}")
             scraped_text = await strategy_func(url)
             if scraped_text:
+                logger.success(f"使用 '{name}' 成功抓取 URL: {url}")
                 break
         except Exception as e:
             last_exception = e
-            logger.warning(f"策略 '{name}' 失败: {e}")
+            logger.warning(f"抓取策略 '{name}' 失败: {e}")
             continue
 
     if scraped_text:
         max_length = 16000
-        if len(scraped_text) > max_length:
+        original_length = len(scraped_text)
+        if original_length > max_length:
+            logger.info(f"抓取内容长度为 {original_length}, 超过最大长度 {max_length}, 将进行截断。")
             end_pos = scraped_text.rfind('。', 0, max_length)
             if end_pos == -1:
                 end_pos = scraped_text.rfind('.', 0, max_length)
             final_text = scraped_text[:end_pos + 1] if end_pos != -1 else scraped_text[:max_length]
+            logger.info(f"内容已截断至 {len(final_text)} 字符。")
         else:
             final_text = scraped_text
             
+        logger.info(f"正在缓存 URL 内容: {url}")
         cache_searh.set(url, final_text)
         return final_text
     
