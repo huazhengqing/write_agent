@@ -2,6 +2,7 @@ import sqlite3
 import json
 import collections
 import threading
+from loguru import logger
 from typing import List, Optional, Dict
 from utils.models import Task, natural_sort_key
 from utils.file import data_dir
@@ -55,6 +56,7 @@ class TaskDB:
     def __init__(self, db_path: str):
         self.db_path = db_path
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        logger.info(f"SQLite TaskDB 连接已建立: {self.db_path}")
         self.cursor = self.conn.cursor()
         self._lock = threading.Lock()
         self._create_table()
@@ -62,6 +64,7 @@ class TaskDB:
 
     def _create_table(self):
         with self._lock:
+            logger.debug("正在检查并创建 t_tasks 表...")
             self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS t_tasks (
                 id TEXT PRIMARY KEY,
@@ -119,6 +122,7 @@ class TaskDB:
                 UPDATE t_tasks SET updated_at = CURRENT_TIMESTAMP WHERE id = OLD.id;
             END;
             """)
+            logger.debug("t_tasks 表及相关索引、触发器已准备就绪。")
             self.conn.commit()
 
 
@@ -142,6 +146,7 @@ class TaskDB:
         update_clause = ", ".join([f"{key} = excluded.{key}" for key in task_data if key != 'id'])
 
         with self._lock:
+            logger.debug(f"正在添加或更新任务: id='{task.id}'")
             # 使用 ON CONFLICT...DO UPDATE 语句实现原子性的插入或更新
             self.cursor.execute(
                 f"""
@@ -153,6 +158,7 @@ class TaskDB:
                 tuple(task_data.values())
             )
             self.conn.commit()
+            logger.info(f"任务添加/更新成功: id='{task.id}'")
 
 
     def add_sub_tasks(self, task: Task):
@@ -199,6 +205,7 @@ class TaskDB:
         # 过滤掉None值和空字符串
         fields_to_update = {k: v for k, v in update_fields.items() if v}
         if not fields_to_update:
+            logger.debug(f"任务 {task.id} 没有需要更新的结果。")
             return
 
         set_clause = ", ".join([f"{key} = ?" for key in fields_to_update.keys()])
@@ -214,6 +221,7 @@ class TaskDB:
                 tuple(values)
             )
             self.conn.commit()
+            logger.info(f"任务 {task.id} 的结果已成功更新。更新字段: {list(fields_to_update.keys())}")
 
 
     def get_task_list(self, task: Task) -> str:
@@ -221,6 +229,7 @@ class TaskDB:
         高效获取任务上下文列表 (父任务链 + 兄弟任务), 仅查询必要的字段。
         """
         all_task_data = {}
+        logger.debug(f"正在为任务 {task.id} 获取上下文任务列表...")
         with self._lock:
             id_parts = task.id.split('.')
             parent_chain_ids = []
@@ -247,6 +256,7 @@ class TaskDB:
         for task_id in sorted_ids:
             hierarchical_position, task_type, goal, length = all_task_data[task_id]
             line_parts = [task_id, hierarchical_position, task_type, goal, length]
+            logger.trace(f"  - 任务上下文: {' '.join(filter(None, map(str, line_parts)))}")
             output_lines.append(" ".join(filter(None, map(str, line_parts))))
         return "\n".join(output_lines)
 
@@ -268,6 +278,7 @@ class TaskDB:
         if not dependent_ids:
             return ""
 
+        logger.debug(f"正在为任务 {task.id} 获取依赖的设计内容...")
         with self._lock:
             placeholders = ','.join(['?'] * len(dependent_ids))
             self.cursor.execute(
@@ -276,6 +287,7 @@ class TaskDB:
             )
             rows = self.cursor.fetchall()
         if not rows:
+            logger.debug("未找到依赖的设计内容。")
             return ""
         # 按 task id 进行自然排序 (例如, '1.10' 会在 '1.2' 之后)
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
@@ -296,6 +308,7 @@ class TaskDB:
             content = "\n\n".join(parts)
             if content:
                 content_list.append(content)
+        logger.info(f"为任务 {task.id} 找到 {len(content_list)} 条依赖的设计内容。")
         return "\n\n".join(content_list)
 
 
@@ -312,6 +325,7 @@ class TaskDB:
         dependent_ids = [f"{task.parent_id}.{i}" for i in range(1, current_seq)]
         if not dependent_ids:
             return ""
+        logger.debug(f"正在为任务 {task.id} 获取依赖的搜索结果...")
         with self._lock:
             placeholders = ','.join(['?'] * len(dependent_ids))
             self.cursor.execute(
@@ -320,13 +334,16 @@ class TaskDB:
             )
             rows = self.cursor.fetchall()
         if not rows:
+            logger.debug("未找到依赖的搜索结果。")
             return ""
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
+        logger.info(f"为任务 {task.id} 找到 {len(content_list)} 条依赖的搜索结果。")
         return "\n\n".join(content_list)
 
 
     def get_subtask_design(self, parent_id: str) -> str:
+        logger.debug(f"正在获取父任务 {parent_id} 的所有设计类子任务内容...")
         with self._lock:
             self.cursor.execute(
                 "SELECT id, design, design_reflection, review_design, review_write FROM t_tasks WHERE parent_id = ? AND task_type = 'design'",
@@ -335,6 +352,7 @@ class TaskDB:
             rows = self.cursor.fetchall()
 
         if not rows:
+            logger.debug(f"父任务 {parent_id} 没有设计类子任务。")
             return ""
 
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
@@ -355,10 +373,12 @@ class TaskDB:
             content = "\n\n".join(parts)
             if content:
                 content_list.append(content)
+        logger.info(f"为父任务 {parent_id} 找到 {len(content_list)} 条设计类子任务内容。")
         return "\n\n".join(content_list)
 
 
     def get_subtask_search(self, parent_id: str) -> str:
+        logger.debug(f"正在获取父任务 {parent_id} 的所有搜索类子任务结果...")
         with self._lock:
             self.cursor.execute(
                 "SELECT id, search FROM t_tasks WHERE parent_id = ? AND task_type = 'search'",
@@ -367,14 +387,17 @@ class TaskDB:
             rows = self.cursor.fetchall()
 
         if not rows:
+            logger.debug(f"父任务 {parent_id} 没有搜索类子任务。")
             return ""
 
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
+        logger.info(f"为父任务 {parent_id} 找到 {len(content_list)} 条搜索类子任务结果。")
         return "\n\n".join(content_list)
 
 
     def get_subtask_summary(self, parent_id: str) -> str:
+        logger.debug(f"正在获取父任务 {parent_id} 的所有写作类子任务摘要...")
         with self._lock:
             self.cursor.execute(
                 "SELECT id, summary FROM t_tasks WHERE parent_id = ? AND task_type = 'write'",
@@ -383,11 +406,13 @@ class TaskDB:
             rows = self.cursor.fetchall()
 
         if not rows:
+            logger.debug(f"父任务 {parent_id} 没有写作类子任务。")
             return ""
 
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
         
+        logger.info(f"为父任务 {parent_id} 找到 {len(content_list)} 条写作类子任务摘要。")
         return "\n\n".join(content_list)
 
 
@@ -396,6 +421,7 @@ class TaskDB:
         # 此查询利用新创建的 idx_updated_at 索引, 避免了全表扫描, 显著提升性能。
         # 原有实现是基于任务ID进行自然排序, 必须加载所有数据到内存, 性能较差。
         # 此处将“最新”的定义从“任务ID最大”调整为“时间上最近更新”, 更符合直觉且高效。
+        logger.debug(f"正在获取最近的写作反思内容，目标长度: {length}...")
         with self._lock:
             self.cursor.execute(
                 """
@@ -408,6 +434,7 @@ class TaskDB:
             rows = self.cursor.fetchall()
 
         if not rows:
+            logger.debug("未找到任何写作反思内容。")
             return ""
 
         # 累积内容直到达到指定长度
@@ -421,6 +448,7 @@ class TaskDB:
                 if total_length >= length:
                     break
         
+        logger.info(f"获取了 {len(content_parts)} 条最近的写作反思，总长度: {total_length}。")
         # 因为我们是按时间倒序获取的(最新在前), 所以需要反转列表以恢复正确的时序
         return "\n\n".join(reversed(content_parts))
 
@@ -429,6 +457,7 @@ class TaskDB:
         """
         获取最近24小时内 'write_reflection' 字段的总字数。
         """
+        logger.debug("正在统计最近24小时的写作字数...")
         with self._lock:
             self.cursor.execute(
                 """
@@ -440,11 +469,15 @@ class TaskDB:
             )
             rows = self.cursor.fetchall()
             if not rows:
+                logger.info("最近24小时内没有写作记录。")
                 return 0
-            return sum(len(row[0]) for row in rows)
+            total_words = sum(len(row[0]) for row in rows)
+            logger.info(f"最近24小时总计写作字数: {total_words}")
+            return total_words
 
 
     def get_write_text(self, task: Task) -> str:
+        logger.debug(f"正在获取任务 {task.id} 及其所有子任务的正文内容...")
         with self._lock:
             self.cursor.execute(
                 """
@@ -457,15 +490,18 @@ class TaskDB:
             )
             rows = self.cursor.fetchall()
         if not rows:
+            logger.debug(f"任务 {task.id} 及其子任务没有正文内容。")
             return ""
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
+        logger.info(f"为任务 {task.id} 聚合了 {len(content_list)} 个正文片段。")
         return "\n\n".join(content_list)
 
 
     def close(self):
         with self._lock:
             if self.conn:
+                logger.info(f"正在关闭 SQLite TaskDB 连接: {self.db_path}")
                 self.conn.close()
 
 
@@ -478,8 +514,66 @@ def get_task_db(run_id: str) -> TaskDB:
     with _lock:
         if run_id in _stores:
             return _stores[run_id]
+        logger.info(f"为 run_id '{run_id}' 创建新的 TaskDB 实例。")
         db_path = data_dir / run_id / "task.db"
         db_path.parent.mkdir(parents=True, exist_ok=True)
         store = TaskDB(db_path=str(db_path))
         _stores[run_id] = store
         return store
+
+
+###############################################################################
+
+
+if __name__ == '__main__':
+    import tempfile
+    import shutil
+    import os
+    from utils.log import init_logger
+
+    init_logger("sqlite_task_test")
+
+    test_dir = tempfile.mkdtemp()
+    db_path = os.path.join(test_dir, "test_task.db")
+    
+    # 模拟一个 Task 对象
+    root_task = Task(id="1", parent_id="0", task_type="design", goal="Root Task", category="story", language="cn", root_name="Test", run_id="test_run")
+    sub_task_1 = Task(id="1.1", parent_id="1", task_type="design", goal="Sub Task 1.1", category="story", language="cn", root_name="Test", run_id="test_run")
+    sub_task_2 = Task(id="1.2", parent_id="1", task_type="write", goal="Sub Task 1.2", category="story", language="cn", root_name="Test", run_id="test_run")
+    
+    try:
+        logger.info("--- 开始 SQLite TaskDB 测试 ---")
+        db = TaskDB(db_path)
+
+        logger.info("--- 测试: 添加任务 ---")
+        db.add_task(root_task)
+        db.add_task(sub_task_1)
+        db.add_task(sub_task_2)
+        
+        logger.info("--- 测试: 添加结果 ---")
+        sub_task_1.results = {"design": "Design for 1.1"}
+        sub_task_2.results = {"write": "Write content for 1.2", "summary": "Summary for 1.2"}
+        db.add_result(sub_task_1)
+        db.add_result(sub_task_2)
+
+        logger.info("--- 测试: 获取子任务摘要 ---")
+        summary = db.get_subtask_summary("1")
+        logger.info(f"获取到摘要: {summary}")
+        assert summary == "Summary for 1.2"
+
+        logger.info("--- 测试: 获取依赖的设计 ---")
+        dependent_design = db.get_dependent_design(sub_task_2)
+        logger.info(f"获取到依赖设计: {dependent_design}")
+        assert dependent_design == "Design for 1.1"
+
+        logger.info("--- 测试: 获取任务列表 ---")
+        task_list = db.get_task_list(sub_task_2)
+        logger.info(f"获取到任务列表:\n{task_list}")
+        assert "1 Root Task" in task_list and "1.1 Sub Task 1.1" in task_list
+
+        db.close()
+        logger.success("--- SQLite TaskDB 测试通过 ---")
+
+    finally:
+        shutil.rmtree(test_dir)
+        logger.info(f"测试目录已删除: {test_dir}")

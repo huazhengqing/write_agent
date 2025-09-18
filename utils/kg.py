@@ -8,7 +8,6 @@ from llama_index.core import Document, KnowledgeGraphIndex, StorageContext, Vect
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.indices.prompt_helper import PromptHelper
 from llama_index.core.prompts import PromptTemplate
-from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.response_synthesizers import CompactAndRefine
 from llama_index.core.tools import QueryEngineTool
 from llama_index.core.vector_stores.types import VectorStore
@@ -254,31 +253,30 @@ def get_kg_query_engine(
     kg_rerank_top_n: int = 100,
     kg_nl2graphquery_prompt: Optional[str] = kg_gen_cypher_prompt,
 ) -> BaseQueryEngine:
-    
+    logger.debug(f"参数: kg_similarity_top_k={kg_similarity_top_k}, kg_rerank_top_n={kg_rerank_top_n}")
+
+    # 步骤 1: 初始化 LLM
+    # reasoning_llm 用于查询解析和Cypher生成, synthesis_llm 用于最终答案的合成。
     reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
     reasoning_llm = LiteLLM(**reasoning_llm_params)
 
     synthesis_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["synthesis"])
     synthesis_llm = LiteLLM(**synthesis_llm_params)
 
-    response_synthesizer = CompactAndRefine(
-        llm=synthesis_llm,
-        prompt_helper=PromptHelper(
-            context_window=synthesis_llm_params.get('context_window', 4096),
-            num_output=synthesis_llm_params.get('max_tokens', 512),
-            chunk_overlap_ratio=0.2
-        )
-    )
-
-    cache_key = (id(kg_store), id(kg_vector_store))
+    # 步骤 2: 获取或创建 KnowledgeGraphIndex
+    # 这是查询引擎的基础, 包含了图谱和向量存储的上下文。
     with _kg_index_lock:
+        cache_key = (id(kg_store), id(kg_vector_store))
         if cache_key in _kg_indices:
+            logger.info(f"从缓存中获取 KnowledgeGraphIndex (key: {cache_key})。")
             kg_index = _kg_indices[cache_key]
         else:
+            logger.info(f"缓存中未找到 KnowledgeGraphIndex, 正在创建并缓存 (key: {cache_key})。")
             kg_storage_context = StorageContext.from_defaults(
                 graph_store=kg_store, 
                 vector_store=kg_vector_store
             )
+            # 从空的 documents 列表创建索引, 因为数据已经存在于存储中
             kg_index = KnowledgeGraphIndex.from_documents(
                 [], 
                 storage_context=kg_storage_context, 
@@ -288,45 +286,40 @@ def get_kg_query_engine(
             )
             _kg_indices[cache_key] = kg_index
 
+    # 步骤 3: 配置后处理器 (Reranker)
+    # 用于对检索到的文本节点进行重排, 提高相关性。
     logger.info(f"配置 LiteLLM Reranker 后处理器, top_n={kg_rerank_top_n}")
     rerank_params = get_rerank_params()
     reranker = LiteLLMReranker(top_n=kg_rerank_top_n, rerank_params=rerank_params)
     postprocessors = [reranker]
 
-    return kg_index.as_query_engine(
+    # 步骤 4: 配置响应合成器
+    # 负责将从图谱和向量库中检索到的信息整合成流畅的答案。
+    response_synthesizer = CompactAndRefine(
+        llm=synthesis_llm,
+        prompt_helper=PromptHelper(
+            context_window=synthesis_llm_params.get('context_window', 4096),
+            num_output=synthesis_llm_params.get('max_tokens', 512),
+            chunk_overlap_ratio=0.2
+        )
+    )
+
+    # 步骤 5: 创建并返回混合查询引擎
+    # 组装所有组件, 创建一个能够进行混合检索 (关键词+向量+图谱) 的查询引擎。
+    logger.info("正在创建知识图谱混合查询引擎...")
+    query_engine = kg_index.as_query_engine(
         llm=reasoning_llm,
         retriever_mode="hybrid", 
         similarity_top_k=kg_similarity_top_k,
         with_nl2graphquery=True, 
         graph_traversal_depth=2,
-        nl2graphquery_prompt=PromptTemplate(kg_nl2graphquery_prompt) if kg_nl2graphquery_prompt else None,
+        nl2graphquery_prompt=PromptTemplate(kg_nl2graphquery_prompt),
         response_synthesizer=response_synthesizer,
         node_postprocessors=postprocessors,
         synonym_degree=2,
     )
-
-
-async def kg_query_react(
-    kg_query_engine: BaseQueryEngine,
-    query_str: str,
-    agent_system_prompt: Optional[str] = None,
-) -> str:
-    kg_tool = QueryEngineTool.from_defaults(
-        query_engine=kg_query_engine,
-        name="knowledge_graph_search",
-        description="用于探索实体及其关系 (例如: 角色A和角色B是什么关系? 事件C导致了什么后果?)。当问题比较复杂时, 你可以多次调用此工具来回答问题的不同部分, 然后综合答案。"
-    )
-    result = await call_react_agent(
-        system_prompt=agent_system_prompt,
-        user_prompt=query_str,
-        tools=[kg_tool],
-        llm_group="reasoning",
-        temperature=llm_temperatures["reasoning"]
-    )
-    if not isinstance(result, str):
-        logger.warning(f"Agent 返回了非字符串类型, 将其强制转换为字符串: {type(result)}")
-        result = str(result)
-    return result
+    logger.success("知识图谱混合查询引擎创建成功。")
+    return query_engine
 
 
 ###############################################################################
@@ -334,12 +327,13 @@ async def kg_query_react(
 
 if __name__ == '__main__':
     import asyncio
+    import json
     import tempfile
     import shutil
     from pathlib import Path
     from utils.log import init_logger
     from utils.vector import get_vector_store
-
+ 
     init_logger("kg_test")
 
     # 1. 初始化临时目录
@@ -348,44 +342,145 @@ if __name__ == '__main__':
     vector_db_path = os.path.join(test_dir, "chroma_for_kg")
     logger.info(f"测试目录已创建: {test_dir}")
 
-    content_to_add = """
-    龙傲天是青云宗的首席大弟子。青云宗位于东海之滨的苍梧山。
-    龙傲天有一个宿敌，名叫叶良辰。叶良辰来自北冥魔殿。
-    龙傲天使用的武器是'赤霄剑'。
-    """
-    metadata = {"source": "test_doc_1"}
-    doc_id = "test_doc_1"
-
     async def main():
-        # 3. 测试 get_kg_store 和 get_vector_store
-        logger.info("--- 测试 get_kg_store 和 get_vector_store ---")
+        # 2. 初始化 Store
+        logger.info("--- 2. 初始化 Store ---")
         kg_store = get_kg_store(db_path=kg_db_path)
         vector_store = get_vector_store(db_path=vector_db_path, collection_name="kg_hybrid")
         logger.info(f"成功获取 KuzuGraphStore: {kg_store}")
         logger.info(f"成功获取 ChromaVectorStore for KG: {vector_store}")
 
-        # 4. 测试 kg_add
-        logger.info("--- 测试 kg_add ---")
+        # 3. 测试 kg_add (首次添加)
+        logger.info("--- 3. 测试 kg_add (首次添加) ---")
+        content_v1 = """
+        龙傲天是青云宗的首席大弟子。青云宗位于东海之滨的苍梧山。
+        龙傲天有一个宿敌，名叫叶良辰。叶良辰来自北冥魔殿。
+        龙傲天使用的武器是'赤霄剑'。
+        """
         kg_add(
             kg_store=kg_store,
             vector_store=vector_store,
-            content=content_to_add,
-            metadata=metadata,
-            doc_id=doc_id,
+            content=content_v1,
+            metadata={"source": "test_doc_1", "version": 1},
+            doc_id="test_doc_1",
             max_triplets_per_chunk=10
         )
-        logger.info("kg_add 调用完成")
+        # 验证: 查询一个节点
+        res_v1 = kg_store.query("MATCH (n:__Entity__ {name: '龙傲天'}) RETURN n.status, n.doc_id")
+        assert res_v1[0] == ['active', 'test_doc_1']
+        logger.info("首次添加验证成功。")
 
-        # 5. 测试 get_kg_query_engine 和 kg_query_react
-        logger.info("--- 测试 get_kg_query_engine 和 kg_query_react ---")
+        # 4. 测试 kg_add (更新文档)
+        logger.info("--- 4. 测试 kg_add (更新文档) ---")
+        content_v2 = """
+        龙傲天叛逃了青云宗，加入了合欢派。他的新武器是'玄阴十二剑'。
+        """
+        kg_add(
+            kg_store=kg_store,
+            vector_store=vector_store,
+            content=content_v2,
+            metadata={"source": "test_doc_1", "version": 2},
+            doc_id="test_doc_1",
+            max_triplets_per_chunk=10
+        )
+        # 验证: 旧关系中的实体 '青云宗' 应该被标记为 inactive
+        res_v2_old = kg_store.query("MATCH (n:__Entity__ {name: '青云宗'}) RETURN n.status")
+        assert res_v2_old[0] == ['inactive']
+        # 验证: 新关系中的实体 '合欢派' 应该是 active
+        res_v2_new = kg_store.query("MATCH (n:__Entity__ {name: '合欢派'}) RETURN n.status")
+        assert res_v2_new[0] == ['active']
+        logger.info("更新文档验证成功，旧节点已标记为 inactive。")
+
+        # 5. 测试 kg_add (复杂 Markdown 内容)
+        logger.info("--- 5. 测试 kg_add (复杂 Markdown 内容) ---")
+        content_v3 = """
+        # 势力成员表
+
+        | 姓名 | 门派 | 职位 |
+        |---|---|---|
+        | 赵日天 | 天机阁 | 阁主 |
+        | 龙傲天 | 合欢派 | 荣誉长老 |
+
+        ## 物品清单
+        - '天机算盘' (法宝): 赵日天的标志性法宝。
+
+        赵日天与龙傲天在苍梧山之巅有过一次对决。
+        """
+        kg_add(
+            kg_store=kg_store,
+            vector_store=vector_store,
+            content=content_v3,
+            metadata={"source": "test_doc_3"},
+            doc_id="test_doc_3"
+        )
+        res_v3 = kg_store.query("MATCH (n:__Entity__ {name: '赵日天'})-[r:属于]->(m:__Entity__ {name: '天机阁'}) RETURN count(r)")
+        assert res_v3[0][0] > 0
+        logger.info("复杂 Markdown 内容添加测试成功。")
+
+        # 6. 测试 kg_add (JSON 内容)
+        logger.info("--- 6. 测试 kg_add (JSON 内容) ---")
+        content_v4_json = json.dumps({
+            "event": "苍梧山之巅对决",
+            "participants": [
+                {"name": "龙傲天", "role": "挑战者"},
+                {"name": "赵日天", "role": "应战者"}
+            ],
+            "location": "苍梧山之巅",
+            "outcome": "龙傲天胜"
+        }, ensure_ascii=False)
+        kg_add(
+            kg_store=kg_store,
+            vector_store=vector_store,
+            content=content_v4_json,
+            metadata={"source": "test_doc_4"},
+            doc_id="test_doc_4",
+            content_format="json"
+        )
+        res_v4 = kg_store.query("MATCH (n:__Entity__ {name: '苍梧山之巅对决'}) RETURN n.status")
+        assert res_v4[0] == ['active']
+        logger.info("JSON 内容添加测试成功。")
+
+        # 7. 测试 kg_add (无三元组内容)
+        logger.info("--- 7. 测试 kg_add (无三元组内容) ---")
+        content_no_triplets = "这是一段没有实体关系的普通描述性文字。"
+        kg_add(
+            kg_store=kg_store,
+            vector_store=vector_store,
+            content=content_no_triplets,
+            metadata={"source": "test_doc_2"},
+            doc_id="test_doc_2"
+        )
+        res_no_triplets = kg_store.query("MATCH (n) WHERE n.doc_id = 'test_doc_2' RETURN count(n)")
+        assert res_no_triplets[0] == [0]
+        logger.info("无三元组内容添加测试成功。")
+
+        # 8. 测试 get_kg_query_engine 和查询
+        logger.info("--- 8. 测试 get_kg_query_engine 和查询 ---")
         kg_query_engine = get_kg_query_engine(kg_store=kg_store, kg_vector_store=vector_store)
-        question = "龙傲天的宿敌是谁？他来自哪里？"
-        answer = await kg_query_react(kg_query_engine=kg_query_engine, query_str=question)
-        logger.info(f"对于问题 '{question}', kg_query_react 的回答是:\n{answer}")
+        
+        logger.info("--- 8.1. 查询更新后的数据 ---")
+        question1 = "龙傲天现在属于哪个门派？"
+        response1 = await kg_query_engine.aquery(question1)
+        logger.info(f"Q: {question1}\nA: {response1}")
+        assert "合欢派" in str(response1)
+        assert "青云宗" not in str(response1)
+
+        logger.info("--- 8.2. 查询复杂 Markdown 数据 ---")
+        question2 = "赵日天和龙傲天在哪里对决过？"
+        response2 = await kg_query_engine.aquery(question2)
+        logger.info(f"Q: {question2}\nA: {response2}")
+        assert "苍梧山" in str(response2)
+
+        logger.info("--- 8.3. 查询 JSON 数据 ---")
+        question3 = "苍梧山之巅对决的结果是什么？"
+        response3 = await kg_query_engine.aquery(question3)
+        logger.info(f"Q: {question3}\nA: {response3}")
+        assert "龙傲天胜" in str(response3)
 
     try:
         asyncio.run(main())
+        logger.success("所有 kg.py 测试用例通过！")
     finally:
-        # 6. 清理
+        # 清理
         shutil.rmtree(test_dir)
         logger.info(f"测试目录已删除: {test_dir}")

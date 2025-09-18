@@ -5,6 +5,7 @@ import threading
 import asyncio
 from datetime import datetime
 from pathlib import Path
+import json
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 from pydantic import Field
 import chromadb
@@ -46,11 +47,13 @@ def get_embed_model() -> LiteLLMEmbedding:
     if _embed_model is None:
         with _embed_model_lock:
             if _embed_model is None:
+                logger.info("正在创建并缓存 LiteLLMEmbedding 模型...")
                 embedding_params = get_embedding_params()
                 embed_model_name = embedding_params.pop('model')
                 _embed_model = LiteLLMEmbedding(model_name=embed_model_name, **embedding_params)
                 if getattr(Settings, '_embed_model', None) is None:
                     Settings.embed_model = _embed_model
+                logger.success("LiteLLMEmbedding 模型创建成功。")
     return _embed_model
 
 
@@ -58,13 +61,16 @@ _vector_stores: Dict[Tuple[str, str], ChromaVectorStore] = {}
 _vector_store_lock = threading.Lock()
 def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
     with _vector_store_lock:
-        if (db_path, collection_name) in _vector_stores:
-            return _vector_stores[(db_path, collection_name)]
+        cache_key = (db_path, collection_name)
+        if cache_key in _vector_stores:
+            return _vector_stores[cache_key]
+        logger.info(f"创建并缓存 ChromaDB 向量库: path='{db_path}', collection='{collection_name}'")
         os.makedirs(db_path, exist_ok=True)
         db = chromadb.PersistentClient(path=db_path)
         chroma_collection = db.get_or_create_collection(collection_name)
         vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-        _vector_stores[(db_path, collection_name)] = vector_store
+        _vector_stores[cache_key] = vector_store
+        logger.success("ChromaDB 向量库创建成功。")
         return vector_store
 
 
@@ -322,18 +328,28 @@ def get_vector_query_engine(
     use_auto_retriever: bool = False,
     vector_store_info: Optional[VectorStoreInfo] = None,
 ) -> BaseQueryEngine:
-    logger.info("正在创建向量查询引擎...")
     logger.debug(
         f"参数: similarity_top_k={similarity_top_k}, rerank_top_n={rerank_top_n}, "
         f"use_auto_retriever={use_auto_retriever}, filters={filters}"
     )
-    
-    reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
-    reasoning_llm = LiteLLM(**reasoning_llm_params)
 
-    synthesis_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["synthesis"])
-    synthesis_llm = LiteLLM(**synthesis_llm_params)
+    # 步骤 1: 获取或创建 VectorStoreIndex
+    # 这是所有查询模式共享的基础。
+    with _vector_index_lock:
+        cache_key = id(vector_store)
+        if cache_key in _vector_indices:
+            logger.info(f"从缓存中获取 VectorStoreIndex (key: {cache_key})。")
+            index = _vector_indices[cache_key]
+        else:
+            logger.info(f"缓存中未找到 VectorStoreIndex, 正在创建并缓存 (key: {cache_key})。")
+            index = VectorStoreIndex.from_vector_store(
+                vector_store,
+                embed_model=get_embed_model()
+            )
+            _vector_indices[cache_key] = index
 
+    # 步骤 2: 配置后处理器 (Reranker)
+    # Reranker 对两种查询模式都适用。
     postprocessors = []
     if rerank_top_n and rerank_top_n > 0:
         logger.info(f"配置 LiteLLM Reranker 后处理器, top_n={rerank_top_n}")
@@ -341,6 +357,10 @@ def get_vector_query_engine(
         reranker = LiteLLMReranker(top_n=rerank_top_n, rerank_params=rerank_params)
         postprocessors.append(reranker)
 
+    # 步骤 3: 配置响应合成器
+    # 响应合成器也对两种模式都适用，它负责将检索到的节点整合成最终答案。
+    synthesis_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["synthesis"])
+    synthesis_llm = LiteLLM(**synthesis_llm_params)
     response_synthesizer = CompactAndRefine(
         llm=synthesis_llm,
         prompt_helper=PromptHelper(
@@ -350,23 +370,15 @@ def get_vector_query_engine(
         )
     )
 
-    with _vector_index_lock:
-        cache_key = id(vector_store)
-        if cache_key in _vector_indices:
-            logger.info(f"从缓存中获取 VectorStoreIndex (key: {cache_key})。")
-            index = _vector_indices[cache_key]
-        else:
-            logger.info(f"缓存中未找到 VectorStoreIndex, 正在创建并缓存 (key: {cache_key})。")
-            index = VectorStoreIndex.from_vector_store(
-                vector_store, 
-                embed_model=get_embed_model()
-            )
-            _vector_indices[cache_key] = index
-
+    # 步骤 4: 根据模式创建并返回具体的查询引擎
     if use_auto_retriever:
-        logger.info("使用 VectorIndexAutoRetriever 模式。")
-        # 如果用户没有提供 vector_store_info, 则使用默认的。
-        # 这使得自动元数据过滤功能开箱即用。
+        # 自动检索模式: 使用 LLM 动态生成元数据过滤器。
+        logger.info("使用 VectorIndexAutoRetriever 模式创建查询引擎。")
+        
+        # 此模式需要一个 "reasoning" LLM 来解析自然语言并生成过滤器。
+        reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
+        reasoning_llm = LiteLLM(**reasoning_llm_params)
+        
         final_vector_store_info = vector_store_info or get_default_vector_store_info()
         
         retriever = VectorIndexAutoRetriever(
@@ -376,23 +388,27 @@ def get_vector_query_engine(
             llm=reasoning_llm,
             verbose=True
         )
-        
-        logger.success("自动检索查询引擎创建成功。")
-        return RetrieverQueryEngine(
+        query_engine = RetrieverQueryEngine(
             retriever=retriever,
             response_synthesizer=response_synthesizer,
             node_postprocessors=postprocessors,
         )
+        logger.success("自动检索查询引擎创建成功。")
+        return query_engine
     else:
-        logger.info("使用标准 as_query_engine 模式。")
-        logger.success("标准查询引擎创建成功。")
-        return index.as_query_engine(
-            llm=reasoning_llm,
+        # 标准模式: 使用固定的过滤器进行检索。
+        logger.info("使用标准 as_query_engine 模式创建查询引擎。")
+        query_engine = index.as_query_engine(
+            # 在标准模式下, as_query_engine 内部创建的 RetrieverQueryEngine
+            # 会使用此 LLM 进行响应合成。我们传入专用的 synthesis_llm。
+            llm=synthesis_llm,
             response_synthesizer=response_synthesizer,
             filters=filters,
             similarity_top_k=similarity_top_k,
             node_postprocessors=postprocessors,
         )
+        logger.success("标准查询引擎创建成功。")
+        return query_engine
 
 
 async def index_query(
@@ -433,29 +449,6 @@ async def index_query(
     return final_content
 
 
-async def index_query_react(
-    query_engine: BaseQueryEngine,
-    query_str: str,
-    agent_system_prompt: Optional[str] = None,
-) -> str:
-    vector_tool = QueryEngineTool.from_defaults(
-        query_engine=query_engine,
-        name="vector_search",
-        description="用于查找设定、摘要等语义相似的内容 (例如: 角色背景, 世界观设定, 物品描述)。当问题比较复杂时, 你可以多次调用此工具来回答问题的不同部分, 然后综合答案。"
-    )
-    result = await call_react_agent(
-        system_prompt=agent_system_prompt,
-        user_prompt=query_str,
-        tools=[vector_tool],
-        llm_group="reasoning",
-        temperature=llm_temperatures["reasoning"]
-    )
-    if not isinstance(result, str):
-        logger.warning(f"Agent 返回了非字符串类型, 将其强制转换为字符串: {type(result)}")
-        result = str(result)
-    return result
-
-
 ###############################################################################
 
 
@@ -464,55 +457,138 @@ if __name__ == '__main__':
     import tempfile
     import shutil
     from pathlib import Path
+    import json
     from utils.log import init_logger
+    from llama_index.core.vector_stores import MetadataFilters
 
-    # 1. 初始化日志和临时目录
     init_logger("vector_test")
+
+    # 1. 初始化临时目录
     test_dir = tempfile.mkdtemp()
     db_path = os.path.join(test_dir, "chroma_db")
     input_dir = os.path.join(test_dir, "input_data")
     os.makedirs(input_dir, exist_ok=True)
     logger.info(f"测试目录已创建: {test_dir}")
 
-    # 2. 准备测试数据
-    (Path(input_dir) / "doc1.md").write_text("# 角色：龙傲天\n龙傲天是一名来自异世界的穿越者。", encoding='utf-8')
-    (Path(input_dir) / "doc2.txt").write_text("世界树是宇宙的中心，连接着九大王国。", encoding='utf-8')
-    logger.info(f"测试文件已写入: {input_dir}")
+    async def main():
+        # 2. 准备测试数据
+        (Path(input_dir) / "doc1.md").write_text("# 角色：龙傲天\n龙傲天是一名来自异世界的穿越者。", encoding='utf-8')
+        (Path(input_dir) / "doc2.txt").write_text("世界树是宇宙的中心，连接着九大王国。", encoding='utf-8')
+        (Path(input_dir) / "doc3.md").write_text(
+            "# 势力成员表\n\n| 姓名 | 门派 | 职位 |\n|---|---|---|\n| 萧炎 | 炎盟 | 盟主 |\n| 林动 | 武境 | 武祖 |\n\n## 功法清单\n- 焚决\n- 大荒芜经",
+            encoding='utf-8'
+        )
+        (Path(input_dir) / "doc4.json").write_text(
+            json.dumps({"character": "药尘", "alias": "药老", "occupation": "炼药师", "specialty": "异火"}, ensure_ascii=False),
+            encoding='utf-8'
+        )
+        (Path(input_dir) / "empty.txt").write_text("", encoding='utf-8')
+        logger.info(f"测试文件已写入: {input_dir}")
 
-    # 3. 测试 get_vector_store
-    logger.info("--- 测试 get_vector_store ---")
-    vector_store = get_vector_store(db_path=db_path, collection_name="test_collection")
-    logger.info(f"成功获取 VectorStore: {vector_store}")
+        # 3. 测试 get_vector_store
+        logger.info("--- 3. 测试 get_vector_store ---")
+        vector_store = get_vector_store(db_path=db_path, collection_name="test_collection")
+        logger.info(f"成功获取 VectorStore: {vector_store}")
 
-    # 4. 测试 vector_add_from_dir
-    logger.info("--- 测试 vector_add_from_dir ---")
-    vector_add_from_dir(vector_store, input_dir)
+        # 4. 测试 vector_add_from_dir
+        logger.info("--- 4. 测试 vector_add_from_dir ---")
+        vector_add_from_dir(vector_store, input_dir, _default_file_metadata)
 
-    # 5. 测试 vector_add
-    logger.info("--- 测试 vector_add ---")
-    vector_add(vector_store, "虚空之石是一个神秘物品。", {"category": "item"}, doc_id="item_void_stone")
+        # 5. 测试 vector_add (首次添加)
+        logger.info("--- 5. 测试 vector_add (各种场景) ---")
+        logger.info("--- 5.1. 首次添加 ---")
+        vector_add(
+            vector_store, 
+            "虚空之石是一个神秘物品。", 
+            {"type": "item", "source": "manual_add_1"}, 
+            doc_id="item_void_stone"
+        )
 
-    # 6. 测试 get_vector_query_engine
-    logger.info("--- 测试 get_vector_query_engine ---")
-    query_engine = get_vector_query_engine(vector_store, similarity_top_k=5, rerank_top_n=2)
-    logger.info(f"成功创建查询引擎: {type(query_engine)}")
+        logger.info("--- 5.2. 更新文档 ---")
+        vector_add(
+            vector_store, 
+            "虚空之石是一个极其稀有的神秘物品，据说蕴含着宇宙初开的力量。", 
+            {"type": "item", "source": "manual_add_2"}, 
+            doc_id="item_void_stone"
+        )
 
-    async def run_queries():
-        # 7. 测试 index_query
-        logger.info("--- 测试 index_query ---")
-        questions = ["龙傲天是谁？", "世界树有什么用？"]
-        results = await index_query(query_engine, questions)
-        logger.info(f"index_query 查询结果:\n{results}")
+        logger.info("--- 5.3. 添加 JSON 内容 ---")
+        json_content = json.dumps({"event": "双帝之战", "protagonist": ["萧炎", "魂天帝"]}, ensure_ascii=False)
+        vector_add(
+            vector_store,
+            content=json_content,
+            metadata={"type": "event", "source": "manual_json"},
+            content_format="json",
+            doc_id="event_doudi"
+        )
 
-        # 8. 测试 index_query_react
-        logger.info("--- 测试 index_query_react ---")
-        react_question = "请详细介绍一下龙傲天。"
-        react_result = await index_query_react(query_engine, react_question, "你是一个小说设定助手。")
-        logger.info(f"index_query_react 查询结果:\n{react_result}")
+        logger.info("--- 5.4. 添加空内容 (应跳过) ---")
+        added = vector_add(
+            vector_store,
+            content="  ",
+            metadata={"type": "empty"},
+            doc_id="empty_content"
+        )
+        assert not added
+
+        # 6. 测试 get_vector_query_engine (标准模式)
+        logger.info("--- 6. 测试 get_vector_query_engine (标准模式) ---")
+        query_engine = get_vector_query_engine(vector_store, similarity_top_k=5, rerank_top_n=2)
+        logger.info(f"成功创建标准查询引擎: {type(query_engine)}")
+        
+        questions1 = ["龙傲天是谁？", "虚空之石有什么用？", "萧炎是什么门派的？", "药老是谁？", "双帝之战的主角是谁？"]
+        results1 = await index_query(query_engine, questions1)
+        logger.info(f"标准查询结果:\n{results1}")
+        assert any("龙傲天" in r for r in results1)
+        assert any("虚空之石" in r for r in results1)
+        assert any("萧炎" in r and "炎盟" in r for r in results1)
+        assert any("药尘" in r for r in results1)
+        assert any("萧炎" in r and "魂天帝" in r for r in results1)
+
+        # 7. 测试 get_vector_query_engine (带固定过滤器)
+        logger.info("--- 7. 测试 get_vector_query_engine (带固定过滤器) ---")
+        filters = MetadataFilters(filters=[MetadataFilters.ExactMatch(key="type", value="item")])
+        query_engine_filtered = get_vector_query_engine(vector_store, filters=filters)
+        questions2 = ["介绍一下那个石头。"]
+        results2 = await index_query(query_engine_filtered, questions2)
+        logger.info(f"带过滤器的查询结果:\n{results2}")
+        assert len(results2) > 0 and "虚空之石" in results2[0]
+        
+        questions3 = ["龙傲天是谁？"]  # 这个查询应该被过滤器挡住
+        results3 = await index_query(query_engine_filtered, questions3)
+        logger.info(f"被过滤器阻挡的查询结果:\n{results3}")
+        assert len(results3) == 0
+
+        # 8. 测试无重排器和同步查询
+        logger.info("--- 8. 测试无重排器和同步查询 ---")
+        query_engine_no_rerank = get_vector_query_engine(vector_store, similarity_top_k=5, rerank_top_n=0)
+        sync_question = "林动的功法是什么？"
+        # 使用 .query() 来测试同步路径
+        sync_response = query_engine_no_rerank.query(sync_question)
+        logger.info(f"同步查询 (无重排器) 结果:\n{sync_response}")
+        assert "大荒芜经" in str(sync_response)
+
+        # 9. 测试 get_vector_query_engine (自动检索模式)
+        logger.info("--- 9. 测试 get_vector_query_engine (自动检索模式) ---")
+        query_engine_auto = get_vector_query_engine(vector_store, use_auto_retriever=True, similarity_top_k=5, rerank_top_n=2)
+        logger.info(f"成功创建自动检索查询引擎: {type(query_engine_auto)}")
+        
+        # 这个查询应该能被 AutoRetriever 解析为针对 metadata 'type'='item' 的过滤
+        auto_question = "请根据类型为 'item' 的文档，介绍一下那个物品。"
+        auto_results = await index_query(query_engine_auto, [auto_question])
+        logger.info(f"自动检索查询结果:\n{auto_results}")
+        assert len(auto_results) > 0 and "虚空之石" in auto_results[0]
+
+        # 10. 测试空查询
+        logger.info("--- 10. 测试空查询 ---")
+        empty_results = await index_query(query_engine, ["一个不存在的概念xyz"])
+        logger.info(f"空查询结果: {empty_results}")
+        assert len(empty_results) == 0
 
     try:
-        asyncio.run(run_queries())
+        asyncio.run(main())
+        logger.success("所有 vector.py 测试用例通过！")
     finally:
-        # 9. 清理
+        # 清理
         shutil.rmtree(test_dir)
         logger.info(f"测试目录已删除: {test_dir}")

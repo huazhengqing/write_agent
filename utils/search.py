@@ -80,7 +80,8 @@ def _search_with_ddg(query: str, max_results: int) -> str:
 
 
 async def web_search(query: str, max_results: int = 10) -> str:
-    cache_key = f"web_search:{query}:{max_results}"
+    normalized_query = query.lower().strip()
+    cache_key = f"web_search:{normalized_query}:{max_results}"
     cached_result = cache_searh.get(cache_key)
     if cached_result:
         return cached_result
@@ -343,7 +344,12 @@ platform_site_map = {
 
 
 async def targeted_search(query: str, platforms: Optional[List[str]] = None, sites: Optional[List[str]] = None) -> str:
-    cache_key = f"targeted_search:{query}:{platforms}:{sites}"
+    # 归一化输入以提高缓存命中率
+    normalized_query = query.lower().strip()
+    sorted_platforms = sorted(platforms) if platforms else None
+    sorted_sites = sorted(sites) if sites else None
+
+    cache_key = f"targeted_search:{normalized_query}:{sorted_platforms}:{sorted_sites}"
     cached_result = cache_searh.get(cache_key)
     if cached_result:
         return cached_result
@@ -534,6 +540,9 @@ web_search_tools = [
     get_targeted_search_tool(),
     get_web_scraper_tool(),
 ]
+
+
+###############################################################################
 
 
 if __name__ == '__main__':

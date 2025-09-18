@@ -34,6 +34,7 @@ _vector_store: Optional[ChromaVectorStore] = None
 def get_market_vector_store() -> ChromaVectorStore:
     global _vector_store
     if _vector_store is None:
+        logger.info("正在初始化故事市场分析的向量库...")
         _vector_store = get_vector_store(
             db_path=str(data_market_dir / "story"),
             collection_name="story_market"

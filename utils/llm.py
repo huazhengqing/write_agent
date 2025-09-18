@@ -318,11 +318,16 @@ async def llm_completion(
     response_model: Optional[Type[BaseModel]] = None, 
     validator: Optional[Callable[[Any], None]] = None
 ) -> Dict[str, Any]:
+    logger.info("开始执行 llm_completion...")
+
     params_to_log = llm_params.copy()
     params_to_log.pop("messages", None)
     logger.info(f"LLM 参数:\n{json.dumps(params_to_log, indent=2, ensure_ascii=False, default=str)}")
+
     llm_params_for_api = llm_params.copy()
+
     if response_model:
+        logger.info(f"启用 JSON 模式, 目标模型: {response_model.__name__}")
         llm_params_for_api["response_format"] = {
             "type": "json_object",
             "schema": response_model.model_json_schema()
@@ -330,6 +335,7 @@ async def llm_completion(
 
     max_retries = 6
     for attempt in range(max_retries):
+
         system_prompt = ""
         user_prompt = ""
         messages = llm_params_for_api.get("messages", [])
@@ -338,30 +344,41 @@ async def llm_completion(
                 system_prompt = message.get("content", "")
             elif message.get("role") == "user":
                 user_prompt = message.get("content", "")
+        
         if system_prompt:
             logger.info(f"系统提示词:\n{system_prompt}")
         if user_prompt:
             logger.info(f"用户提示词:\n{user_prompt}")
+        
+        logger.info(f"开始 LLM 调用 (尝试 {attempt + 1}/{max_retries})...")
+
         raw_output_for_correction = None
         try:
             response = await litellm.acompletion(**llm_params_for_api)
+            logger.debug(f"LLM 原始响应: {response}")
+
             if not response.choices or not response.choices[0].message:
                 raise ValueError("LLM响应中缺少 choices 或 message。")
+            
             message = response.choices[0].message
+
             if response_model:
                 validated_data = None
-                # 优先从 tool_calls 解析
                 if message.tool_calls:
                     tool_call = message.tool_calls[0]
-                    raw_output_for_correction = clean_markdown_fences(tool_call.function.arguments)
+                    raw_output_for_correction = tool_call.function.arguments
+                    logger.debug(f"从 tool_calls 中提取的原始参数: {raw_output_for_correction}")
+                    cleaned_args = clean_markdown_fences(raw_output_for_correction)
                     if hasattr(tool_call.function, "parsed_arguments") and tool_call.function.parsed_arguments:
                         parsed_args = tool_call.function.parsed_arguments
                     else:
-                        parsed_args = json.loads(raw_output_for_correction)
+                        parsed_args = json.loads(cleaned_args)
                     validated_data = response_model(**parsed_args)
                 elif message.content:
+                    logger.debug(f"从 message.content 中提取的原始内容: {message.content}")
                     raw_output_for_correction = clean_markdown_fences(message.content)
                     validated_data = response_model.model_validate_json(raw_output_for_correction)
+
                 if validated_data:
                     message.validated_data = validated_data
                 else:
@@ -370,19 +387,27 @@ async def llm_completion(
                 message.content = clean_markdown_fences(message.content)
                 active_validator = validator or text_validator_default
                 active_validator(message.content)
+            
+            logger.success("LLM 响应成功通过验证。")
+
             reasoning = message.get("reasoning_content") or message.get("reasoning", "")
             if reasoning:
                 logger.info(f"推理过程:\n{reasoning}")
-            logger.info(f"返回内容 (尝试 {attempt + 1}):\n{format_message_content(message.content)}")
+
+            final_content_to_log = message.validated_data if response_model else message.content
+            logger.info(f"LLM 成功返回内容 (尝试 {attempt + 1}):\n{final_content_to_log}")
+
             return message
         except Exception as e:
             logger.warning(f"LLM调用或验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+
             if attempt < max_retries - 1:
                 try:
                     cache_key = litellm.cache.get_cache_key(**llm_params_for_api)
                     litellm.cache.cache.delete_cache(cache_key)
                 except Exception as cache_e:
                     logger.error(f"删除缓存条目失败: {cache_e}")
+
                 # 针对JSON解析/验证错误的自我修正逻辑
                 if response_model and isinstance(e, (ValidationError, json.JSONDecodeError)) and raw_output_for_correction:
                     logger.info("检测到JSON错误, 下次尝试将进行自我修正...")
@@ -401,10 +426,12 @@ async def llm_completion(
                     llm_params_for_api["messages"] = system_message + [{"role": "user", "content": correction_prompt}]
                 else:
                     llm_params_for_api["messages"] = llm_params["messages"]
+
                 logger.info("正在准备重试...")
             else:
                 logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
                 raise
+
     raise RuntimeError("llm_completion 在所有重试后失败, 这是一个不应出现的情况。")
 
 
@@ -424,6 +451,9 @@ extraction_user_prompt = """
 
 
 async def txt_to_json(cleaned_output: str, response_model: Optional[Type[BaseModel]]):
+    logger.info(f"开始将文本转换为 JSON, 目标模型: {response_model.__name__}")
+    logger.debug(f"待转换的输入文本:\n{cleaned_output}")
+
     extraction_messages = get_llm_messages(
         system_prompt=extraction_system_prompt,
         user_prompt=extraction_user_prompt.format(cleaned_output=cleaned_output)
@@ -435,9 +465,71 @@ async def txt_to_json(cleaned_output: str, response_model: Optional[Type[BaseMod
     )
     extraction_response = await llm_completion(llm_params=extraction_llm_params, response_model=response_model)
     validated_data = extraction_response.validated_data
+
+    logger.success("文本成功转换为 JSON 对象。")
+    logger.debug(f"转换后的 JSON 对象: {validated_data}")
     return validated_data
 
 
 ###############################################################################
 
 
+if __name__ == '__main__':
+    import asyncio
+    from pydantic import Field
+    from utils.log import init_logger
+
+    init_logger("llm_test")
+
+    class UserInfo(BaseModel):
+        name: str = Field(..., description="用户姓名")
+        age: int = Field(..., description="用户年龄")
+        is_student: bool = Field(..., description="是否是学生")
+
+    async def main():
+        # --- Test 1: Simple text completion ---
+        logger.info("--- 测试 llm_completion (返回字符串) ---")
+        try:
+            messages1 = get_llm_messages(
+                system_prompt="你是一个乐于助人的助手。",
+                user_prompt="你好！请介绍一下你自己。"
+            )
+            params1 = get_llm_params(messages=messages1, temperature=0.1)
+            result1 = await llm_completion(params1)
+            logger.success(f"文本返回成功:\n{result1.content}")
+        except Exception as e:
+            logger.error(f"测试1失败: {e}", exc_info=True)
+
+        # --- Test 2: JSON completion with response_model ---
+        logger.info("\n--- 测试 llm_completion (返回 Pydantic 模型) ---")
+        try:
+            messages2 = get_llm_messages(
+                system_prompt="请根据用户信息生成JSON。",
+                user_prompt="用户信息：姓名张三，年龄25岁，是一名学生。"
+            )
+            params2 = get_llm_params(messages=messages2, temperature=0.1)
+            result2 = await llm_completion(params2, response_model=UserInfo)
+            validated_data2 = result2.validated_data
+            logger.success(f"Pydantic 模型返回成功: {validated_data2}")
+            if isinstance(validated_data2, UserInfo):
+                logger.info(f"成功解析为 UserInfo 对象: name={validated_data2.name}, age={validated_data2.age}")
+            else:
+                logger.error("返回结果不是 UserInfo 对象！")
+        except Exception as e:
+            logger.error(f"测试2失败: {e}", exc_info=True)
+
+        # --- Test 3: txt_to_json function ---
+        logger.info("\n--- 测试 txt_to_json ---")
+        try:
+            text_input = '这里是一些无关的文字, 然后是JSON: {"name": "李四", "age": 40, "is_student": false}'
+            cleaned_text = clean_markdown_fences(text_input) # 模拟清理
+            result3 = await txt_to_json(cleaned_text, UserInfo)
+            logger.success(f"txt_to_json 转换成功: {result3}")
+            if isinstance(result3, UserInfo):
+                logger.info(f"成功解析为 UserInfo 对象: name={result3.name}, age={result3.age}")
+            else:
+                logger.error("返回结果不是 UserInfo 对象！")
+        except Exception as e:
+            logger.error(f"测试3失败: {e}", exc_info=True)
+
+    asyncio.run(main())
