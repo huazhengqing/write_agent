@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 import threading
 import kuzu
 from loguru import logger
-from llama_index.core import Document, KnowledgeGraphIndex, StorageContext, VectorStoreIndex
+from llama_index.core import Document, KnowledgeGraphIndex, Settings, StorageContext, VectorStoreIndex
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.indices.prompt_helper import PromptHelper
 from llama_index.core.prompts import PromptTemplate
@@ -14,11 +14,15 @@ from llama_index.core.vector_stores.types import VectorStore
 from llama_index.core.graph_stores import SimpleGraphStore
 from llama_index.graph_stores.kuzu import KuzuGraphStore
 from llama_index.llms.litellm import LiteLLM
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.llm import llm_temperatures, get_llm_params, get_rerank_params
 from utils.agent import call_react_agent
-from utils.vector import LiteLLMReranker, get_nodes_from_document
+from utils.vector import LiteLLMReranker, default_response_synthesizer, get_node_parser
 from utils.log import init_logger
+
+
+###############################################################################
 
 
 kg_extraction_prompt_default = """
@@ -119,13 +123,16 @@ kg_gen_cypher_prompt = """
 """
 
 
+###############################################################################
+
+
 _kg_stores: Dict[str, KuzuGraphStore] = {}
 _kg_store_lock = threading.Lock()
+
 def get_kg_store(db_path: str) -> KuzuGraphStore:
     with _kg_store_lock:
         if db_path in _kg_stores:
             return _kg_stores[db_path]
-        logger.info(f"创建并缓存 KuzuGraphStore: path='{db_path}'")
         parent_dir = os.path.dirname(db_path)
         if parent_dir:
             os.makedirs(parent_dir, exist_ok=True)
@@ -137,6 +144,9 @@ def get_kg_store(db_path: str) -> KuzuGraphStore:
 
 _kg_indices: Dict[Tuple[int, int], KnowledgeGraphIndex] = {}
 _kg_index_lock = threading.Lock()
+
+
+###############################################################################
 
 
 def kg_add(
@@ -158,11 +168,12 @@ def kg_add(
             del _kg_indices[cache_key]
 
     doc = Document(id_=doc_id, text=content, metadata=metadata)
-    nodes = []
     if content_format == "json":
+        # 对于知识图谱提取，将整个JSON作为一个节点，以便LLM理解其内部结构
         nodes = [doc]
     else:
-        nodes = get_nodes_from_document(doc)
+        node_parser = get_node_parser(content_format)
+        nodes = node_parser.get_nodes_from_documents([doc])
     if not nodes:
         logger.warning(f"内容 (doc_id: {doc_id}) 未解析出任何节点，跳过添加。")
         return
@@ -171,18 +182,20 @@ def kg_add(
 
     vector_index = VectorStoreIndex.from_vector_store(vector_store)
 
-    try:
-        logger.info(f"正在从知识图谱的向量库中删除 doc_id '{doc_id}' 的旧节点...")
-        vector_index.delete_ref_doc(doc_id, delete_from_docstore=True)
-        logger.info(f"已删除 doc_id '{doc_id}' 的旧节点。")
-    except Exception as e:
-        logger.warning(f"从知识图谱的向量库中删除 doc_id '{doc_id}' 的旧节点时出错 (可能是首次添加): {e}")
+    logger.info(f"正在从知识图谱的向量库中删除 doc_id '{doc_id}' 的旧节点...")
+    vector_index.delete_ref_doc(doc_id, delete_from_docstore=True)
+    logger.info(f"已删除 doc_id '{doc_id}' 的旧节点。")
+    
+    import time
+    time.sleep(0.5)
 
     vector_index.insert_nodes(nodes)
     logger.info(f"已将 {len(nodes)} 个文本节点存入向量库。")
 
     logger.info("正在提取知识三元组...")
+
     temp_storage_context = StorageContext.from_defaults(graph_store=SimpleGraphStore())
+
     llm_extract_params = get_llm_params(llm_group="fast", temperature=llm_temperatures["summarization"])
     llm = LiteLLM(**llm_extract_params)
 
@@ -225,7 +238,6 @@ def kg_add(
         logger.success(f"成功将内容 (doc_id: {doc_id}) 添加到向量库，旧图谱数据已清理。")
         return
 
-    # 优化：使用 UNWIND 进行批量插入，显著减少数据库交互次数
     from collections import defaultdict
     logger.info(f"提取了 {len(triplets)} 个三元组。正在批量写入主知识图谱...")
     
@@ -243,13 +255,12 @@ def kg_add(
         MERGE (s)-[:`{safe_rel}`]->(o)
         """
         params = {"pairs": pairs, "doc_id": doc_id}
-        try:
-            kg_store.query(query, params=params)
-        except Exception as e:
-            logger.error(f"批量写入关系 '{rel}' 的三元组时出错: {e}")
-            continue
+        kg_store.query(query, params=params)
 
     logger.success(f"成功将内容 (doc_id: {doc_id}) 添加到知识图谱和向量库。")
+
+
+###############################################################################
 
 
 def get_kg_query_engine(
@@ -259,30 +270,21 @@ def get_kg_query_engine(
     kg_rerank_top_n: int = 100,
     kg_nl2graphquery_prompt: Optional[str] = kg_gen_cypher_prompt,
 ) -> BaseQueryEngine:
+    
     logger.debug(f"参数: kg_similarity_top_k={kg_similarity_top_k}, kg_rerank_top_n={kg_rerank_top_n}")
 
-    # 步骤 1: 初始化 LLM
-    # reasoning_llm 用于查询解析和Cypher生成, synthesis_llm 用于最终答案的合成。
     reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
     reasoning_llm = LiteLLM(**reasoning_llm_params)
 
-    synthesis_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["synthesis"])
-    synthesis_llm = LiteLLM(**synthesis_llm_params)
-
-    # 步骤 2: 获取或创建 KnowledgeGraphIndex
-    # 这是查询引擎的基础, 包含了图谱和向量存储的上下文。
     with _kg_index_lock:
         cache_key = (id(kg_store), id(kg_vector_store))
         if cache_key in _kg_indices:
-            logger.info(f"从缓存中获取 KnowledgeGraphIndex (key: {cache_key})。")
             kg_index = _kg_indices[cache_key]
         else:
-            logger.info(f"缓存中未找到 KnowledgeGraphIndex, 正在创建并缓存 (key: {cache_key})。")
             kg_storage_context = StorageContext.from_defaults(
                 graph_store=kg_store, 
                 vector_store=kg_vector_store
             )
-            # 从空的 documents 列表创建索引, 因为数据已经存在于存储中
             kg_index = KnowledgeGraphIndex.from_documents(
                 [], 
                 storage_context=kg_storage_context, 
@@ -291,27 +293,9 @@ def get_kg_query_engine(
             )
             _kg_indices[cache_key] = kg_index
 
-    # 步骤 3: 配置后处理器 (Reranker)
-    # 用于对检索到的文本节点进行重排, 提高相关性。
-    logger.info(f"配置 LiteLLM Reranker 后处理器, top_n={kg_rerank_top_n}")
     rerank_params = get_rerank_params()
     reranker = LiteLLMReranker(top_n=kg_rerank_top_n, rerank_params=rerank_params)
-    postprocessors = [reranker]
 
-    # 步骤 4: 配置响应合成器
-    # 负责将从图谱和向量库中检索到的信息整合成流畅的答案。
-    response_synthesizer = CompactAndRefine(
-        llm=synthesis_llm,
-        prompt_helper=PromptHelper(
-            context_window=synthesis_llm_params.get('context_window', 4096),
-            num_output=synthesis_llm_params.get('max_tokens', 512),
-            chunk_overlap_ratio=0.2
-        )
-    )
-
-    # 步骤 5: 创建并返回混合查询引擎
-    # 组装所有组件, 创建一个能够进行混合检索 (关键词+向量+图谱) 的查询引擎。
-    logger.info("正在创建知识图谱混合查询引擎...")
     query_engine = kg_index.as_query_engine(
         llm=reasoning_llm,
         retriever_mode="hybrid", 
@@ -319,10 +303,11 @@ def get_kg_query_engine(
         with_nl2graphquery=True, 
         graph_traversal_depth=2,
         nl2graphquery_prompt=PromptTemplate(kg_nl2graphquery_prompt),
-        response_synthesizer=response_synthesizer,
-        node_postprocessors=postprocessors,
+        response_synthesizer=default_response_synthesizer,
+        node_postprocessors=[reranker],
         synonym_degree=2,
     )
+
     logger.success("知识图谱混合查询引擎创建成功。")
     return query_engine
 

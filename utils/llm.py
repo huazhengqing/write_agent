@@ -8,13 +8,20 @@ import hashlib
 import sys
 import litellm
 from dotenv import load_dotenv
+from loguru import logger
+from pydantic import BaseModel, ValidationError
+from typing import List, Dict, Any, Literal, Optional, Type, Callable, Union
 from litellm.caching.caching import Cache
 from litellm import RateLimitError, Timeout, APIConnectionError, ServiceUnavailableError
-from loguru import logger
-from typing import List, Dict, Any, Literal, Optional, Type, Callable, Union
-from pydantic import BaseModel, ValidationError
+
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.file import cache_dir
+
+
+import logging
+litellm_logger = logging.getLogger("litellm")
+litellm_logger.setLevel(logging.WARNING)
 
 
 load_dotenv()
