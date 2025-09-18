@@ -27,7 +27,8 @@ from litellm import arerank, rerank
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.llms.litellm import LiteLLM
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.llm import call_react_agent, llm_temperatures, get_embedding_params, get_llm_params, get_rerank_params
+from utils.llm import llm_temperatures, get_embedding_params, get_llm_params, get_rerank_params
+from utils.agent import call_react_agent
 
 
 def setup_global_settings():

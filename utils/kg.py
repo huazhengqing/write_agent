@@ -16,7 +16,8 @@ from llama_index.core.graph_stores import SimpleGraphStore
 from llama_index.graph_stores.kuzu import KuzuGraphStore
 from llama_index.llms.litellm import LiteLLM
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.llm import llm_temperatures, get_llm_params, call_react_agent, get_rerank_params
+from utils.llm import llm_temperatures, get_llm_params, get_rerank_params
+from utils.agent import call_react_agent
 from utils.vector import LiteLLMReranker, get_embed_model, get_nodes_from_document
 from utils.log import init_logger
 

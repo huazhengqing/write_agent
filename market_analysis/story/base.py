@@ -23,8 +23,8 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.llms.litellm import LiteLLM
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from utils.llm import call_react_agent, llm_temperatures, get_embedding_params, get_llm_params
-from utils.llm import call_react_agent
+from utils.llm import llm_temperatures
+from utils.agent import call_react_agent
 from utils.file import data_market_dir
 from utils.search import web_search_tools
 from utils.vector import get_vector_query_engine, get_vector_store

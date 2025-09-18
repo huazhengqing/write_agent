@@ -7,7 +7,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from utils.file import data_market_dir
-from utils.llm import call_react_agent
+from utils.agent import call_react_agent
 from utils.prefect import local_storage, readable_json_serializer
 from prefect import task, flow
 from market_analysis.story.tasks import task_save_md, task_save_vector

@@ -7,8 +7,9 @@ from loguru import logger
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.tools import QueryEngineTool
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.llm import call_react_agent, get_llm_messages, get_llm_params, llm_completion, llm_temperatures  # noqa
+from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures  # noqa
 from utils.vector import index_query
+from utils.agent import call_react_agent
 
 
 synthesis_system_prompt_default = """

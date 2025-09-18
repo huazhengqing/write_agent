@@ -11,7 +11,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from utils.file import data_market_dir
-from utils.llm import call_react_agent, get_llm_messages, get_llm_params, llm_completion
+from utils.llm import get_llm_messages, get_llm_params, llm_completion
+from utils.agent import call_react_agent
 from utils.vector import get_vector_query_engine, index_query, get_vector_store
 from market_analysis.story.base import get_market_vector_store, get_market_tools, query_react
 from market_analysis.story.tasks import task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, task_save_vector
