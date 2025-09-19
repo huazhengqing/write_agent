@@ -1,18 +1,11 @@
 import os
 import re
-import sys
-import numpy as np
-import threading
 import asyncio
 from datetime import datetime
 from pathlib import Path
-import json
 import chromadb
-from diskcache import Cache
-from typing import cast
 from loguru import logger
-from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
-from pydantic import Field
+from typing import Any, Callable, Dict, List, Literal, Optional
 
 from llama_index.core.ingestion import IngestionPipeline
 from llama_index.core import Document, Settings, SimpleDirectoryReader, VectorStoreIndex
@@ -25,62 +18,85 @@ from llama_index.core.node_parser import MarkdownElementNodeParser, JSONNodePars
 from llama_index.core.node_parser.interface import NodeParser
 from llama_index.core.retrievers import VectorIndexAutoRetriever
 from llama_index.core.response_synthesizers import CompactAndRefine
-from llama_index.core.schema import BaseNode, NodeWithScore, QueryBundle
-from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo, MetadataInfo, MetadataFilter
+from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo, MetadataInfo
 from llama_index.core.vector_stores.types import VectorStore
+from llama_index.core.nodes.base import BaseNode
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.llms.litellm import LiteLLM
 from llama_index.postprocessor.siliconflow_rerank import SiliconFlowRerank
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.config import llm_temperatures, get_llm_params, get_embedding_params
-from utils.file import cache_dir
-
-
-cache_query_dir = cache_dir / "query"
-cache_query_dir.mkdir(parents=True, exist_ok=True)
-cache_query = Cache(str(cache_query_dir), size_limit=int(32 * (1024**2)))
 
 
 ###############################################################################
 
 
-default_text_qa_prompt_tmpl_cn = """
-上下文信息如下。
+qa_prompt = """
+# 角色
+你是一位信息提取助手。
+
+# 任务
+从下方的`上下文信息`中，提取与`问题`相关的所有事实和描述，并以清晰的陈述句形式呈现。
+
+# 核心原则
+1.  **忠于原文**: 你的回答必须完全基于`上下文信息`，禁止引入外部知识。
+2.  **提取而非回答**: 你的目标是提取信息片段，而不是直接形成对`问题`的最终答案。如果`上下文信息`只包含部分相关信息，就只输出那部分。
+3.  **无相关则为空**: 如果`上下文信息`与`问题`完全无关，则返回空字符串。
+4.  **直接陈述**: 直接列出事实，不要添加引述性短语。
+
+# 上下文信息
 ---------------------
 {context_str}
 ---------------------
-请严格根据上下文信息而不是你的先验知识，回答问题。
-如果上下文中没有足够的信息来回答问题，请不要编造答案，你的回答必须是且只能是一个空字符串，不包含任何其他文字。
-问题: {query_str}
-回答: 
+
+# 问题
+{query_str}
+
+# 提取的事实
 """
 
-default_text_qa_prompt_cn = PromptTemplate(default_text_qa_prompt_tmpl_cn)
 
+refine_prompt = """
+# 角色
+你是一位高级信息整合师。
 
-default_refine_prompt_tmpl_cn = """
-原始问题如下: {query_str}
-我们已经有了一个回答: {existing_answer}
-我们有机会通过下面的更多上下文来优化已有的回答(仅在需要时)。
+# 任务
+根据`新的上下文`，优化`已有的回答`，以更全面、更精确地回答`原始问题`。
+
+# 工作流程
+1.  **分析新信息**: 仔细阅读`新的上下文`，识别出其中包含的、但`已有的回答`中缺失或不完整的新信息点。
+2.  **比较与整合**: 将新信息点与`已有的回答`进行融合，遵循下方的核心原则。
+3.  **生成新答案**: 构建一个单一、连贯、全面的新答案。
+
+# 核心原则
+1.  **信息完整性**: 最终答案必须无缝整合`已有的回答`和`新的上下文`中的所有相关信息，禁止丢失任何细节。
+2.  **增量优化**: 你的目标是“优化”而非“重写”。只有当`新的上下文`能提供补充、修正或更具体的细节时，才进行修改。
+3.  **冲突处理**: 如果`新的上下文`与`已有的回答`中的信息发生冲突，请综合判断，保留更具体、更可信的信息。如果无法判断优劣，则应同时提及两种说法并明确指出其矛盾之处。
+4.  **无效则返回原文**: 如果`新的上下文`与问题无关，或未能提供任何有价值的新信息，请直接返回`已有的回答`，不要做任何改动。
+5.  **风格一致**: 在生成新答案时，尽量保持`已有的回答`的语言风格和格式，使最终答案浑然一体。
+
+# 原始问题
+{query_str}
+
+# 已有的回答
+{existing_answer}
+
+# 新的上下文
 ------------
 {context_str}
 ------------
-根据新的上下文，优化原始回答以更好地回答问题。
-如果上下文没有用，请返回原始回答。
-优化后的回答: 
+
+# 优化后的回答
 """
 
-default_refine_prompt_cn = PromptTemplate(default_refine_prompt_tmpl_cn)
 
+synthesis_llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["synthesis"])
 
-synthesis_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["synthesis"])
-
-response_synthesizer_default = CompactAndRefine(
+synthesizer = CompactAndRefine(
     llm=LiteLLM(**synthesis_llm_params),
-    text_qa_template=default_text_qa_prompt_cn,
-    refine_template=default_refine_prompt_cn,
+    text_qa_template=PromptTemplate(qa_prompt),
+    refine_template=PromptTemplate(refine_prompt),
     prompt_helper = PromptHelper(
         context_window=synthesis_llm_params.get('context_window', 8192),
         num_output=synthesis_llm_params.get('max_tokens', 2048),
@@ -112,33 +128,12 @@ init_llama_settings()
 ###############################################################################
 
 
-_vector_stores: Dict[Tuple[str, str], ChromaVectorStore] = {}
-_vector_store_lock = threading.Lock()
-
 def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
-    with _vector_store_lock:
-        cache_key = (db_path, collection_name)
-        if cache_key in _vector_stores:
-            return _vector_stores[cache_key]
-        os.makedirs(db_path, exist_ok=True)
-        db = chromadb.PersistentClient(path=db_path)
-        chroma_collection = db.get_or_create_collection(collection_name)
-        vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-        _vector_stores[cache_key] = vector_store
-        return vector_store
-
-
-_vector_indices: Dict[int, VectorStoreIndex] = {}
-_vector_index_lock = threading.Lock()
-
-def clear_vector_index_cache(vector_store: Optional[VectorStore] = None):
-    with _vector_index_lock:
-        if vector_store:
-            cache_key = id(vector_store)
-            if cache_key in _vector_indices:
-                del _vector_indices[cache_key]
-        else:
-            _vector_indices.clear()
+    os.makedirs(db_path, exist_ok=True)
+    db = chromadb.PersistentClient(path=db_path)
+    chroma_collection = db.get_or_create_collection(collection_name)
+    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+    return vector_store
 
 
 ###############################################################################
@@ -196,11 +191,6 @@ def vector_add_from_dir(
     input_dir: str,
     file_metadata_func: Optional[Callable[[str], dict]] = None,
 ) -> bool:
-    with _vector_index_lock:
-        cache_key = id(vector_store)
-        if cache_key in _vector_indices:
-            del _vector_indices[cache_key]
-
     metadata_func = file_metadata_func or default_file_metadata
 
     reader = SimpleDirectoryReader(
@@ -276,11 +266,6 @@ def vector_add(
         logger.warning(f"🤷 内容为空或包含错误，跳过存入向量库。元数据: {metadata}")
         return False
     
-    with _vector_index_lock:
-        cache_key = id(vector_store)
-        if cache_key in _vector_indices:
-            del _vector_indices[cache_key]
-    
     # 相似度搜索去重
     query_embedding = Settings.embed_model.get_text_embedding(content)
     logger.trace(f"为 doc_id '{doc_id}' 生成的嵌入向量 (前10维): {query_embedding[:10]}")
@@ -291,10 +276,7 @@ def vector_add(
     )
     query_result = vector_store.query(vector_store_query)
     if query_result.nodes:
-        # 如果找到一个相似度极高的节点，我们有理由相信这是重复内容。
-        # 之前的实现试图比较完整内容和节点内容，这是不准确的，因为节点只是文档的一部分。
-        # 仅基于高相似度分数进行判断是更简单且鲁棒的做法。
-        if query_result.similarities[0] > 0.995:
+        if query_result.similarities[0] > 0.999:
             logger.warning(f"发现与 doc_id '{doc_id}' 内容高度相似 (相似度: {query_result.similarities[0]:.4f}) 的文档，跳过添加。")
             return False
 
@@ -378,13 +360,7 @@ def get_vector_query_engine(
         f"similarity_cutoff={similarity_cutoff}"
     )
 
-    with _vector_index_lock:
-        cache_key = id(vector_store)
-        if cache_key in _vector_indices:
-            index = _vector_indices[cache_key]
-        else:
-            index = VectorStoreIndex.from_vector_store(vector_store)
-            _vector_indices[cache_key] = index
+    index = VectorStoreIndex.from_vector_store(vector_store)
 
     postprocessors = []
     if rerank_top_n and rerank_top_n > 0:
@@ -394,12 +370,11 @@ def get_vector_query_engine(
         )
         postprocessors.append(reranker)
 
-    reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
-    reasoning_llm = LiteLLM(**reasoning_llm_params)
-    
     if use_auto_retriever:
         logger.info("使用 VectorIndexAutoRetriever 模式创建查询引擎。")
         
+        reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
+        reasoning_llm = LiteLLM(**reasoning_llm_params)
         final_vector_store_info = vector_store_info or get_default_vector_store_info()
         
         retriever = VectorIndexAutoRetriever(
@@ -412,7 +387,7 @@ def get_vector_query_engine(
         )
         query_engine = RetrieverQueryEngine(
             retriever=retriever,
-            response_synthesizer=response_synthesizer_default,
+            response_synthesizer=synthesizer,
             node_postprocessors=postprocessors,
         )
         logger.success("自动检索查询引擎创建成功。")
@@ -424,8 +399,7 @@ def get_vector_query_engine(
             retriever_kwargs["similarity_cutoff"] = similarity_cutoff
 
         query_engine = index.as_query_engine(
-            llm=reasoning_llm,
-            response_synthesizer=response_synthesizer_default,
+            response_synthesizer=synthesizer,
             filters=filters,
             similarity_top_k=similarity_top_k,
             node_postprocessors=postprocessors,
@@ -442,27 +416,6 @@ async def index_query(query_engine: BaseQueryEngine, question: str) -> str:
     if not question:
         return ""
 
-    cache_key = None
-    retriever = getattr(query_engine, "retriever", getattr(query_engine, "_retriever", None))
-    # 注意：下面的缓存键生成方式依赖于 llama-index 和 chromadb 的内部实现细节（如 `_vector_store`, `_path`）。
-    # 这在库版本更新时可能会失效。更稳妥的方案是显式传递数据库路径和集合名称来构建缓存键。
-    # 此处使用 getattr 进行安全访问以增加代码韧性。
-    vector_store = getattr(retriever, '_vector_store', None)
-    if isinstance(vector_store, ChromaVectorStore):
-        collection = getattr(vector_store, 'collection', None)
-        client = getattr(vector_store, 'client', None)
-        collection_name = getattr(collection, 'name', None)
-        db_path = getattr(client, '_path', None)
-        
-        if db_path and collection_name:
-            cache_key = f"index_query:{db_path}:{collection_name}:{question}"
-
-    if cache_key:
-        cached_result = cache_query.get(cache_key)
-        if cached_result is not None:
-            logger.info(f"从缓存中获取查询 '{question}' 的结果。")
-            return cached_result
-
     logger.info(f"开始执行索引查询: '{question}'")
     result = await query_engine.aquery(question)
 
@@ -472,9 +425,6 @@ async def index_query(query_engine: BaseQueryEngine, question: str) -> str:
         answer = ""
 
     logger.debug(f"问题 '{question}' 的回答: {answer}")
-
-    if cache_key:
-        cache_query.set(cache_key, answer)
 
     return answer
 
@@ -491,13 +441,14 @@ async def index_query_batch(query_engine: BaseQueryEngine, questions: List[str])
 
     async def safe_query(question: str) -> str:
         async with sem:
-            return await index_query(query_engine, question)
+            try:
+                return await index_query(query_engine, question)
+            except Exception as e:
+                logger.error(f"批量查询中，问题 '{question}' 失败: {e}", exc_info=True)
+                return ""
 
     tasks = [safe_query(q) for q in questions]
     results = await asyncio.gather(*tasks)
 
     logger.success(f"批量查询完成。")
     return results
-
-
-###############################################################################

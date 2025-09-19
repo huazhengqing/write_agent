@@ -188,9 +188,9 @@ class StoryRAG:
             content=content,
             metadata=doc_metadata,
             doc_id=task.id,
-            kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_design")[0],
             content_format="markdown",
             max_triplets_per_chunk=15,
+            kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_design")[0],
         )
         logger.info(f"[{task.id}] design 内容存储完成。")
 
@@ -230,9 +230,9 @@ class StoryRAG:
             content=content,
             metadata=doc_metadata,
             doc_id=task.id,
-            kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_write")[0],
             content_format="text",
             max_triplets_per_chunk=15,
+            kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_write")[0],
         )
         logger.info(f"[{task.id}] write 内容存储完成。")
     
@@ -271,7 +271,7 @@ class StoryRAG:
             "task": task.model_dump_json(
                 indent=2,
                 exclude_none=True,
-                include={'id', 'parent_id', 'task_type', 'hierarchical_position', 'goal', 'length', 'dependency'}
+                include={'id', 'parent_id', 'task_type', 'hierarchical_position', 'goal', 'length', 'dependency', 'instructions', 'input_brief', 'constraints', 'acceptance_criteria'}
             ),
             "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         }

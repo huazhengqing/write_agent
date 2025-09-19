@@ -4,7 +4,6 @@
 .data/
 .gemini/
 .prefect/
-.test/
 .vscode/
 logs/*
 models/
@@ -12,7 +11,8 @@ output/*
 searxng/
 venv/
 node_modules/
-__pycache__/
+*pycache*
+*pytest_cache*
 .env
 *.pyc
 *.log

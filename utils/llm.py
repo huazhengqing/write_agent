@@ -5,14 +5,12 @@ import re
 import collections
 import json
 import hashlib
-import sys
 import litellm
 from loguru import logger
 from pydantic import BaseModel, ValidationError
-from typing import List, Dict, Any, Literal, Optional, Type, Callable, Union
+from typing import List, Dict, Any, Literal, Optional, Type, Callable
 from litellm.caching.caching import Cache
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.file import cache_dir
 from utils.config import get_llm_params, llm_temperatures
 
@@ -317,7 +315,7 @@ extraction_user_prompt = """
 """
 
 
-async def txt_to_json(cleaned_output: str, response_model: Optional[Type[BaseModel]]):
+async def txt_to_json(cleaned_output: str, response_model: Type[BaseModel]):
     logger.info(f"开始将文本转换为 JSON, 目标模型: {response_model.__name__}")
     logger.debug(f"待转换的输入文本:\n{cleaned_output}")
 
@@ -337,128 +335,3 @@ async def txt_to_json(cleaned_output: str, response_model: Optional[Type[BaseMod
     logger.debug(f"转换后的 JSON 对象: {validated_data}")
     return validated_data
 
-
-###############################################################################
-
-
-if __name__ == '__main__':
-    import asyncio
-    from pydantic import Field
-    from utils.log import init_logger
-    from unittest.mock import patch, AsyncMock
-    from litellm.types.llms.base import LLMMessage, Choice, ModelResponse
-
-
-    init_logger("llm_test")
-
-    class UserInfo(BaseModel):
-        name: str = Field(..., description="用户姓名")
-        age: int = Field(..., description="用户年龄")
-        is_student: bool = Field(..., description="是否是学生")
-
-    async def main():
-        # --- Test 1: Simple text completion ---
-        logger.info("--- 测试 llm_completion (返回字符串) ---")
-        try:
-            messages1 = get_llm_messages(
-                system_prompt="你是一个乐于助人的助手。",
-                user_prompt="你好！请介绍一下你自己。"
-            )
-            params1 = get_llm_params(messages=messages1, temperature=0.1)
-            result1 = await llm_completion(params1)
-            logger.success(f"文本返回成功:\n{result1.content}")
-        except Exception as e:
-            logger.error(f"测试1失败: {e}", exc_info=True)
-
-        # --- Test 2: JSON completion with response_model ---
-        logger.info("\n--- 测试 llm_completion (返回 Pydantic 模型) ---")
-        try:
-            messages2 = get_llm_messages(
-                system_prompt="请根据用户信息生成JSON。",
-                user_prompt="用户信息：姓名张三，年龄25岁，是一名学生。"
-            )
-            params2 = get_llm_params(messages=messages2, temperature=0.1)
-            result2 = await llm_completion(params2, response_model=UserInfo)
-            validated_data2 = result2.validated_data
-            logger.success(f"Pydantic 模型返回成功: {validated_data2}")
-            if isinstance(validated_data2, UserInfo):
-                logger.info(f"成功解析为 UserInfo 对象: name={validated_data2.name}, age={validated_data2.age}")
-            else:
-                logger.error("返回结果不是 UserInfo 对象！")
-        except Exception as e:
-            logger.error(f"测试2失败: {e}", exc_info=True)
-
-        # --- Test 3: txt_to_json function ---
-        logger.info("\n--- 测试 txt_to_json ---")
-        try:
-            text_input = '这里是一些无关的文字, 然后是JSON: {"name": "李四", "age": 40, "is_student": false}'
-            cleaned_text = clean_markdown_fences(text_input) # 模拟清理
-            result3 = await txt_to_json(cleaned_text, UserInfo)
-            logger.success(f"txt_to_json 转换成功: {result3}")
-            if isinstance(result3, UserInfo):
-                logger.info(f"成功解析为 UserInfo 对象: name={result3.name}, age={result3.age}")
-            else:
-                logger.error("返回结果不是 UserInfo 对象！")
-        except Exception as e:
-            logger.error(f"测试3失败: {e}", exc_info=True)
-
-        # --- Test 4: Self-correction for Pydantic model ---
-        logger.info("\n--- 测试 llm_completion (JSON自我修正) ---")
-        
-        # 1. 定义格式错误和正确的响应
-        malformed_json_str = '{"name": "Bad JSON", "age": 30, "is_student": tru' # 无效的布尔值
-        correct_json_str = '{"name": "Corrected JSON", "age": 30, "is_student": true}'
-
-        mock_response_fail = ModelResponse(
-            choices=[
-                Choice(
-                    finish_reason="stop",
-                    index=0,
-                    message=LLMMessage(
-                        content=f"```json\n{malformed_json_str}\n```",
-                        role="assistant"
-                    )
-                )
-            ],
-            model="mock_model"
-        )
-
-        mock_response_success = ModelResponse(
-            choices=[
-                Choice(
-                    finish_reason="stop",
-                    index=0,
-                    message=LLMMessage(
-                        content=correct_json_str,
-                        role="assistant"
-                    )
-                )
-            ],
-            model="mock_model"
-        )
-
-        # 2. 使用 patch 模拟 acompletion
-        with patch('litellm.acompletion', new_callable=AsyncMock) as mock_acompletion:
-            # 3. 设置模拟的副作用 (第一次返回失败，第二次返回成功)
-            mock_acompletion.side_effect = [mock_response_fail, mock_response_success]
-
-            # 4. 运行测试
-            try:
-                messages4 = get_llm_messages(
-                    system_prompt="请根据用户信息生成JSON。",
-                    user_prompt="用户信息：姓名Corrected JSON，年龄30岁，是一名学生。"
-                )
-                params4 = get_llm_params(messages=messages4, temperature=0.1)
-                result4 = await llm_completion(params4, response_model=UserInfo)
-                validated_data4 = result4.validated_data
-
-                logger.success(f"自我修正测试成功: {validated_data4}")
-                assert isinstance(validated_data4, UserInfo)
-                assert validated_data4.name == "Corrected JSON"
-                assert mock_acompletion.call_count == 2
-                
-            except Exception as e:
-                logger.error(f"测试4失败: {e}", exc_info=True)
-                assert False, "自我修正测试不应抛出异常"
-
-    asyncio.run(main())

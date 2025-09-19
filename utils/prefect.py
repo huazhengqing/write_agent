@@ -1,10 +1,13 @@
 from pathlib import Path
 from typing import Any, Dict
 from loguru import logger
-from utils.models import Task
-from utils.file import prefect_storage_path
+
 from dotenv import load_dotenv
 load_dotenv()
+
+from utils.models import Task
+from utils.file import prefect_storage_path
+
 from prefect.context import TaskRunContext
 from prefect.filesystems import LocalFileSystem
 from prefect.exceptions import ObjectNotFound

@@ -2,6 +2,7 @@ ddgs
 kuzu
 httpx
 openai
+pytest
 loguru
 prefect
 chromadb
@@ -10,6 +11,7 @@ diskcache
 playwright
 trafilatura
 python-dotenv
+pytest-asyncio
 pysqlite3-binary
 litellm[caching]
 sentence_transformers

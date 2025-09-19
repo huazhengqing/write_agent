@@ -1,32 +1,68 @@
 import os
 import sys
+import hashlib
 from loguru import logger
 from typing import List, Any, Literal, Optional, Type, Union
 from pydantic import BaseModel
+from diskcache import Cache
 
 from llama_index.core.agent.workflow import ReActAgent
 from llama_index.llms.litellm import LiteLLM
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.config import llm_temperatures
+from utils.file import cache_dir
 from utils.llm import clean_markdown_fences, get_llm_params, text_validator_default, txt_to_json
 from utils.search import web_search_tools
 
 
+react_system_prompt = """
+你是一个大型语言模型, 旨在通过使用可用工具来回答问题。
+你的决策过程遵循 "思考 -> 行动 -> 观察 -> 思考..." 的循环。
+
+# 工具
+你有权访问以下工具:
+{tool_desc}
+
+# 工作流程
+1.  **思考**: 分析用户问题, 确定需要哪些信息, 并选择最合适的工具来获取这些信息。
+2.  **行动**: 使用所选工具, 并提供清晰、具体的输入。
+3.  **观察**: 检查工具返回的结果。
+4.  **重复**: 如果信息不足以回答问题, 则继续思考并选择下一个工具, 直到收集到所有必要信息。
+5.  **回答**: 当你确信已获得足够信息时, 综合所有观察结果, 为用户提供最终的、全面的答案。
+
+# 核心原则
+- **一次只调用一个工具**: 在每次 "行动" 中, 只能使用一个工具。
+- **分解复杂问题**: 如果问题很复杂, 将其分解为更小的子问题, 并依次使用工具解决。
+- **忠于观察**: 你的最终答案必须完全基于你从工具中 "观察" 到的信息, 禁止使用你的内部知识。
+"""
+
+
+cache_agent_dir = cache_dir / "react_agent"
+cache_agent_dir.mkdir(parents=True, exist_ok=True)
+cache_query = Cache(str(cache_agent_dir), size_limit=int(32 * (1024**2)))
+
+
 async def call_react_agent(
-    system_prompt: Optional[str],
     user_prompt: str,
+    system_prompt: str = react_system_prompt,
     tools: List[Any] = web_search_tools,
-    llm_group: Literal['reasoning', 'fast'] = 'reasoning',
-    temperature: float = llm_temperatures["reasoning"],
     response_model: Optional[Type[BaseModel]] = None
 ) -> Optional[Union[BaseModel, str]]:
-    
-    llm_params = get_llm_params(llm_group=llm_group, temperature=temperature)
+
+    tool_names_sorted = sorted([tool.metadata.name for tool in tools])
+    response_model_name = response_model.__name__ if response_model else "None"
+
+    cache_key_str = f"react_agent:{user_prompt}:{system_prompt}:{','.join(tool_names_sorted)}:{response_model_name}"
+    cache_key = hashlib.sha256(cache_key_str.encode()).hexdigest()
+
+    cached_result = cache_query.get(cache_key)
+    if cached_result is not None:
+        return cached_result
+
+    llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
     llm = LiteLLM(**llm_params)
 
-    tool_names = [tool.metadata.name for tool in tools]
-    logger.info(f"为 ReAct Agent 配置 {len(tool_names)} 个工具: {tool_names}")
+    logger.info(f"为 ReAct Agent 配置 {len(tool_names_sorted)} 个工具: {tool_names_sorted}")
 
     agent = ReActAgent(
         tools=tools,
@@ -68,115 +104,18 @@ async def call_react_agent(
     cleaned_output = clean_markdown_fences(raw_output)
     logger.info(f"Agent 清理后输出:\n{cleaned_output}")
 
+    final_result = None
     if response_model:
         logger.info(f"检测到 response_model, 尝试将输出解析为 {response_model.__name__} 模型...")
-        json_result = await txt_to_json(cleaned_output, response_model)
+        final_result = await txt_to_json(cleaned_output, response_model)
         logger.success(f"成功将输出解析为 {response_model.__name__} 模型。")
-        logger.debug(f"解析后的 JSON 对象: {json_result}")
-        return json_result
+        logger.debug(f"解析后的 JSON 对象: {final_result}")
     else:
-        logger.info("未提供 response_model, 校验并返回文本结果。")
         text_validator_default(cleaned_output)
         logger.success("文本结果校验通过。")
-        return cleaned_output
+        final_result = cleaned_output
 
+    if final_result is not None:
+        cache_query.set(cache_key, final_result)
 
-###############################################################################
-
-
-if __name__ == '__main__':
-    import asyncio
-    from pydantic import Field
-    from llama_index.core.tools import FunctionTool
-    from utils.log import init_logger
-
-    init_logger("agent_test")
-
-    # 定义一个简单的 Pydantic 模型用于测试
-    class CityInfo(BaseModel):
-        city: str = Field(..., description="城市名称")
-        population: int = Field(..., description="城市人口")
-
-    # 创建一个模拟工具，避免网络依赖
-    def get_city_info(city: str) -> str:
-        """获取城市信息"""
-        if city == "北京":
-            return "北京的人口是2189万。"
-        if city == "上海":
-            # 故意返回一个不完整的JSON，用于测试错误处理
-            return '{"city": "上海", "population": 24870000'
-        return f"找不到城市 {city} 的信息。"
-
-    mock_tool = FunctionTool.from_defaults(fn=get_city_info)
-
-    # 创建一个总是失败的模拟工具
-    def failing_tool(query: str) -> str:
-        """这是一个总是会失败并抛出异常的工具。"""
-        raise ValueError(f"工具故意失败，输入为: '{query}'")
-
-    mock_failing_tool = FunctionTool.from_defaults(fn=failing_tool, name="failing_tool")
-
-    async def main():
-        # 1. 测试成功返回字符串
-        logger.info("--- 1. 测试 call_react_agent (成功返回字符串) ---")
-        question1 = "北京的人口是多少？"
-        system_prompt1 = "你是一个城市信息查询助手，请使用工具查询并简洁地回答问题。"
-        
-        try:
-            result1 = await call_react_agent(
-                system_prompt=system_prompt1,
-                user_prompt=question1,
-                tools=[mock_tool]
-            )
-            logger.success(f"对 '{question1}' 的回答 (字符串):\n{result1}")
-            assert "2189" in result1
-        except Exception as e:
-            logger.error(f"测试1失败: {e}", exc_info=True)
-
-        # 2. 测试因JSON格式错误导致返回Pydantic模型失败
-        logger.info("\n--- 2. 测试 call_react_agent (因JSON无效导致返回Pydantic模型失败) ---")
-        question2 = "查询上海的人口，并以JSON格式返回城市和人口。"
-        system_prompt2 = "你是一个城市信息查询助手，请使用工具查询并严格按照用户要求的JSON格式返回信息。"
-        try:
-            result2 = await call_react_agent(
-                system_prompt=system_prompt2,
-                user_prompt=question2,
-                tools=[mock_tool],
-                response_model=CityInfo
-            )
-            logger.error(f"测试2本应失败，但意外成功: {result2}")
-        except Exception as e:
-            logger.success(f"测试2成功捕获到预期错误: {e}")
-
-        # 3. 测试因内容过短导致文本验证失败
-        logger.info("\n--- 3. 测试 call_react_agent (因内容过短导致文本验证失败) ---")
-        question3 = "嗨" # 一个过于简单的问题，可能导致Agent只回复 "你好"
-        system_prompt3 = "简单回复即可"
-        try:
-            await call_react_agent(
-                system_prompt=system_prompt3, user_prompt=question3, tools=[]
-            )
-            logger.error("测试3本应失败，但意外成功")
-        except ValueError as e:
-            logger.success(f"测试3成功捕获到预期错误: {e}")
-            assert "内容为空或过短" in str(e)
-
-        # 4. 测试工具调用失败时 Agent 的反应
-        logger.info("\n--- 4. 测试 call_react_agent (工具调用失败) ---")
-        question4 = "使用 failing_tool 查询一些信息。"
-        system_prompt4 = "你必须使用 failing_tool 来回答问题。"
-        try:
-            result4 = await call_react_agent(
-                system_prompt=system_prompt4,
-                user_prompt=question4,
-                tools=[mock_failing_tool]
-            )
-            logger.success(f"测试4 Agent 在工具失败后返回: {result4}")
-            # Agent 应该能观察到工具的错误并报告它
-            assert "失败" in result4 or "错误" in result4 or "failed" in result4
-        except Exception as e:
-            logger.error(f"测试4失败，Agent未能处理工具异常: {e}", exc_info=True)
-            # 如果 call_react_agent 抛出异常，说明 Agent 没有优雅地处理它
-            assert False, "Agent 应该能优雅地处理工具异常，而不是崩溃。"
-
-    asyncio.run(main())
+    return final_result

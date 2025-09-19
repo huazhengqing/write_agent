@@ -1,21 +1,17 @@
-import os
-import sys
 import asyncio
-import re
-from typing import List, Literal, Optional, Tuple, Union
+from typing import List
 from loguru import logger
 
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.tools import QueryEngineTool
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.config import llm_temperatures, get_llm_params
 from utils.llm import get_llm_messages, llm_completion
 from utils.vector import index_query
-from utils.agent import call_react_agent
+from utils.agent import call_react_agent, react_system_prompt
 
 
-synthesis_system_prompt_default = """
+synthesis_system_prompt = """
 # 角色
 信息整合分析师。
 
@@ -41,7 +37,7 @@ synthesis_system_prompt_default = """
 """
 
 
-synthesis_user_prompt_default = """
+synthesis_user_prompt = """
 # 当前问题
 {question}
 
@@ -59,17 +55,14 @@ async def hybrid_query(
     vector_query_engine: BaseQueryEngine,
     kg_query_engine: BaseQueryEngine,
     question: str,
-    synthesis_system_prompt: Optional[str] = None,
-    synthesis_user_prompt: Optional[str] = None,
+    synthesis_system_prompt: str = synthesis_system_prompt,
+    synthesis_user_prompt: str = synthesis_user_prompt,
 ) -> str:
     if not question or not isinstance(question, str):
         logger.warning("查询问题为空或类型不正确, 无法执行混合查询。")
         return ""
 
     logger.info(f"开始对问题 '{question}' 执行混合查询...")
-
-    system_prompt = synthesis_system_prompt or synthesis_system_prompt_default
-    user_prompt = synthesis_user_prompt or synthesis_user_prompt_default
 
     logger.debug("正在并行执行向量查询和知识图谱查询...")
     vector_task = index_query(vector_query_engine, question)
@@ -86,40 +79,51 @@ async def hybrid_query(
     logger.debug(f"向量查询结果 (片段数: {1 if vector_content else 0}):\n{formatted_vector_str[:500]}...")
     logger.debug(f"知识图谱查询结果 (片段数: {1 if kg_content else 0}):\n{formatted_kg_str[:500]}...")
 
-    context_dict_user = {"vector_str": formatted_vector_str, "kg_str": formatted_kg_str, "question": question}
-    messages = get_llm_messages(system_prompt, user_prompt, None, context_dict_user)
-
-    logger.info("开始调用LLM进行信息整合...")
+    context_dict_user = {
+        "vector_str": formatted_vector_str, 
+        "kg_str": formatted_kg_str, 
+        "question": question
+    }
+    messages = get_llm_messages(synthesis_system_prompt, synthesis_user_prompt, None, context_dict_user)
     final_llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=llm_temperatures["synthesis"])
     final_message = await llm_completion(final_llm_params)
 
+    final_answer = final_message.content.strip()
     logger.success(f"混合查询完成，生成回答长度: {len(final_message.content)}")
     logger.debug(f"最终回答:\n{final_message.content}")
 
-    return final_message.content.strip()
+    return final_answer
 
 
 async def hybrid_query_batch(
     vector_query_engine: BaseQueryEngine,
     kg_query_engine: BaseQueryEngine,
     questions: List[str],
-    synthesis_system_prompt: Optional[str] = None,
-    synthesis_user_prompt: Optional[str] = None,
+    synthesis_system_prompt: str = synthesis_system_prompt,
+    synthesis_user_prompt: str = synthesis_user_prompt,
 ) -> List[str]:
     if not questions:
         return []
 
     logger.info(f"开始执行 {len(questions)} 个问题的批量混合查询...")
-    tasks = [
-        hybrid_query(
-            vector_query_engine,
-            kg_query_engine,
-            q,
-            synthesis_system_prompt,
-            synthesis_user_prompt,
-        )
-        for q in questions
-    ]
+
+    sem = asyncio.Semaphore(3)
+
+    async def safe_hybrid_query(question: str) -> str:
+        async with sem:
+            try:
+                return await hybrid_query(
+                    vector_query_engine,
+                    kg_query_engine,
+                    question,
+                    synthesis_system_prompt,
+                    synthesis_user_prompt,
+                )
+            except Exception as e:
+                logger.error(f"批量混合查询中，问题 '{question}' 失败: {e}", exc_info=True)
+                return ""
+
+    tasks = [safe_hybrid_query(q) for q in questions]
     results = await asyncio.gather(*tasks)
     logger.success(f"批量混合查询完成。")
     return results
@@ -132,7 +136,7 @@ async def hybrid_query_react(
     vector_query_engine: BaseQueryEngine,
     kg_query_engine: BaseQueryEngine,
     query_str: str,
-    agent_system_prompt: Optional[str] = None,
+    react_system_prompt: str = react_system_prompt,
 ) -> str:
     logger.info(f"开始对问题 '{query_str}' 执行基于ReAct的混合查询...")
     vector_tool = QueryEngineTool.from_defaults(
@@ -146,11 +150,9 @@ async def hybrid_query_react(
         description="用于探索实体及其关系 (例如: 角色A和角色B是什么关系? 事件C导致了什么后果?)。当问题比较复杂时, 你可以多次调用此工具来回答问题的不同部分, 然后综合答案。"
     )
     result = await call_react_agent(
-        system_prompt=agent_system_prompt,
         user_prompt=query_str,
-        tools=[vector_tool, kg_tool],
-        llm_group="reasoning",
-        temperature=llm_temperatures["reasoning"]
+        system_prompt=react_system_prompt,
+        tools=[vector_tool, kg_tool]
     )
     if not isinstance(result, str):
         logger.warning(f"Agent 返回了非字符串类型, 将其强制转换为字符串: {type(result)}")
@@ -158,7 +160,3 @@ async def hybrid_query_react(
 
     logger.success(f"基于ReAct的混合查询完成。")
     return result.strip()
-
-
-###############################################################################
-

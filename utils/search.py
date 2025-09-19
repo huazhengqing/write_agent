@@ -10,7 +10,7 @@ from ddgs import DDGS
 from diskcache import Cache
 from llama_index.core.tools import FunctionTool
 import trafilatura
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from utils.file import cache_dir
 
 
@@ -537,74 +537,12 @@ def get_web_scraper_tool() -> FunctionTool:
     )
 
 
+###############################################################################
+
+
 web_search_tools = [
     get_web_search_tool(),
     get_targeted_search_tool(),
     get_web_scraper_tool(),
 ]
 
-
-###############################################################################
-
-
-if __name__ == '__main__':
-    import asyncio
-    from utils.log import init_logger
-    from unittest.mock import patch, AsyncMock
-
-    init_logger("search_test")
-
-    async def main():
-        # 1. 测试 web_search
-        logger.info("--- 测试 web_search ---")
-        query = "大型语言模型最新进展"
-        search_results = await web_search(query, max_results=3)
-        logger.info(f"web_search 查询 '{query}' 的结果:\n{search_results}")
-
-        # 2. 测试 targeted_search
-        logger.info("--- 2. 测试 targeted_search (常规) ---")
-        targeted_query = "AIGC"
-        platforms = ["知乎", "36氪"]
-        targeted_results = await targeted_search(query=targeted_query, platforms=platforms)
-        logger.info(f"targeted_search 查询 '{targeted_query}' 在 {platforms} 上的结果:\n{targeted_results}")
-
-        # 3. 测试 targeted_search (别名和分类解析)
-        logger.info("--- 3. 测试 targeted_search (别名和分类解析) ---")
-        with patch('utils.search.web_search', new_callable=AsyncMock) as mock_web_search:
-            mock_web_search.return_value = "Mocked search result"
-            
-            alias_query = "二次元"
-            # 'b站' 是别名, '小说' 是分类
-            alias_platforms = ["b站", "小说"]
-            
-            await targeted_search(query=alias_query, platforms=alias_platforms)
-            
-            # 验证 mock_web_search 是否被正确调用
-            mock_web_search.assert_called_once()
-            call_args, call_kwargs = mock_web_search.call_args
-            
-            final_query = call_kwargs.get('query')
-            logger.info(f"针对别名和分类生成的最终查询: {final_query}")
-
-            # 验证 'b站' (别名) -> 'bilibili.com'
-            assert "site:bilibili.com" in final_query
-            # 验证 '小说' (分类) 被展开
-            assert "site:qidian.com" in final_query
-            assert "site:jjwxc.net" in final_query
-            logger.info("别名和分类解析测试成功。")
-
-        # 4. 测试 scrape_and_extract
-        logger.info("--- 4. 测试 scrape_and_extract ---")
-        # 从之前的搜索结果中找一个URL来测试
-        first_link = None
-        if "链接: " in targeted_results:
-            first_link = targeted_results.split("链接: ")[1].split("\n")[0]
-        
-        if first_link:
-            logger.info(f"将抓取URL: {first_link}")
-            scraped_content = await scrape_and_extract(first_link)
-            logger.info(f"抓取到的内容 (前500字符):\n{scraped_content[:500]}...")
-        else:
-            logger.warning("未能在搜索结果中找到链接，跳过 scrape_and_extract 测试。")
-
-    asyncio.run(main())

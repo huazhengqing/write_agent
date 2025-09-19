@@ -1,7 +1,5 @@
 import os
-import sys
-from typing import Any, Dict, List, Literal, Optional, Tuple
-import threading
+from typing import Any, Dict, List, Literal
 import kuzu
 from loguru import logger
 
@@ -14,16 +12,11 @@ from llama_index.postprocessors.siliconflow_rerank import SiliconFlowRerank
 from llama_index.graph_stores.kuzu import KuzuGraphStore
 from llama_index.llms.litellm import LiteLLM
 
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.config import llm_temperatures, get_llm_params
-from utils.vector import response_synthesizer_default, get_node_parser
-from utils.log import init_logger
+from utils.vector import synthesizer, get_node_parser
 
 
-###############################################################################
-
-
-kg_extraction_prompt_default = """
+kg_extraction_prompt = """
 # 角色
 你是一位高度精确的知识图谱工程师。
 
@@ -124,24 +117,13 @@ kg_gen_cypher_prompt = """
 ###############################################################################
 
 
-_kg_stores: Dict[str, KuzuGraphStore] = {}
-_kg_store_lock = threading.Lock()
-
 def get_kg_store(db_path: str) -> KuzuGraphStore:
-    with _kg_store_lock:
-        if db_path in _kg_stores:
-            return _kg_stores[db_path]
-        parent_dir = os.path.dirname(db_path)
-        if parent_dir:
-            os.makedirs(parent_dir, exist_ok=True)
-        db = kuzu.Database(db_path)
-        kg_store = KuzuGraphStore(db)
-        _kg_stores[db_path] = kg_store
-        return kg_store
-
-
-_kg_indices: Dict[Tuple[int, int], KnowledgeGraphIndex] = {}
-_kg_index_lock = threading.Lock()
+    parent_dir = os.path.dirname(db_path)
+    if parent_dir:
+        os.makedirs(parent_dir, exist_ok=True)
+    db = kuzu.Database(db_path)
+    kg_store = KuzuGraphStore(db)
+    return kg_store
 
 
 ###############################################################################
@@ -153,21 +135,12 @@ def kg_add(
     content: str,
     metadata: Dict[str, Any],
     doc_id: str,
-    kg_extraction_prompt: Optional[str] = None,
     content_format: Literal["markdown", "text", "json"] = "markdown",
     max_triplets_per_chunk: int = 15,
+    kg_extraction_prompt: str = kg_extraction_prompt
 ) -> None:
-    
-    final_kg_extraction_prompt = kg_extraction_prompt or kg_extraction_prompt_default
-
-    with _kg_index_lock: 
-        cache_key = (id(kg_store), id(vector_store))
-        if cache_key in _kg_indices:
-            del _kg_indices[cache_key]
-
     doc = Document(id_=doc_id, text=content, metadata=metadata)
     if content_format == "json":
-        # 对于知识图谱提取，将整个JSON作为一个节点，以便LLM理解其内部结构
         nodes = [doc]
     else:
         node_parser = get_node_parser(content_format)
@@ -201,7 +174,7 @@ def kg_add(
         nodes=nodes,
         storage_context=temp_storage_context,
         llm=llm,
-        kg_extraction_prompt=PromptTemplate(final_kg_extraction_prompt),
+        kg_extraction_prompt=PromptTemplate(kg_extraction_prompt),
         max_triplets_per_chunk=max_triplets_per_chunk,
         include_embeddings=False,  # 不需要在临时索引中创建嵌入
         show_progress=False,
@@ -266,7 +239,7 @@ def get_kg_query_engine(
     kg_vector_store: VectorStore,
     kg_similarity_top_k: int = 600,
     kg_rerank_top_n: int = 100,
-    kg_nl2graphquery_prompt: Optional[str] = kg_gen_cypher_prompt,
+    kg_nl2graphquery_prompt: str = kg_gen_cypher_prompt,
 ) -> BaseQueryEngine:
     
     logger.debug(f"参数: kg_similarity_top_k={kg_similarity_top_k}, kg_rerank_top_n={kg_rerank_top_n}")
@@ -274,22 +247,16 @@ def get_kg_query_engine(
     reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
     reasoning_llm = LiteLLM(**reasoning_llm_params)
 
-    with _kg_index_lock:
-        cache_key = (id(kg_store), id(kg_vector_store))
-        if cache_key in _kg_indices:
-            kg_index = _kg_indices[cache_key]
-        else:
-            kg_storage_context = StorageContext.from_defaults(
-                graph_store=kg_store, 
-                vector_store=kg_vector_store
-            )
-            kg_index = KnowledgeGraphIndex.from_documents(
-                [], 
-                storage_context=kg_storage_context, 
-                llm=reasoning_llm,
-                include_embeddings=True
-            )
-            _kg_indices[cache_key] = kg_index
+    kg_storage_context = StorageContext.from_defaults(
+        graph_store=kg_store, 
+        vector_store=kg_vector_store
+    )
+    kg_index = KnowledgeGraphIndex.from_documents(
+        [], 
+        storage_context=kg_storage_context, 
+        llm=reasoning_llm,
+        include_embeddings=True
+    )
 
     reranker = SiliconFlowRerank(
         api_key=os.getenv("SILICONFLOW_API_KEY"),
@@ -303,14 +270,10 @@ def get_kg_query_engine(
         with_nl2graphquery=True, 
         graph_traversal_depth=2,
         nl2graphquery_prompt=PromptTemplate(kg_nl2graphquery_prompt),
-        response_synthesizer=response_synthesizer_default,
+        response_synthesizer=synthesizer,
         node_postprocessors=[reranker],
         synonym_degree=2,
     )
 
     logger.success("知识图谱混合查询引擎创建成功。")
     return query_engine
-
-
-###############################################################################
-

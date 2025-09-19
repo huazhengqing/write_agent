@@ -144,11 +144,11 @@ llm_api_params = {
     "safe_mode": False,
     "safe_prompt": False,
     "exceptions_to_fallback_on": [
-        RateLimitError,
-        Timeout,
-        APIConnectionError,
-        ServiceUnavailableError,
-        APIError,
+        "RateLimitError",
+        "Timeout",
+        "APIConnectionError",
+        "ServiceUnavailableError",
+        "APIError",
     ]
 }
 
@@ -172,7 +172,7 @@ def get_llm_params(
     if messages is not None:
         llm_params["messages"] = copy.deepcopy(messages)
 
-    llm_params["retry_on_exceptions"] = [e for e in llm_api_params["exceptions_to_fallback_on"] if e != RateLimitError]
+    llm_params["retry_on_exceptions"] = [e for e in llm_api_params["exceptions_to_fallback_on"] if e != "RateLimitError"]
     llm_params["max_retries"] = llm_params.get("num_retries", 3)
 
     return llm_params
