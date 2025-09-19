@@ -1,9 +1,11 @@
 .bakup/
 .bug/
-.data/
 .cache/
+.data/
+.prefect/
+.test/
 .vscode/
-.logs/*
+logs/*
 models/
 output/*
 searxng/
