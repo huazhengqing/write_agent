@@ -4,7 +4,8 @@ import os
 from typing import Any, Dict, List, Literal, Optional
 from dotenv import load_dotenv
 
-from litellm import RateLimitError, Timeout, APIConnectionError, ServiceUnavailableError
+from litellm import RateLimitError, Timeout, APIConnectionError, ServiceUnavailableError, APIError
+import litellm
 import logging
 litellm_logger = logging.getLogger("litellm")
 litellm_logger.setLevel(logging.ERROR)
@@ -53,7 +54,12 @@ llms_api = {
                 "model": "groq/qwen/qwen3-32b",
                 "api_key": os.getenv("GROQ_API_KEY"), 
                 "context_window": 131072,
-            }
+            }, 
+            # {
+            #     "model": "openrouter/deepseek/deepseek-r1-0528-qwen3-8b",
+            #     "api_key": os.getenv("OPENROUTER_API_KEY"),
+            #     "context_window": 32000,
+            # },
         ]
     },
     "fast": {
@@ -81,7 +87,46 @@ llms_api = {
                 "model": "groq/qwen/qwen3-32b",
                 "api_key": os.getenv("GROQ_API_KEY"), 
                 "context_window": 131072,
-            }
+            }, 
+            # {
+            #     "model": "openrouter/deepseek/deepseek-r1-0528-qwen3-8b",
+            #     "api_key": os.getenv("OPENROUTER_API_KEY"),
+            #     "context_window": 32000,
+            # },
+        ]
+    },
+    "summary": {
+        "model": "openai/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+        "api_base": "https://api.siliconflow.cn/v1/",
+        "api_key": os.getenv("SILICONFLOW_API_KEY"),
+        "context_window": 128000,
+        "fallbacks": [
+            {
+                "model": "openrouter/google/gemini-2.0-flash-exp:free",
+                "api_key": os.getenv("OPENROUTER_API_KEY"),
+                "context_window": 1048576,
+            },
+            {
+                "model": "openai/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
+                "api_base": "https://api-inference.modelscope.cn/v1/",
+                "api_key": os.getenv("modelscope_API_KEY"), 
+                "context_window": 131072,
+            }, 
+            {
+                "model": "gemini/gemini-2.5-flash-lite",
+                "api_key": os.getenv("GEMINI_API_KEY"), 
+                "context_window": 1048576,
+            }, 
+            {
+                "model": "groq/llama-3.1-8b-instant",
+                "api_key": os.getenv("GROQ_API_KEY"), 
+                "context_window": 131072,
+            }, 
+            # {
+            #     "model": "openrouter/deepseek/deepseek-r1-0528-qwen3-8b",
+            #     "api_key": os.getenv("OPENROUTER_API_KEY"),
+            #     "context_window": 32000,
+            # },
         ]
     }
 }
@@ -103,25 +148,74 @@ llm_api_params = {
         Timeout,
         APIConnectionError,
         ServiceUnavailableError,
+        APIError,
     ]
 }
 
 def get_llm_params(
-    llm_group: Literal['reasoning', 'fast'] = 'reasoning',
+    llm_group: Literal['reasoning', 'fast', 'summary'] = 'reasoning',
     messages: Optional[List[Dict[str, Any]]] = None,
     temperature: float = llm_temperatures["reasoning"],
     tools: Optional[List[Dict[str, Any]]] = None,
     **kwargs: Any
 ) -> Dict[str, Any]:
     llm_params = llms_api[llm_group].copy()
+
     llm_params.update(**llm_api_params)
     llm_params.update(kwargs)
+
     llm_params["temperature"] = temperature
+
     if tools is not None:
         llm_params["tools"] = tools
+
     if messages is not None:
         llm_params["messages"] = copy.deepcopy(messages)
+
+    llm_params["retry_on_exceptions"] = [e for e in llm_api_params["exceptions_to_fallback_on"] if e != RateLimitError]
+    llm_params["max_retries"] = llm_params.get("num_retries", 3)
+
     return llm_params
+
+
+###############################################################################
+
+
+litellm.fallbacks = [
+    {
+        "model": "openrouter/deepseek/deepseek-r1-0528:free",
+        "api_key": os.getenv("OPENROUTER_API_KEY"),
+        "context_window": 163840,
+    }, 
+    {
+        "model": "openai/deepseek-ai/DeepSeek-R1-0528",
+        "api_base": "https://api-inference.modelscope.cn/v1/",
+        "api_key": os.getenv("modelscope_API_KEY"), 
+        "context_window": 163840,
+    }, 
+    {
+        "model": "gemini/gemini-2.5-flash-lite",
+        "api_key": os.getenv("GEMINI_API_KEY"), 
+        "context_window": 1048576,
+    }, 
+    {
+        "model": "groq/llama-3.1-8b-instant",
+        "api_key": os.getenv("GROQ_API_KEY"), 
+        "context_window": 131072,
+    }, 
+    {
+        "model": "groq/qwen/qwen3-32b",
+        "api_key": os.getenv("GROQ_API_KEY"), 
+        "context_window": 131072,
+    }, 
+    # {
+    #     "model": "openrouter/deepseek/deepseek-r1-0528-qwen3-8b",
+    #     "api_key": os.getenv("OPENROUTER_API_KEY"),
+    #     "context_window": 32000,
+    # },
+]
+
+litellm.exceptions_to_fallback_on = llm_api_params["exceptions_to_fallback_on"]
 
 
 ###############################################################################
@@ -131,7 +225,7 @@ embeddings_api = {
     "bge-m3": {
         "model": "openai/BAAI/bge-m3",
         "api_base": "https://api.siliconflow.cn/v1/",
-        "api_key": os.getenv("siliconflow_API_KEY"),
+        "api_key": os.getenv("SILICONFLOW_API_KEY"),
         # "dims": 1024,
     },
     "gemini": {
@@ -156,4 +250,3 @@ def get_embedding_params(
     embedding_params.update(**embeddings_api_params)
     embedding_params.update(kwargs)
     return embedding_params
-

@@ -17,7 +17,7 @@ from utils.models import Task, get_sibling_ids_up_to_current
 from utils.loader import load_prompts
 from utils.kg import get_kg_query_engine, kg_add
 from utils.hybrid_query import hybrid_query_batch
-from utils.vector import vector_add, get_vector_query_engine, index_query
+from utils.vector import index_query_batch, vector_add, get_vector_query_engine, index_query
 from utils.file import cache_dir
 from utils.llm import (
     llm_temperatures,
@@ -486,12 +486,9 @@ class StoryRAG:
             rerank_top_n=50,
         )
 
-        retrieved_contents = await index_query(
-            query_engine=query_engine,
-            questions=all_questions
-        )
-        result = "\n\n---\n\n".join(retrieved_contents)
-        if not retrieved_contents:
+        results = await index_query_batch(query_engine, all_questions)
+        result = "\n\n---\n\n".join(results)
+        if not results:
             logger.warning(f"[{task.id}] 上层搜索(upper_search)未能生成答案或找到相关文档。")
         else:
             logger.success(f"[{task.id}] 上层搜索(upper_search)成功完成。")

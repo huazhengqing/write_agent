@@ -14,7 +14,7 @@ from litellm.caching.caching import Cache
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.file import cache_dir
-from utils.config import get_llm_params, llms_api, embeddings_api, rerank_api, llm_temperatures, llm_api_params, embeddings_api_params
+from utils.config import get_llm_params, llm_temperatures
 
 
 def custom_get_cache_key(**kwargs):
@@ -164,6 +164,42 @@ self_correction_prompt = """
 """
 
 
+def _handle_llm_failure(
+    e: Exception,
+    llm_params: Dict[str, Any],
+    llm_params_for_api: Dict[str, Any],
+    response_model: Optional[Type[BaseModel]],
+    raw_output_for_correction: Optional[str],
+):
+    # 清理失败调用的缓存
+    cache_key = litellm.cache.get_cache_key(**llm_params_for_api)
+    litellm.cache.cache.delete_cache(cache_key)
+
+    # 针对JSON解析/验证错误的自我修正逻辑
+    if response_model and isinstance(e, (ValidationError, json.JSONDecodeError)) and raw_output_for_correction:
+        logger.info("检测到JSON错误, 下次尝试将进行自我修正...")
+        # 提取原始用户任务内容
+        original_user_content = ""
+        for msg in reversed(llm_params["messages"]):
+            if msg["role"] == "user":
+                original_user_content = msg.get("content", "")
+                break
+        
+        correction_prompt = self_correction_prompt.format(
+            error=str(e), 
+            raw_output=raw_output_for_correction,
+            original_task=original_user_content
+        )
+        
+        system_message = [m for m in llm_params["messages"] if m["role"] == "system"]
+        llm_params_for_api["messages"] = system_message + [{"role": "user", "content": correction_prompt}]
+    else:
+        # 如果不是可修正的错误，或者没有 response_model，则重置为原始消息
+        llm_params_for_api["messages"] = llm_params["messages"]
+
+    logger.info("正在准备重试...")
+
+
 async def llm_completion(
     llm_params: Dict[str, Any], 
     response_model: Optional[Type[BaseModel]] = None, 
@@ -251,37 +287,17 @@ async def llm_completion(
             return message
         except Exception as e:
             logger.warning(f"LLM调用或验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
-
-            if attempt < max_retries - 1:
-                try:
-                    cache_key = litellm.cache.get_cache_key(**llm_params_for_api)
-                    litellm.cache.cache.delete_cache(cache_key)
-                except Exception as cache_e:
-                    logger.error(f"删除缓存条目失败: {cache_e}")
-
-                # 针对JSON解析/验证错误的自我修正逻辑
-                if response_model and isinstance(e, (ValidationError, json.JSONDecodeError)) and raw_output_for_correction:
-                    logger.info("检测到JSON错误, 下次尝试将进行自我修正...")
-                    # 提取原始用户任务内容
-                    original_user_content = ""
-                    for msg in reversed(llm_params["messages"]):
-                        if msg["role"] == "user":
-                            original_user_content = msg.get("content", "")
-                            break
-                    correction_prompt = self_correction_prompt.format(
-                        error=str(e), 
-                        raw_output=raw_output_for_correction,
-                        original_task=original_user_content
-                    )
-                    system_message = [m for m in llm_params["messages"] if m["role"] == "system"]
-                    llm_params_for_api["messages"] = system_message + [{"role": "user", "content": correction_prompt}]
-                else:
-                    llm_params_for_api["messages"] = llm_params["messages"]
-
-                logger.info("正在准备重试...")
-            else:
+            if attempt >= max_retries - 1:
                 logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
-                raise
+                raise e
+
+            _handle_llm_failure(
+                e=e,
+                llm_params=llm_params,
+                llm_params_for_api=llm_params_for_api,
+                response_model=response_model,
+                raw_output_for_correction=raw_output_for_correction,
+            )
 
     raise RuntimeError("llm_completion 在所有重试后失败, 这是一个不应出现的情况。")
 

@@ -15,7 +15,7 @@ async def summary(task: Task) -> Task:
         "text": task.results.get("write_reflection")
     }
     messages = get_llm_messages(system_prompt, user_prompt, None, context_dict_user)
-    llm_params = get_llm_params(messages=messages, temperature=llm_temperatures["summarization"])
+    llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=llm_temperatures["summarization"])
     message = await llm_completion(llm_params)
     content = message.content
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")
@@ -29,7 +29,7 @@ async def summary_aggregate(task: Task) -> Task:
     system_prompt, user_prompt = load_prompts(task.category, "summary_aggregate", "system_prompt", "user_prompt")
     context = get_story_rag().get_aggregate_summary(task)
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
-    llm_params = get_llm_params(messages=messages, temperature=llm_temperatures["summarization"])
+    llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=llm_temperatures["summarization"])
     message = await llm_completion(llm_params)
     content = message.content
     reasoning = message.get("reasoning_content") or message.get("reasoning", "")
