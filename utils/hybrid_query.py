@@ -4,10 +4,13 @@ import asyncio
 import re
 from typing import List, Literal, Optional, Tuple, Union
 from loguru import logger
+
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.tools import QueryEngineTool
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures  # noqa
+from utils.config import llm_temperatures
+from utils.llm import get_llm_messages, get_llm_params, llm_completion  # noqa
 from utils.vector import index_query
 from utils.agent import call_react_agent
 

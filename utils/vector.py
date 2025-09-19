@@ -1,38 +1,39 @@
 import os
-import sys
 import re
-from llama_index.core.schema import TextNode
+import sys
+import numpy as np
 import threading
 import asyncio
 from datetime import datetime
 from pathlib import Path
 import json
+import chromadb
+from typing import cast
+from loguru import logger
 from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 from pydantic import Field
-from litellm import arerank, rerank
-import chromadb
-from loguru import logger
+
 from llama_index.core.ingestion import IngestionPipeline
 from llama_index.core import Document, Settings, SimpleDirectoryReader, VectorStoreIndex
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.prompts import PromptTemplate
+from llama_index.core.vector_stores import VectorStoreQuery
 from llama_index.core.indices.prompt_helper import PromptHelper
 from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.node_parser import MarkdownElementNodeParser, JSONNodeParser, SentenceSplitter
 from llama_index.core.node_parser.interface import NodeParser
-from llama_index.core.postprocessor.types import BaseNodePostprocessor
 from llama_index.core.retrievers import VectorIndexAutoRetriever
-from llama_index.core.tools import QueryEngineTool
-from llama_index.core.response_synthesizers import CompactAndRefine, ResponseMode
-from llama_index.core.schema import NodeWithScore, QueryBundle, RelatedNodeInfo
+from llama_index.core.response_synthesizers import CompactAndRefine
+from llama_index.core.schema import NodeWithScore, QueryBundle
 from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo, MetadataInfo
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.core.schema import NodeRelationship
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.llms.litellm import LiteLLM
+from llama_index.postprocessors.siliconflow_rerank import SiliconFlowRerank
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.llm import llm_temperatures, get_embedding_params, get_llm_params, get_rerank_params
+from utils.config import llm_temperatures, get_llm_params, get_embedding_params
 
 
 ###############################################################################
@@ -67,13 +68,17 @@ default_refine_prompt_tmpl_cn = """
 default_refine_prompt_cn = PromptTemplate(default_refine_prompt_tmpl_cn)
 
 
-_synthesis_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["synthesis"])
-_synthesis_llm = LiteLLM(**_synthesis_llm_params)
+synthesis_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["synthesis"])
 
-default_response_synthesizer = CompactAndRefine(
-    llm=_synthesis_llm,
+response_synthesizer_default = CompactAndRefine(
+    llm=LiteLLM(**synthesis_llm_params),
     text_qa_template=default_text_qa_prompt_cn,
     refine_template=default_refine_prompt_cn,
+    prompt_helper = PromptHelper(
+        context_window=synthesis_llm_params.get('context_window', 8192),
+        num_output=synthesis_llm_params.get('max_tokens', 2048),
+        chunk_overlap_ratio=0.2,
+    )
 )
 
 
@@ -84,20 +89,15 @@ def init_llama_settings():
     llm_params = get_llm_params(llm_group="fast", temperature=llm_temperatures["summarization"])
     Settings.llm = LiteLLM(**llm_params)
     
-    Settings.prompt_helper.context_window = llm_params.get('context_window', 4096)
-    Settings.prompt_helper.num_output = llm_params.get('max_tokens', 512)
-    Settings.prompt_helper.chunk_overlap_ratio = 0.2
+    Settings.prompt_helper = PromptHelper(
+        context_window=llm_params.get('context_window', 8192),
+        num_output=llm_params.get('max_tokens', 2048),
+        chunk_overlap_ratio=0.2,
+    )
 
     embedding_params = get_embedding_params()
     embed_model_name = embedding_params.pop('model')
     Settings.embed_model = LiteLLMEmbedding(model_name=embed_model_name, **embedding_params)
-
-    Settings.node_parser = MarkdownElementNodeParser(
-        chunk_size = 256, 
-        chunk_overlap = 50, 
-        num_workers=3,
-        include_metadata=True,
-    )
 
 init_llama_settings()
 
@@ -135,14 +135,19 @@ def get_node_parser(content_format: Literal["markdown", "text", "json"]) -> Node
             max_depth=3, 
             levels_to_keep=0
         )
-    elif content_format == "markdown":
-        return Settings.node_parser
     elif content_format == "text":
         return SentenceSplitter(
             chunk_size=256, 
             chunk_overlap=50,
         )
-    return Settings.node_parser
+    return MarkdownElementNodeParser(
+        llm=Settings.llm,
+        chunk_size = 256, 
+        chunk_overlap = 50, 
+        # num_workers=3,
+        include_metadata=True,
+        show_progress=False,
+    )
 
 
 ###############################################################################
@@ -159,27 +164,6 @@ def _default_file_metadata(file_path_str: str) -> dict:
         "creation_date": creation_time,
         "modification_date": modification_time,
     }
-
-
-def _convert_to_simple_text_nodes(nodes: List[Any], source_doc_id: str) -> List[TextNode]:
-    new_nodes = []
-    for n in nodes:
-        text = n.get_content()
-        
-        # 过滤掉仅包含空白或Markdown分隔线的节点
-        lines = [line.strip() for line in text.strip().split('\n')]
-        meaningful_lines = [line for line in lines if line and line != '---']
-        if not meaningful_lines:
-            continue
-
-        new_node = TextNode(
-            id_=n.id_,
-            text=text,
-            metadata=n.metadata.copy(),
-            relationships={NodeRelationship.SOURCE: RelatedNodeInfo(node_id=source_doc_id)}
-        )
-        new_nodes.append(new_node)
-    return new_nodes
 
 
 def vector_add_from_dir(
@@ -209,28 +193,32 @@ def vector_add_from_dir(
 
     logger.info(f"🔍 找到 {len(documents)} 个文件，开始解析并构建节点...")
 
-    all_nodes = []
+    # 按内容格式对文档进行分组，以便批量处理
+    docs_by_format: Dict[str, List[Document]] = {"markdown": [], "text": [], "json": []}
     for doc in documents:
         file_path = Path(doc.metadata.get("file_path", doc.id_))
-        if not doc.text.strip():
+        if not doc.text or not doc.text.strip():
             logger.warning(f"⚠️ 文件 '{file_path.name}' 内容为空，已跳过。")
             continue
         
         file_extension = file_path.suffix.lstrip('.')
-        content_format_map = {
-            "md": "markdown",
-            "txt": "text",
-            "json": "json"
-        }
+        content_format_map = {"md": "markdown", "txt": "text", "json": "json"}
         content_format = content_format_map.get(file_extension, "text")
+        docs_by_format[content_format].append(doc)
 
+    all_nodes = []
+    for content_format, format_docs in docs_by_format.items():
+        if not format_docs:
+            continue
+        
+        logger.info(f"正在为 {len(format_docs)} 个 '{content_format}' 文件批量解析节点...")
         node_parser = get_node_parser(content_format)
-        parsed_nodes = node_parser.get_nodes_from_documents([doc])
-        nodes_for_doc = _convert_to_simple_text_nodes(parsed_nodes, doc.id_)
-
-        logger.info(f"  - 文件 '{file_path.name}' (格式: {content_format}) 被解析成 {len(nodes_for_doc)} 个节点。")
-        logger.trace(f"  - 为 '{file_path.name}' 创建的节点内容: {[n.get_content(metadata_mode='all') for n in nodes_for_doc]}")
-        all_nodes.extend(nodes_for_doc)
+        parsed_nodes = node_parser.get_nodes_from_documents(format_docs, show_progress=True)
+        
+        # 过滤掉仅包含分隔符或空白等非文本内容的无效节点
+        nodes_for_format = [node for node in parsed_nodes if node.text.strip() and re.search(r'\w', node.text)]
+        logger.info(f"  - 从 '{content_format}' 文件中成功解析出 {len(nodes_for_format)} 个节点。")
+        all_nodes.extend(nodes_for_format)
 
     if not all_nodes:
         logger.warning("🤷‍♀️ 没有从文件中解析出任何可索引的节点。")
@@ -246,7 +234,7 @@ def vector_add_from_dir(
             logger.warning(f"发现并移除了重复的节点ID: {node.id_}。这可能由包含多个表格的Markdown文件引起。")
 
     pipeline = IngestionPipeline(vector_store=vector_store)
-    pipeline.run(nodes=unique_nodes, show_progress=True)
+    pipeline.run(nodes=unique_nodes)
 
     logger.success(f"成功从目录 '{input_dir}' 添加 {len(unique_nodes)} 个节点到向量库。")
     return True
@@ -266,8 +254,31 @@ def vector_add(
     with _vector_index_lock:
         cache_key = id(vector_store)
         if cache_key in _vector_indices:
-            logger.info(f"向量库内容变更, 使缓存的 VectorStoreIndex 失效 (key: {cache_key})。")
             del _vector_indices[cache_key]
+    
+    # 相似度搜索去重
+    query_embedding = Settings.embed_model.get_text_embedding(content)
+    logger.trace(f"为 doc_id '{doc_id}' 生成的嵌入向量 (前10维): {query_embedding[:10]}")
+    vector_store_query = VectorStoreQuery(
+        query_embedding=query_embedding,
+        similarity_top_k=1,
+        filters=None,
+    )
+    query_result = vector_store.query(vector_store_query)
+    if query_result.nodes:
+        similarity_score = query_result.similarities[0]
+        if similarity_score > 0.99:
+            most_similar_node_content = query_result.nodes[0].get_content()
+            if most_similar_node_content == content:
+                logger.warning(f"发现与 doc_id '{doc_id}' 内容完全相同 (相似度: {similarity_score:.4f}) 的文档，跳过添加。")
+                return False
+            else:
+                logger.critical(
+                    f"检测到向量碰撞 (相似度: {similarity_score:.4f})！"
+                    f"不同的内容产生了相同的向量，这通常是嵌入模型存在严重问题的迹象。"
+                    f"Doc ID: '{doc_id}', 新内容: '{content[:500]}...', "
+                    f"已存在内容: '{most_similar_node_content[:500]}...'"
+                )
 
     if doc_id:
         logger.info(f"正在从向量库中删除 doc_id '{doc_id}' 的旧节点...")
@@ -280,11 +291,11 @@ def vector_add(
 
     doc = Document(text=content, metadata=final_metadata, id_=doc_id)
     node_parser = get_node_parser(content_format)
-    parsed_nodes = node_parser.get_nodes_from_documents([doc])
-    nodes_to_insert = _convert_to_simple_text_nodes(parsed_nodes, doc.id_)
-
+    parsed_nodes = node_parser.get_nodes_from_documents([doc], show_progress=False)
+    nodes_to_insert = [node for node in parsed_nodes if node.text.strip() and re.search(r'\w', node.text)]
+    
     if not nodes_to_insert:
-        logger.warning(f"内容 (doc_id: {doc_id}) 未解析出任何节点，跳过添加。")
+        logger.warning(f"内容 (doc_id: {doc_id}) 未解析出任何有效节点，跳过添加。")
         return False
     logger.debug(f"为 doc_id '{doc_id}' 创建的节点内容: {[n.get_content(metadata_mode='all') for n in nodes_to_insert]}")
 
@@ -296,93 +307,6 @@ def vector_add(
 
 
 ###############################################################################
-
-
-class LiteLLMReranker(BaseNodePostprocessor):
-    top_n: int = 3
-    rerank_params: Dict[str, Any] = Field(default_factory=dict)
-    
-    def _postprocess_nodes(
-        self,
-        nodes: List[NodeWithScore],
-        query_bundle: Optional[QueryBundle] = None,
-    ) -> List[NodeWithScore]:
-        if query_bundle is None:
-            raise ValueError("必须提供查询信息 (QueryBundle) 才能进行重排。")
-        if not nodes:
-            return []
-
-        logger.debug(f"Reranker (同步) 收到 {len(nodes)} 个待重排节点。")
-        for i, node in enumerate(nodes):
-            logger.trace(f"  - 原始节点 {i+1} (score: {node.score:.4f}): {node.get_content()[:100]}...")
-
-        query_str = query_bundle.query_str
-        documents = [node.get_content() for node in nodes]
-
-        rerank_request_params = self.rerank_params.copy()
-        rerank_request_params.update({
-            "query": query_str,
-            "documents": documents,
-            "top_n": self.top_n,
-        })
-        
-        logger.debug(f"向 LiteLLM Reranker 发送同步请求: model={rerank_request_params.get('model')}, top_n={self.top_n}, num_docs={len(documents)}")
-
-        response = rerank(**rerank_request_params)
-
-        new_nodes_with_scores = []
-        if response and response.results:
-            for result in response.results:
-                original_node = nodes[result.index]
-                original_node.score = result.relevance_score
-                new_nodes_with_scores.append(original_node)
-            logger.debug(f"重排后 (同步) 返回 {len(new_nodes_with_scores)} 个节点。")
-        else:
-            logger.warning(f"同步 rerank 调用返回了空或无效的结果。Response: {response}。将返回原始节点。")
-            return nodes
-
-        return new_nodes_with_scores
-
-    async def apostprocess_nodes(
-        self,
-        nodes: List[NodeWithScore],
-        query_bundle: Optional[QueryBundle] = None,
-    ) -> List[NodeWithScore]:
-        if query_bundle is None:
-            raise ValueError("必须提供查询信息 (QueryBundle) 才能进行重排。")
-        if not nodes:
-            return []
-
-        logger.debug(f"Reranker (异步) 收到 {len(nodes)} 个待重排节点。")
-        for i, node in enumerate(nodes):
-            logger.trace(f"  - 原始节点 {i+1} (score: {node.score:.4f}): {node.get_content()[:100]}...")
-
-        query_str = query_bundle.query_str
-        documents = [node.get_content() for node in nodes]
-
-        rerank_request_params = self.rerank_params.copy()
-        rerank_request_params.update({
-            "query": query_str,
-            "documents": documents,
-            "top_n": self.top_n,
-        })
-        
-        logger.debug(f"向 LiteLLM Reranker 发送异步请求: model={rerank_request_params.get('model')}, top_n={self.top_n}, num_docs={len(documents)}")
-        
-        response = await arerank(**rerank_request_params) 
-
-        new_nodes_with_scores = []
-        if response and response.results:
-            for result in response.results:
-                original_node = nodes[result.index]
-                original_node.score = result.relevance_score
-                new_nodes_with_scores.append(original_node)
-        else:
-            logger.warning(f"异步 arerank 调用返回了空或无效的结果。Response: {response}。将返回原始节点。")
-            return nodes
-        
-        logger.debug(f"重排后 (异步) 返回 {len(new_nodes_with_scores)} 个节点。")
-        return new_nodes_with_scores
 
 
 def get_default_vector_store_info() -> VectorStoreInfo:
@@ -446,8 +370,10 @@ def get_vector_query_engine(
 
     postprocessors = []
     if rerank_top_n and rerank_top_n > 0:
-        rerank_params = get_rerank_params()
-        reranker = LiteLLMReranker(top_n=rerank_top_n, rerank_params=rerank_params)
+        reranker = SiliconFlowRerank(
+            api_key=os.getenv("SILICONFLOW_API_KEY"),
+            top_n=rerank_top_n,
+        )
         postprocessors.append(reranker)
 
     reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
@@ -468,7 +394,7 @@ def get_vector_query_engine(
         )
         query_engine = RetrieverQueryEngine(
             retriever=retriever,
-            response_synthesizer=default_response_synthesizer,
+            response_synthesizer=response_synthesizer_default,
             node_postprocessors=postprocessors,
         )
         logger.success("自动检索查询引擎创建成功。")
@@ -481,7 +407,7 @@ def get_vector_query_engine(
 
         query_engine = index.as_query_engine(
             llm=reasoning_llm,
-            response_synthesizer=default_response_synthesizer,
+            response_synthesizer=response_synthesizer_default,
             filters=filters,
             similarity_top_k=similarity_top_k,
             node_postprocessors=postprocessors,
@@ -535,6 +461,120 @@ async def index_query(query_engine: BaseQueryEngine, questions: List[str]) -> Li
 
 ###############################################################################
 
+
+async def _test_embedding_model():
+    """专门测试嵌入模型的功能和正确性。"""
+    logger.info("--- 3. 测试嵌入模型 (Embedding Model) ---")
+    embed_model = Settings.embed_model
+
+    # 1. 测试不同文本是否产生不同向量
+    logger.info("--- 3.1. 测试不同文本的向量差异性 ---")
+    text1 = "这是一个关于人工智能的句子。"
+    text2 = "这是一个关于自然语言处理的句子。"
+    
+    try:
+        embedding1_list = await embed_model.aget_text_embedding(text1)
+        embedding2_list = await embed_model.aget_text_embedding(text2)
+        embedding1 = np.array(embedding1_list)
+        embedding2 = np.array(embedding2_list)
+
+        logger.debug(f"文本1的向量 (前5维): {embedding1[:5]}")
+        logger.debug(f"文本2的向量 (前5维): {embedding2[:5]}")
+
+        # 检查向量是否全为零
+        assert np.any(embedding1 != 0), "嵌入向量1不应为全零向量，这表明嵌入模型可能未正确工作。"
+        assert np.any(embedding2 != 0), "嵌入向量2不应为全零向量，这表明嵌入模型可能未正确工作。"
+        logger.info("向量非零检查通过。")
+
+        # 检查向量是否相同
+        are_equal = np.array_equal(embedding1, embedding2)
+        assert not are_equal, "不同文本不应产生完全相同的嵌入向量。如果相同，说明嵌入模型存在严重问题（向量碰撞）。"
+        logger.info("不同文本的向量不同，检查通过。")
+
+        # 检查向量相似度
+        norm1 = np.linalg.norm(embedding1)
+        norm2 = np.linalg.norm(embedding2)
+        assert norm1 > 0 and norm2 > 0, "向量模长不能为零。"
+        
+        similarity = np.dot(embedding1, embedding2) / (norm1 * norm2)
+        logger.info(f"两个不同但相关句子的余弦相似度: {similarity:.4f}")
+        assert 0.5 < similarity < 0.999, "相关句子的相似度应在合理范围内 (大于0.5，小于1)。"
+        logger.info("相关句子相似度检查通过。")
+
+    except Exception as e:
+        logger.error(f"获取嵌入向量时出错: {e}", exc_info=True)
+        assert False, "嵌入模型调用失败，请检查API密钥、网络连接或模型配置。"
+
+    # 2. 测试相同文本是否产生相同向量
+    logger.info("--- 3.2. 测试相同文本的向量一致性 ---")
+    try:
+        embedding1_again_list = await embed_model.aget_text_embedding(text1)
+        embedding1_again = np.array(embedding1_again_list)
+        np.testing.assert_allclose(embedding1, embedding1_again, rtol=1e-5)
+        logger.info("相同文本的向量相同，检查通过。")
+    except Exception as e:
+        logger.error(f"测试相同文本向量时出错: {e}", exc_info=True)
+        assert False, "相同文本向量一致性测试失败。"
+
+    # 3. 测试批量嵌入
+    logger.info("--- 3.3. 测试批量嵌入 ---")
+    try:
+        texts_batch = [text1, text2, "第三个完全不同的句子。"]
+        embeddings_batch = await embed_model.aget_text_embedding_batch(texts_batch)
+        assert len(embeddings_batch) == 3, f"批量嵌入应返回3个向量，但返回了{len(embeddings_batch)}个。"
+        logger.info("批量嵌入返回了正确数量的向量。")
+        np.testing.assert_allclose(np.array(embeddings_batch[0]), embedding1, rtol=1e-5)
+        logger.info("批量嵌入的第一个结果与单个嵌入结果一致，检查通过。")
+    except Exception as e:
+        logger.error(f"批量嵌入测试失败: {e}", exc_info=True)
+        assert False, "批量嵌入测试失败。"
+    logger.success("--- 嵌入模型测试通过 ---")
+
+async def _test_reranker():
+    """专门测试重排服务的功能和正确性。"""
+    logger.info("--- 测试重排服务 (Reranker) ---")
+    
+    query = "哪部作品是关于一个男孩发现自己是巫师的故事？"
+    documents = [
+        "《沙丘》是一部关于星际政治和巨型沙虫的史诗科幻小说。", # low relevance
+        "《哈利·波特与魔法石》讲述了一个名叫哈利·波特的年轻男孩，他发现自己是一个巫师，并被霍格沃茨魔法学校录取。", # high relevance
+        "《魔戒》讲述了霍比特人佛罗多·巴金斯摧毁至尊魔戒的旅程。", # medium relevance
+        "《神经漫游者》是一部赛博朋克小说，探讨了人工智能和虚拟现实。", # low relevance
+        "一个男孩在魔法学校学习的故事，他最好的朋友是一个红发男孩和一个聪明的女孩。", # high relevance, but less specific
+    ]
+    
+    reranker = SiliconFlowRerank(
+        api_key=os.getenv("SILICONFLOW_API_KEY"),
+        top_n=3,
+    )
+    
+    nodes = [NodeWithScore(node=Document(text=d), score=1.0) for d in documents]
+    query_bundle = QueryBundle(query_str=query)
+    
+    try:
+        reranked_nodes = await reranker.aprocess_nodes(nodes, query_bundle=query_bundle)
+        
+        assert len(reranked_nodes) <= 3, f"重排后应返回最多 3 个节点, 但返回了 {len(reranked_nodes)} 个。"
+        logger.info(f"重排后返回 {len(reranked_nodes)} 个节点，数量正确。")
+        
+        assert len(reranked_nodes) > 0, "Reranker 返回了空列表，服务可能未正常工作。"
+
+        reranked_texts = [node.get_content() for node in reranked_nodes]
+        reranked_scores = [node.score for node in reranked_nodes]
+        logger.info(f"重排后的文档顺序及分数: {list(zip(reranked_texts, reranked_scores))}")
+        
+        assert "哈利·波特" in reranked_texts[0], "最相关的文档没有排在第一位。"
+        logger.info("最相关的文档排序正确。")
+        
+        for i in range(len(reranked_scores) - 1):
+            assert reranked_scores[i] >= reranked_scores[i+1], f"重排后分数没有递减: {reranked_scores}"
+        logger.info("重排后分数递减，检查通过。")
+
+    except Exception as e:
+        logger.error(f"重排服务测试失败: {e}", exc_info=True)
+        assert False, "重排服务测试失败，请检查API或配置。"
+        
+    logger.success("--- 重排服务测试通过 ---")
 
 def _prepare_test_data(input_dir: str):
     """准备所有用于测试的输入文件。"""
@@ -646,7 +686,7 @@ def fibonacci(n):
 
 async def _test_data_ingestion(vector_store: VectorStore, input_dir: str, test_dir: str):
     """测试从目录和单个内容添加向量，包括各种边缘情况。"""
-    # 4. 测试从目录添加
+    # 4. 测试从目录添加入库
     logger.info("--- 4. 测试 vector_add_from_dir (常规) ---")
     vector_add_from_dir(vector_store, input_dir, _default_file_metadata)
 
@@ -718,139 +758,183 @@ async def _test_data_ingestion(vector_store: VectorStore, input_dir: str, test_d
     logger.info("从仅包含无效文件的目录添加，返回False，验证通过。")
 
 
-async def _test_query_and_delete(vector_store: VectorStore):
-    """测试删除、更新和各种查询模式。"""
-    # 7. 测试显式删除
+async def _test_node_deletion(vector_store: VectorStore):
+    """测试节点的显式删除功能。"""
     logger.info("--- 7. 测试显式删除 ---")
+    doc_id_to_delete = "to_be_deleted"
+    content_to_delete = "这是一个唯一的、即将被删除的节点XYZ123。"
     vector_add(
         vector_store,
-        "这是一个唯一的、即将被删除的节点XYZ123。",
+        content_to_delete,
         {"type": "disposable", "source": "delete_test"},
-        doc_id="to_be_deleted"
+        doc_id=doc_id_to_delete
     )
-    
-    query_engine_before_delete = get_vector_query_engine(vector_store, similarity_top_k=1, rerank_top_n=0)
-    delete_query = "这是一个唯一的、即将被删除的节点XYZ123。"
+    await asyncio.sleep(2)
 
-    # 使用重试循环代替固定等待，确保数据在查询前已持久化
-    retrieved_nodes_before = []
-    for i in range(5): # 最多重试5次
-        retrieved_nodes_before = await query_engine_before_delete.aretrieve(delete_query)
-        if retrieved_nodes_before and "XYZ123" in retrieved_nodes_before[0].get_content():
-            logger.info(f"数据持久化确认成功 (尝试 {i+1}/5)。")
-            break
-        logger.warning(f"数据尚未持久化，等待1秒后重试 (尝试 {i+1}/5)...")
-        await asyncio.sleep(1)
-
-    assert retrieved_nodes_before and "XYZ123" in retrieved_nodes_before[0].get_content()
-    logger.info("删除前节点存在，验证通过。")
-
-    vector_store.delete(ref_doc_id="to_be_deleted")
-    logger.info("已调用删除方法。")
-
-    # 在删除操作后也等待，确保其在数据库中生效
-    await asyncio.sleep(3)
-
-    # 直接操作 vector_store 后需要手动使索引缓存失效
     with _vector_index_lock:
         cache_key = id(vector_store)
         if cache_key in _vector_indices:
             del _vector_indices[cache_key]
-    logger.info("已使向量索引缓存失效。")
+    
+    filters = MetadataFilters(filters=[ExactMatchFilter(key="ref_doc_id", value=doc_id_to_delete)])
+    query_engine_for_check = get_vector_query_engine(vector_store, filters=filters, similarity_top_k=1, rerank_top_n=0)
+    response_before = await query_engine_for_check.aquery("any")
+    retrieved_nodes_before = response_before.source_nodes
 
-    # 重新创建查询引擎以反映删除操作。使用高相似度阈值来确认节点已被删除。
-    query_engine_after_delete = get_vector_query_engine(vector_store, similarity_top_k=1, rerank_top_n=0, similarity_cutoff=0.9)
-    retrieved_nodes_after = await query_engine_after_delete.aretrieve(delete_query)
+    assert retrieved_nodes_before and content_to_delete in retrieved_nodes_before[0].get_content()
+    logger.info("删除前节点存在，验证通过。")
+
+    vector_store.delete(ref_doc_id=doc_id_to_delete)
+    logger.info("已调用删除方法。")
+
+    with _vector_index_lock:
+        cache_key = id(vector_store)
+        if cache_key in _vector_indices:
+            del _vector_indices[cache_key]
+    logger.info("已使向量索引缓存失效以反映删除操作。")
+
+    query_engine_after_delete = get_vector_query_engine(vector_store, filters=filters, similarity_top_k=1, rerank_top_n=0)
+    response_after = await query_engine_after_delete.aquery("any")
+    retrieved_nodes_after = response_after.source_nodes
     assert not retrieved_nodes_after
-    logger.info("删除后节点不存在，验证通过。")
+    logger.success("--- 节点删除测试通过 ---")
 
-    # 8. 测试 get_vector_query_engine (标准模式)
-    logger.info("--- 8. 测试 get_vector_query_engine (标准模式) ---")
+
+async def _test_node_update(vector_store: VectorStore):
+    """测试节点的更新操作（通过覆盖doc_id）。"""
+    logger.info("--- 8. 测试更新操作 ---")
+    doc_id_to_update = "to_be_updated"
+    content_v1 = "这是文档的初始版本 V1，用于测试更新功能。"
+    content_v2 = "这是文档更新后的版本 V2，旧内容应被覆盖。"
+
+    vector_add(
+        vector_store,
+        content_v1,
+        {"type": "update_test", "version": 1},
+        doc_id=doc_id_to_update
+    )
+    await asyncio.sleep(2)
+
+    filters_update = MetadataFilters(filters=[ExactMatchFilter(key="ref_doc_id", value=doc_id_to_update)])
+    query_engine_v1 = get_vector_query_engine(vector_store, filters=filters_update, similarity_top_k=1)
+    response_v1 = await query_engine_v1.aquery("any")
+    retrieved_v1 = response_v1.source_nodes
+    assert retrieved_v1 and "V1" in retrieved_v1[0].get_content()
+    logger.info("更新前，版本 V1 存在，验证通过。")
+
+    vector_add(
+        vector_store,
+        content_v2,
+        {"type": "update_test", "version": 2},
+        doc_id=doc_id_to_update
+    )
+    await asyncio.sleep(2)
+
+    query_engine_v2 = get_vector_query_engine(vector_store, filters=filters_update, similarity_top_k=1)
+    response_v2 = await query_engine_v2.aquery("any")
+    retrieved_v2 = response_v2.source_nodes
+    assert retrieved_v2 and "V2" in retrieved_v2[0].get_content() and "V1" not in retrieved_v2[0].get_content()
+    logger.success("--- 节点更新测试通过 ---")
+
+
+async def _test_standard_query(vector_store: VectorStore):
+    """测试标准查询模式。"""
+    logger.info("--- 9. 测试 get_vector_query_engine (标准模式) ---")
     query_engine = get_vector_query_engine(vector_store, similarity_top_k=5, rerank_top_n=2)
     logger.info(f"成功创建标准查询引擎: {type(query_engine)}")
 
-    questions1 = [
-        "龙傲天是谁？", 
-        "虚空之石有什么用？", 
-        "萧炎是什么门派的？", 
-        "药老是谁？", 
+    questions = [
+        "龙傲天是谁？",
+        "虚空之石有什么用？",
+        "萧炎是什么门派的？",
+        "药老是谁？",
         "双帝之战的主角是谁？",
         "九天世界的中心是什么？",
         "龙傲天和叶良辰是什么关系？",
-        "诛仙四剑包括哪些？", 
+        "诛仙四剑包括哪些？",
         "黑风寨发生了什么事？",
         "苍龙七宿是什么？",
         "龙傲天的成长路径是怎样的？",
         "北冥令牌有什么用？",
         "如何用python计算斐波那契数列？"
     ]
-    results1 = await index_query(query_engine, questions1)
-    logger.info(f"标准查询结果:\n{results1}")
-    assert any("龙傲天" in r for r in results1)
-    assert any("虚空之石" in r for r in results1)
-    assert any("萧炎" in r and "炎盟" in r for r in results1)
-    assert any("药尘" in r for r in results1)
-    assert any("萧炎" in r and "魂天帝" in r for r in results1)
-    assert any("建木" in r for r in results1)
-    assert any("宿敌" in r for r in results1)
-    assert any("戮仙剑" in r and "绝仙剑" in r for r in results1)
-    assert any("黑风寨" in r and "北冥魔殿" in r for r in results1)
-    assert any("苍龙七宿" in r and "星宿之力" in r for r in results1)
-    assert any("初入江湖" in r and "实力提升" in r for r in results1) # 验证Mermaid图内容
-    assert any("北冥魔殿分舵" in r for r in results1) # 验证新增列表内容
-    assert any("fibonacci" in r and "def" in r for r in results1) # 验证代码块内容
-    # 验证被跳过或删除的内容不存在
-    assert not any("错误信息" in r for r in results1)
-    assert not any("即将被删除" in r for r in results1)
+    results = await index_query(query_engine, questions)
+    logger.info(f"标准查询结果:\n{results}")
+    assert any("龙傲天" in r for r in results)
+    assert any("虚空之石" in r for r in results)
+    assert any("萧炎" in r and "炎盟" in r for r in results)
+    assert any("药尘" in r for r in results)
+    assert any("萧炎" in r and "魂天帝" in r for r in results)
+    assert any("建木" in r for r in results)
+    assert any("宿敌" in r for r in results)
+    assert any("戮仙剑" in r and "绝仙剑" in r for r in results)
+    assert any("黑风寨" in r and "北冥魔殿" in r for r in results)
+    assert any("苍龙七宿" in r and "星宿之力" in r for r in results)
+    assert any("初入江湖" in r and "实力提升" in r for r in results)
+    assert any("北冥魔殿分舵" in r for r in results)
+    assert any("fibonacci" in r and "def" in r for r in results)
+    assert not any("错误信息" in r for r in results)
+    assert not any("即将被删除" in r for r in results)
+    logger.success("--- 标准查询测试通过 ---")
 
-    # 9. 测试 get_vector_query_engine (带固定过滤器)
-    logger.info("--- 9. 测试 get_vector_query_engine (带固定过滤器) ---")
+
+async def _test_filtered_query(vector_store: VectorStore):
+    """测试带固定元数据过滤器的查询。"""
+    logger.info("--- 10. 测试 get_vector_query_engine (带固定过滤器) ---")
     filters = MetadataFilters(filters=[ExactMatchFilter(key="type", value="item")])
     query_engine_filtered = get_vector_query_engine(vector_store, filters=filters)
-    questions2 = ["介绍一下那个石头。"]
-    results2 = await index_query(query_engine_filtered, questions2)
-    logger.info(f"带过滤器的查询结果:\n{results2}")
-    assert len(results2) > 0 and "虚空之石" in results2[0]
+    
+    results_hit = await index_query(query_engine_filtered, ["介绍一下那个石头。"])
+    logger.info(f"带过滤器的查询结果 (应命中):\n{results_hit}")
+    assert len(results_hit) > 0 and "虚空之石" in results_hit[0]
 
-    questions3 = ["龙傲天是谁？"]  # 这个查询应该被过滤器挡住
-    results3 = await index_query(query_engine_filtered, questions3)
-    logger.info(f"被过滤器阻挡的查询结果:\n{results3}")
-    assert not results3[0]
+    results_miss = await index_query(query_engine_filtered, ["龙傲天是谁？"])
+    logger.info(f"被过滤器阻挡的查询结果 (应未命中):\n{results_miss}")
+    assert not results_miss[0]
+    logger.success("--- 带固定过滤器的查询测试通过 ---")
 
-    # 10. 测试无重排器和同步查询
-    logger.info("--- 10. 测试无重排器和同步查询 ---")
+
+async def _test_no_reranker_sync_query(vector_store: VectorStore):
+    """测试无重排器和同步查询模式。"""
+    logger.info("--- 11. 测试无重排器和同步查询 ---")
     query_engine_no_rerank = get_vector_query_engine(vector_store, similarity_top_k=5, rerank_top_n=0)
     sync_question = "林动的功法是什么？"
-    # 使用 .query() 来测试同步路径
     sync_response = query_engine_no_rerank.query(sync_question)
     logger.info(f"同步查询 (无重排器) 结果:\n{sync_response}")
     assert "大荒芜经" in str(sync_response)
+    logger.success("--- 无重排器和同步查询测试通过 ---")
 
-    # 11. 测试 get_vector_query_engine (自动检索模式)
-    logger.info("--- 11. 测试 get_vector_query_engine (自动检索模式) ---")
+
+async def _test_auto_retriever_query(vector_store: VectorStore):
+    """测试自动检索（AutoRetriever）模式。"""
+    logger.info("--- 12. 测试 get_vector_query_engine (自动检索模式) ---")
     query_engine_auto = get_vector_query_engine(vector_store, use_auto_retriever=True, similarity_top_k=5, rerank_top_n=2)
     logger.info(f"成功创建自动检索查询引擎: {type(query_engine_auto)}")
 
-    # 这个查询应该能被 AutoRetriever 解析为针对 metadata 'type'='item' 的过滤
     auto_question = "请根据类型为 'item' 的文档，介绍一下那个物品。"
     auto_results = await index_query(query_engine_auto, [auto_question])
     logger.info(f"自动检索查询结果:\n{auto_results}")
     assert len(auto_results) > 0 and "虚空之石" in auto_results[0]
+    logger.success("--- 自动检索查询测试通过 ---")
 
-    # 12. 测试空查询
-    logger.info("--- 12. 测试空查询 ---")
+
+async def _test_empty_query(vector_store: VectorStore):
+    """测试对无结果查询的处理。"""
+    logger.info("--- 13. 测试空查询 ---")
+    query_engine = get_vector_query_engine(vector_store, similarity_top_k=5, rerank_top_n=2)
     empty_results = await index_query(query_engine, ["一个不存在的概念xyz"])
     logger.info(f"空查询结果: {empty_results}")
     assert not empty_results[0]
+    logger.success("--- 空查询测试通过 ---")
 
 
 if __name__ == '__main__':
     import asyncio
-    import tempfile
     import shutil
     from pathlib import Path
     import json
     from utils.log import init_logger
+    from utils.file import project_root
     from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
     import nest_asyncio
 
@@ -858,22 +942,39 @@ if __name__ == '__main__':
 
     nest_asyncio.apply()
 
-    test_dir = tempfile.mkdtemp()
+    import logging
+    logging.getLogger("litellm").setLevel(logging.WARNING)
+
+    test_dir = project_root / ".test" / "vector_test"
+    if test_dir.exists():
+        shutil.rmtree(test_dir)
+
     db_path = os.path.join(test_dir, "chroma_db")
     input_dir = os.path.join(test_dir, "input_data")
     os.makedirs(input_dir, exist_ok=True)
 
     async def main():
+        collection_name = "test_collection"
         _prepare_test_data(input_dir)
+        
+        await _test_embedding_model()
+        await _test_reranker()
 
-        vector_store = get_vector_store(db_path=db_path, collection_name="test_collection")
+        vector_store = get_vector_store(db_path=db_path, collection_name=collection_name)
 
-        await _test_data_ingestion(vector_store, input_dir, test_dir)
+        await _test_data_ingestion(vector_store, input_dir, str(test_dir))
 
-        await _test_query_and_delete(vector_store)
+        # 原 _test_query_and_delete 已拆分为以下独立测试
+        await _test_node_deletion(vector_store)
+        await _test_node_update(vector_store)
+        await _test_standard_query(vector_store)
+        await _test_filtered_query(vector_store)
+        await _test_no_reranker_sync_query(vector_store)
+        await _test_auto_retriever_query(vector_store)
+        await _test_empty_query(vector_store)
 
     try:
         asyncio.run(main())
         logger.success("所有 vector.py 测试用例通过！")
     finally:
-        shutil.rmtree(test_dir)
+        logger.info(f"测试完成。测试数据保留在: {test_dir}")

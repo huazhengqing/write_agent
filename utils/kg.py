@@ -4,21 +4,20 @@ from typing import Any, Dict, List, Literal, Optional, Tuple
 import threading
 import kuzu
 from loguru import logger
-from llama_index.core import Document, KnowledgeGraphIndex, Settings, StorageContext, VectorStoreIndex
+
+from llama_index.core import Document, KnowledgeGraphIndex, StorageContext, VectorStoreIndex
 from llama_index.core.base.base_query_engine import BaseQueryEngine
-from llama_index.core.indices.prompt_helper import PromptHelper
 from llama_index.core.prompts import PromptTemplate
-from llama_index.core.response_synthesizers import CompactAndRefine
-from llama_index.core.tools import QueryEngineTool
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.core.graph_stores import SimpleGraphStore
+from llama_index.postprocessors.siliconflow_rerank import SiliconFlowRerank
 from llama_index.graph_stores.kuzu import KuzuGraphStore
 from llama_index.llms.litellm import LiteLLM
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from utils.llm import llm_temperatures, get_llm_params, get_rerank_params
-from utils.agent import call_react_agent
-from utils.vector import LiteLLMReranker, default_response_synthesizer, get_node_parser
+from utils.config import llm_temperatures
+from utils.llm import get_llm_params
+from utils.vector import response_synthesizer_default, get_node_parser
 from utils.log import init_logger
 
 
@@ -293,8 +292,10 @@ def get_kg_query_engine(
             )
             _kg_indices[cache_key] = kg_index
 
-    rerank_params = get_rerank_params()
-    reranker = LiteLLMReranker(top_n=kg_rerank_top_n, rerank_params=rerank_params)
+    reranker = SiliconFlowRerank(
+        api_key=os.getenv("SILICONFLOW_API_KEY"),
+        top_n=kg_rerank_top_n,
+    )
 
     query_engine = kg_index.as_query_engine(
         llm=reasoning_llm,
@@ -303,7 +304,7 @@ def get_kg_query_engine(
         with_nl2graphquery=True, 
         graph_traversal_depth=2,
         nl2graphquery_prompt=PromptTemplate(kg_nl2graphquery_prompt),
-        response_synthesizer=default_response_synthesizer,
+        response_synthesizer=response_synthesizer_default,
         node_postprocessors=[reranker],
         synonym_degree=2,
     )

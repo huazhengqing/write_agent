@@ -1,4 +1,3 @@
-# 这是自动生成的顶级依赖文件。请在此处管理你的直接依赖项。
 ddgs
 kuzu
 httpx
@@ -9,13 +8,14 @@ chromadb
 pydantic
 diskcache
 playwright
-llama-index
 trafilatura
 python-dotenv
 pysqlite3-binary
 litellm[caching]
 sentence_transformers
+llama-index
 llama-index-llms-litellm
 llama-index-graph-stores-kuzu
 llama-index-embeddings-litellm
 llama-index-vector-stores-chroma
+llama_index.postprocessor.siliconflow_rerank
