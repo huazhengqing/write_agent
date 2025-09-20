@@ -9,7 +9,8 @@ import nest_asyncio
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.log import init_logger
-from utils.vector import init_llama_settings, get_vector_store, vector_add_from_dir, default_file_metadata
+from utils.file import log_dir
+from utils.vector import init_llama_settings, get_vector_store, vector_add_from_dir, file_metadata_default
 from tests import test_data
 
 
@@ -19,7 +20,7 @@ def pytest_configure(config):
     """
     # 忽略来自 litellm 内部关于 importlib.resources.open_text 的弃用警告
     config.addinivalue_line(
-        "filterwarnings", "ignore:open_text is deprecated:DeprecationWarning"
+        "filterwarnings", "ignore:open_text is deprecated. Use files\(\) instead.*:DeprecationWarning"
     )
     # 忽略 Pydantic 在序列化不完整模型实例时发出的警告，这在 litellm 的响应对象中可能发生
     config.addinivalue_line(
@@ -38,6 +39,13 @@ def setup_test_environment():
     """
     nest_asyncio.apply()
     logging.getLogger("litellm").setLevel(logging.WARNING)
+    import warnings
+    warnings.filterwarnings(
+        "ignore", 
+        category=DeprecationWarning,
+        message="open_text is deprecated. Use files() instead.*",
+        module="litellm.*"
+    )
     init_llama_settings()
     # 这个 fixture 会为会话中的所有测试自动运行。
     # 不需要 yield 任何东西。
@@ -47,9 +55,22 @@ def setup_test_environment():
 def setup_module_logging(request):
     """
     为每个测试模块（文件）设置独立的日志文件。
+    - 在初始化日志前，先删除与当前测试模块同名的旧日志文件
     """
     # 从请求中获取模块（测试文件）的路径，并提取文件名（不含扩展名）作为日志名
     log_filename = Path(request.module.__file__).stem
+    
+    # 构建日志文件路径
+    log_file_path = log_dir / f"{log_filename}.log"
+    
+    # 如果旧日志文件存在，则删除它
+    if os.path.exists(log_file_path):
+        try:
+            os.remove(log_file_path)
+        except Exception as e:
+            print(f"Warning: 无法删除旧日志文件 {log_file_path}: {e}")
+    
+    # 初始化新的日志记录器
     init_logger(log_filename)
 
 
@@ -97,5 +118,5 @@ def ingested_store(test_dirs):
     """
     _write_test_data_to_files(test_dirs["input_path"])
     vector_store = get_vector_store(db_path=test_dirs["db_path"], collection_name="test_collection")
-    vector_add_from_dir(vector_store, test_dirs["input_path"], default_file_metadata)
+    vector_add_from_dir(vector_store, test_dirs["input_path"], file_metadata_default)
     return vector_store

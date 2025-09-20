@@ -46,11 +46,11 @@ def realistic_kg_stores(tmp_path_factory):
     logger.info("--- (Fixture) 开始将真实场景数据添加入知识图谱 ---")
     
     realistic_data = [
-        ("1.1_design_worldview", VECTOR_TEST_NOVEL_WORLDVIEW, "markdown"),
+        ("1.1_design_worldview", VECTOR_TEST_NOVEL_WORLDVIEW, "md"),
         ("1.2_design_characters", VECTOR_TEST_NOVEL_CHARACTERS, "json"),
-        ("1.3_design_plot_arc1", VECTOR_TEST_NOVEL_PLOT_ARC, "markdown"),
-        ("1.4_design_factions", VECTOR_TEST_NOVEL_FACTIONS, "markdown"),
-        ("3.1.1_write_chapter1", VECTOR_TEST_NOVEL_CHAPTER, "markdown"),
+        ("1.3_design_plot_arc1", VECTOR_TEST_NOVEL_PLOT_ARC, "md"),
+        ("1.4_design_factions", VECTOR_TEST_NOVEL_FACTIONS, "md"),
+        ("3.1.1_write_chapter1", VECTOR_TEST_NOVEL_CHAPTER, "md"),
     ]
 
     for doc_id, content, content_format in realistic_data:
@@ -78,7 +78,7 @@ async def test_kg_query(basic_kg_stores):
     kg_store, vector_store = basic_kg_stores
     # 灌入用于查询的数据
     kg_add(kg_store, vector_store, "龙傲天是青云宗的弟子。", doc_id="doc1")
-    kg_add(kg_store, vector_store, "龙傲天叛逃了青云宗，加入了合欢派。", doc_id="doc1")  # 更新
+    kg_add(kg_store, vector_store, "龙傲天加入了合欢派。", doc_id="doc1")  # 更新, 这会使"青云宗"变为inactive
     kg_add(kg_store, vector_store, "赵日天与龙傲天在苍梧山之巅有过一次对决。", doc_id="doc2")
 
     kg_query_engine = get_kg_query_engine(kg_store=kg_store, kg_vector_store=vector_store)

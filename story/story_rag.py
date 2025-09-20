@@ -178,7 +178,7 @@ class StoryRAG:
             vector_store=vector_store,
             content=content,
             metadata=doc_metadata,
-            content_format="markdown",
+            content_format="md",
             doc_id=task.id
         )
         logger.info(f"[{task.id}] design 内容向量化完成, 开始构建知识图谱...")
@@ -188,7 +188,7 @@ class StoryRAG:
             content=content,
             metadata=doc_metadata,
             doc_id=task.id,
-            content_format="markdown",
+            content_format="md",
             max_triplets_per_chunk=15,
             kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_design")[0],
         )
@@ -209,7 +209,7 @@ class StoryRAG:
             vector_store=vector_store,
             content=full_content,
             metadata=doc_metadata,
-            content_format="markdown",
+            content_format="md",
             doc_id=task.id
         )
         logger.info(f"[{task.id}] search 内容存储完成。")
@@ -230,7 +230,7 @@ class StoryRAG:
             content=content,
             metadata=doc_metadata,
             doc_id=task.id,
-            content_format="text",
+            content_format="txt",
             max_triplets_per_chunk=15,
             kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_write")[0],
         )
@@ -257,7 +257,7 @@ class StoryRAG:
             vector_store=vector_store,
             content=full_content,
             metadata=doc_metadata,
-            content_format="markdown",
+            content_format="md",
             doc_id=task.id
         )
         logger.info(f"[{task.id}] summary 内容存储完成。")
@@ -431,13 +431,13 @@ class StoryRAG:
         inquiry_type: Literal['search', 'design', 'write']
     ) -> Dict[str, Any]:
         if inquiry_type == 'search':
-            system_prompt, user_prompt, Inquiry = load_prompts(task.category, "query", "system_prompt_search", "user_prompt_search", "Inquiry")
+            system_prompt, user_prompt, Inquiry = load_prompts(task.category, "rag_query", "system_prompt_search", "user_prompt_search", "Inquiry")
         elif inquiry_type == 'design':
-            system_prompt, user_prompt, system_prompt_design_for_write, Inquiry = load_prompts(task.category, "query", "system_prompt_design", "user_prompt_design", "system_prompt_design_for_write", "Inquiry")
+            system_prompt, user_prompt, system_prompt_design_for_write, Inquiry = load_prompts(task.category, "rag_query", "system_prompt_design", "user_prompt_design", "system_prompt_design_for_write", "Inquiry")
             if task.task_type == 'write' and task.results.get("atom_result") == "atom":
                 system_prompt = system_prompt_design_for_write
         elif inquiry_type == 'write':
-            system_prompt, user_prompt, Inquiry = load_prompts(task.category, "query", "system_prompt_write", "user_prompt_write", "Inquiry")
+            system_prompt, user_prompt, Inquiry = load_prompts(task.category, "rag_query", "system_prompt_write", "user_prompt_write", "Inquiry")
         else:
             raise ValueError(f"不支持的探询类型: {inquiry_type}")
         context_dict_user = {

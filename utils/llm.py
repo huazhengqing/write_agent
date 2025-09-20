@@ -284,7 +284,7 @@ async def llm_completion(
 
             return message
         except Exception as e:
-            logger.warning(f"LLM调用或验证失败 (尝试 {attempt + 1}/{max_retries}): {e}")
+            logger.warning("LLM调用或验证失败 (尝试 {}/{}): {}", attempt + 1, max_retries, e)
             if attempt >= max_retries - 1:
                 logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
                 raise e
@@ -334,4 +334,3 @@ async def txt_to_json(cleaned_output: str, response_model: Type[BaseModel]):
     logger.success("文本成功转换为 JSON 对象。")
     logger.debug(f"转换后的 JSON 对象: {validated_data}")
     return validated_data
-

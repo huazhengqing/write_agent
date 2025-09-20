@@ -68,7 +68,7 @@ async def test_call_react_agent_pydantic_failure_invalid_json(mock_tool):
             tools=[mock_tool],
             response_model=CityInfo
         )
-    logger.success(f"成功捕获到预期的Pydantic解析错误: {exc_info.value}")
+    logger.success("成功捕获到预期的Pydantic解析错误: {}", exc_info.value)
 
 
 @pytest.mark.asyncio

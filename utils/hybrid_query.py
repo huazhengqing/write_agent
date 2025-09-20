@@ -120,7 +120,7 @@ async def hybrid_query_batch(
                     synthesis_user_prompt,
                 )
             except Exception as e:
-                logger.error(f"批量混合查询中，问题 '{question}' 失败: {e}", exc_info=True)
+                logger.error("批量混合查询中，问题 '{}' 失败: {}", question, e, exc_info=True)
                 return ""
 
     tasks = [safe_hybrid_query(q) for q in questions]

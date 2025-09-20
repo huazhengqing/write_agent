@@ -13,35 +13,12 @@ from tests.test_data import (
     VECTOR_TEST_NOVEL_WORLDVIEW,
     VECTOR_TEST_NOVEL_CHARACTERS,
     VECTOR_TEST_NOVEL_PLOT_ARC,
+    VECTOR_TEST_NOVEL_STRUCTURED_INFO,
 )
 
 
 # 新增的包含结构化信息的测试数据
-VECTOR_TEST_NOVEL_STRUCTURED_INFO = """
-# 势力与角色清单
-
-以下是九霄大陆主要势力及其核心成员的简要列表：
-
-- **苍穹剑派**:
-  - 掌门: 风清扬
-  - 大弟子: 令狐冲
-  - 宿敌: 东方不败
-
-- **北冥魔殿**:
-  - 殿主: 叶良辰
-  - 圣女: 赵灵儿
-  - 备注: 与龙傲天有深仇大恨。
-
-# 修炼等级体系
-
-| 等级 | 名称     | 描述                       |
-|------|----------|----------------------------|
-| 1    | 炼气     | 吐纳天地灵气，强化己身。   |
-| 2    | 筑基     | 铸就道基，真气化液。       |
-| 3    | 金丹     | 丹成九转，寿元大增。       |
-| 4    | 元婴     | 破碎金丹，元婴出窍。       |
-| 5    | 化神     | 神游太虚，感悟法则。       |
-"""
+# VECTOR_TEST_NOVEL_STRUCTURED_INFO 已移至 test_data.py
 
 
 @pytest.fixture(scope="module")
@@ -52,7 +29,7 @@ def realistic_store(ingested_store):
     """
     logger.info("--- (Fixture) 注入模拟真实场景的测试数据 ---")
     
-    # 模拟来自不同任务的设计文档和章节内容
+    # 模拟来自不同任务的设计文档、章节内容和结构化信息
     realistic_data = {
         "1.1_design_worldview": {
             "content": VECTOR_TEST_NOVEL_WORLDVIEW,
@@ -66,7 +43,7 @@ def realistic_store(ingested_store):
             "content": VECTOR_TEST_NOVEL_PLOT_ARC,
             "metadata": {"task_id": "1.3", "type": "design", "status": "active"}
         },
-        # 添加一个独特的、用于 'nin' 过滤器测试的文档
+        # 添加一个独特的、用于 "nin" 过滤器测试的文档
         "1.3.1_write_scene": {
             "content": "在黑风寨，叶良辰夺走海图残卷后，冷冷地说：'我叫叶良辰，你，记住了。'",
             "metadata": {"task_id": "1.3.1", "type": "write", "status": "active"}
@@ -81,7 +58,7 @@ def realistic_store(ingested_store):
     for doc_id, data in realistic_data.items():
         vector_add(ingested_store, data["content"], data["metadata"], doc_id=doc_id)
     
-    # 在异步环境中，最好能有更可靠的等待机制，但对于本地文件DB，短暂停顿通常足够
+    # 在异步环境中，最好有更可靠的等待机制，但对于本地文件DB，短暂停顿通常足够
     # asyncio.run(asyncio.sleep(1)) # 在 fixture 中不能直接 run
     return ingested_store
 
@@ -143,7 +120,7 @@ async def test_query_structured_data(realistic_store):
 
 @pytest.mark.asyncio
 async def test_complex_filtering_nin_operator(realistic_store):
-    """测试 'nin' (not in) 元数据过滤器，模拟 story_rag.py 中排除先行任务的场景。"""
+    """测试 "nin" (not in) 元数据过滤器，模拟 story_rag.py 中排除先行任务的场景。"""
     logger.info("--- 测试：复杂过滤器 (nin) ---")
     await asyncio.sleep(1)  # 确保数据已入库
 

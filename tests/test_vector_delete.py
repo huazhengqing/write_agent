@@ -9,7 +9,6 @@ from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.vector import (
-    clear_vector_index_cache,
     get_vector_query_engine,
     get_vector_store,
     vector_add,
@@ -42,7 +41,6 @@ async def test_node_deletion(vector_store):
 
     # 删除节点
     vector_store.delete(ref_doc_id=doc_id_to_delete)
-    clear_vector_index_cache(vector_store)
     await asyncio.sleep(2)
 
     # 验证节点已被删除

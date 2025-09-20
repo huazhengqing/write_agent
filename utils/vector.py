@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 import chromadb
 from loguru import logger
-from typing import Any, Callable, Dict, List, Literal, Optional
+from typing import Any, Callable, Dict, List, Literal, Optional, get_args
 
 from llama_index.core.ingestion import IngestionPipeline
 from llama_index.core import Document, Settings, SimpleDirectoryReader, VectorStoreIndex
@@ -20,7 +20,7 @@ from llama_index.core.retrievers import VectorIndexAutoRetriever
 from llama_index.core.response_synthesizers import CompactAndRefine
 from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo, MetadataInfo
 from llama_index.core.vector_stores.types import VectorStore
-from llama_index.core.nodes.base import BaseNode
+from llama_index.core.schema import BaseNode
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.llms.litellm import LiteLLM
@@ -139,41 +139,7 @@ def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
 ###############################################################################
 
 
-def get_node_parser(content_format: Literal["markdown", "text", "json"]) -> NodeParser:
-    if content_format == "json":
-        return JSONNodeParser(
-            include_metadata=True,
-            max_depth=3, 
-            levels_to_keep=0
-        )
-    elif content_format == "text":
-        return SentenceSplitter(
-            chunk_size=256, 
-            chunk_overlap=50,
-        )
-    return MarkdownElementNodeParser(
-        llm=Settings.llm,
-        chunk_size = 256, 
-        chunk_overlap = 50, 
-        # num_workers=3,
-        include_metadata=True,
-        show_progress=False,
-    )
-
-
-###############################################################################
-
-
-def _filter_invalid_nodes(nodes: List[BaseNode]) -> List[BaseNode]:
-    """过滤掉无效的节点（内容为空或仅包含空白/非词汇字符）。"""
-    valid_nodes = []
-    for node in nodes:
-        if node.text.strip() and re.search(r'\w', node.text):
-            valid_nodes.append(node)
-    return valid_nodes
-
-
-def default_file_metadata(file_path_str: str) -> dict:
+def file_metadata_default(file_path_str: str) -> dict:
     file_path = Path(file_path_str)
     stat = file_path.stat()
     creation_time = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
@@ -186,13 +152,11 @@ def default_file_metadata(file_path_str: str) -> dict:
     }
 
 
-def vector_add_from_dir(
-    vector_store: VectorStore,
+def _load_and_filter_documents(
     input_dir: str,
-    file_metadata_func: Optional[Callable[[str], dict]] = None,
-) -> bool:
-    metadata_func = file_metadata_func or default_file_metadata
-
+    metadata_func: Callable[[str], dict]
+) -> List[Document]:
+    """从目录加载文档并过滤掉空文件。"""
     reader = SimpleDirectoryReader(
         input_dir=input_dir,
         required_exts=[".md", ".txt", ".json"],
@@ -200,41 +164,107 @@ def vector_add_from_dir(
         recursive=True,
         exclude_hidden=False
     )
-
     documents = reader.load_data()
     if not documents:
         logger.warning(f"🤷 在 '{input_dir}' 目录中未找到任何符合要求的文件。")
-        return False
+        return []
 
-    logger.info(f"🔍 找到 {len(documents)} 个文件，开始解析并构建节点...")
-
-    # 按内容格式对文档进行分组，以便批量处理
-    docs_by_format: Dict[str, List[Document]] = {"markdown": [], "text": [], "json": []}
+    logger.info(f"🔍 找到 {len(documents)} 个文件，开始过滤和解析...")
+    
+    valid_docs = []
     for doc in documents:
         file_path = Path(doc.metadata.get("file_path", doc.id_))
         if not doc.text or not doc.text.strip():
             logger.warning(f"⚠️ 文件 '{file_path.name}' 内容为空，已跳过。")
             continue
-        
+        valid_docs.append(doc)
+    
+    return valid_docs
+
+
+def get_node_parser(content_format: Literal["md", "txt", "json"], content_length: int = 0) -> NodeParser:
+    if content_length > 20000:
+        chunk_size = 1024
+        chunk_overlap = 200
+    elif content_length > 5000:
+        chunk_size = 512
+        chunk_overlap = 128
+    else:
+        chunk_size = 256
+        chunk_overlap = 64
+
+    if content_format == "json":
+        return JSONNodeParser(
+            include_metadata=True,
+            max_depth=5, 
+            levels_to_keep=2
+        )
+    elif content_format == "txt":
+        return SentenceSplitter(
+            chunk_size=chunk_size, 
+            chunk_overlap=chunk_overlap,
+        )
+    return MarkdownElementNodeParser(
+        llm=Settings.llm,
+        chunk_size=chunk_size, 
+        chunk_overlap=chunk_overlap, 
+        # num_workers=3,
+        include_metadata=True,
+        show_progress=False,
+    )
+
+
+def filter_invalid_nodes(nodes: List[BaseNode]) -> List[BaseNode]:
+    """过滤掉无效的节点（内容为空或仅包含空白/非词汇字符）。"""
+    valid_nodes = []
+    for node in nodes:
+        if node.text.strip() and re.search(r'\w', node.text):
+            valid_nodes.append(node)
+    return valid_nodes
+
+
+def _parse_docs_to_nodes_by_format(documents: List[Document]) -> List[BaseNode]:
+    """根据文件格式将文档解析为节点。"""
+    docs_by_format: Dict[str, List[Document]] = {
+        "md": [], 
+        "txt": [], 
+        "json": []
+    }
+    for doc in documents:
+        file_path = Path(doc.metadata.get("file_path", doc.id_))
         file_extension = file_path.suffix.lstrip('.')
-        content_format_map = {"md": "markdown", "txt": "text", "json": "json"}
-        content_format = content_format_map.get(file_extension, "text")
-        docs_by_format[content_format].append(doc)
+        if file_extension in docs_by_format:
+            docs_by_format[file_extension].append(doc)
+        else:
+            logger.warning(f"检测到未支持的文件扩展名 '{file_extension}'，将忽略。")
 
     all_nodes = []
     for content_format, format_docs in docs_by_format.items():
         if not format_docs:
             continue
         
-        logger.info(f"正在为 {len(format_docs)} 个 '{content_format}' 文件批量解析节点...")
-        node_parser = get_node_parser(content_format)
-        parsed_nodes = node_parser.get_nodes_from_documents(format_docs, show_progress=False)
-        
-        nodes_for_format = _filter_invalid_nodes(parsed_nodes)
-        # 过滤掉仅包含分隔符或空白等非文本内容的无效节点 (已移至 _filter_invalid_nodes)
+        logger.info(f"正在为 {len(format_docs)} 个 '{content_format}' 文件动态解析节点...")
+        nodes_for_format = []
+        for doc in format_docs:
+            node_parser = get_node_parser(content_format, content_length=len(doc.text))
+            parsed_nodes = node_parser.get_nodes_from_documents([doc], show_progress=False)
+            nodes_for_format.extend(filter_invalid_nodes(parsed_nodes))
         logger.info(f"  - 从 '{content_format}' 文件中成功解析出 {len(nodes_for_format)} 个节点。")
         all_nodes.extend(nodes_for_format)
+    
+    return all_nodes
 
+
+def vector_add_from_dir(
+    vector_store: VectorStore,
+    input_dir: str,
+    metadata_func: Callable[[str], dict] = file_metadata_default,
+) -> bool:
+    documents = _load_and_filter_documents(input_dir, metadata_func)
+    if not documents:
+        return False
+
+    all_nodes = _parse_docs_to_nodes_by_format(documents)
     if not all_nodes:
         logger.warning("🤷‍♀️ 没有从文件中解析出任何可索引的节点。")
         return False
@@ -255,49 +285,66 @@ def vector_add_from_dir(
     return True
 
 
+def _is_content_too_similar(
+    vector_store: VectorStore,
+    content: str,
+    threshold: float,
+    doc_id: Optional[str] = None
+) -> bool:
+    """检查内容是否与向量库中现有文档过于相似。"""
+    query_embedding = Settings.embed_model.get_text_embedding(content)
+    logger.trace(f"为 doc_id '{doc_id}' 生成的嵌入向量 (前10维): {query_embedding[:10]}")
+    vector_store_query = VectorStoreQuery(
+        query_embedding=query_embedding, similarity_top_k=1, filters=None
+    )
+    query_result = vector_store.query(vector_store_query)
+    if query_result.nodes and query_result.similarities:
+        is_updating_itself = doc_id and query_result.nodes[0].ref_doc_id == doc_id
+        if not is_updating_itself and query_result.similarities[0] > threshold:
+            logger.warning(f"发现与 doc_id '{doc_id}' 内容高度相似 (相似度: {query_result.similarities[0]:.4f}) 的文档 (ID: '{query_result.nodes[0].ref_doc_id}'), 跳过添加。")
+            return True
+    return False
+
+
+def _parse_content_to_nodes(
+    content: str,
+    metadata: Dict[str, Any],
+    content_format: Literal["md", "txt", "json"],
+    doc_id: Optional[str] = None,
+) -> List[BaseNode]:
+    """将单个内容字符串解析为节点列表。"""
+    final_metadata = metadata.copy()
+    if "date" not in final_metadata:
+        final_metadata["date"] = datetime.now().strftime("%Y-%m-%d")
+    doc = Document(text=content, metadata=final_metadata, id_=doc_id)
+    node_parser = get_node_parser(content_format, content_length=len(content))
+    return filter_invalid_nodes(node_parser.get_nodes_from_documents([doc], show_progress=False))
+
+
 def vector_add(
     vector_store: VectorStore,
     content: str,
     metadata: Dict[str, Any],
-    content_format: Literal["markdown", "text", "json"] = "markdown",
+    content_format: Literal["md", "txt", "json"] = "md",
     doc_id: Optional[str] = None,
+    check_similarity: bool = False,
+    similarity_threshold: float = 0.999,
 ) -> bool:
     if not content or not content.strip() or "生成报告时出错" in content:
         logger.warning(f"🤷 内容为空或包含错误，跳过存入向量库。元数据: {metadata}")
         return False
     
-    # 相似度搜索去重
-    query_embedding = Settings.embed_model.get_text_embedding(content)
-    logger.trace(f"为 doc_id '{doc_id}' 生成的嵌入向量 (前10维): {query_embedding[:10]}")
-    vector_store_query = VectorStoreQuery(
-        query_embedding=query_embedding,
-        similarity_top_k=1,
-        filters=None,
-    )
-    query_result = vector_store.query(vector_store_query)
-    if query_result.nodes:
-        if query_result.similarities[0] > 0.999:
-            logger.warning(f"发现与 doc_id '{doc_id}' 内容高度相似 (相似度: {query_result.similarities[0]:.4f}) 的文档，跳过添加。")
-            return False
+    if check_similarity and _is_content_too_similar(vector_store, content, similarity_threshold, doc_id):
+        return False
 
     if doc_id:
         logger.info(f"正在从向量库中删除 doc_id '{doc_id}' 的旧节点...")
         vector_store.delete(ref_doc_id=doc_id)
-        logger.info(f"已删除 doc_id '{doc_id}' 的旧节点。")
 
-    final_metadata = metadata.copy()
-    if "date" not in final_metadata:
-        final_metadata["date"] = datetime.now().strftime("%Y-%m-%d")
-
-    doc = Document(text=content, metadata=final_metadata, id_=doc_id)
-    node_parser = get_node_parser(content_format)
-    parsed_nodes = node_parser.get_nodes_from_documents([doc], show_progress=False)
-    nodes_to_insert = _filter_invalid_nodes(parsed_nodes)
-    
+    nodes_to_insert = _parse_content_to_nodes(content, metadata, content_format, doc_id)
     if not nodes_to_insert:
         logger.warning(f"内容 (doc_id: {doc_id}) 未解析出任何有效节点，跳过添加。")
         return False
-    logger.debug(f"为 doc_id '{doc_id}' 创建的节点内容: {[n.get_content(metadata_mode='all') for n in nodes_to_insert]}")
 
     pipeline = IngestionPipeline(vector_store=vector_store)
     pipeline.run(nodes=nodes_to_insert)
@@ -309,7 +356,7 @@ def vector_add(
 ###############################################################################
 
 
-def get_default_vector_store_info() -> VectorStoreInfo:
+def get_vector_store_info_default() -> VectorStoreInfo:
     metadata_field_info = [
         MetadataInfo(
             name="source",
@@ -344,14 +391,64 @@ def get_default_vector_store_info() -> VectorStoreInfo:
     )
 
 
+def _create_reranker(rerank_top_n: int) -> Optional[SiliconFlowRerank]:
+    if rerank_top_n and rerank_top_n > 0:
+        return SiliconFlowRerank(
+            api_key=os.getenv("SILICONFLOW_API_KEY"),
+            top_n=rerank_top_n,
+        )
+    return None
+
+
+def _create_auto_retriever_engine(
+    index: VectorStoreIndex,
+    vector_store_info: VectorStoreInfo,
+    similarity_top_k: int,
+    similarity_cutoff: float,
+    postprocessors: List,
+) -> BaseQueryEngine:
+    logger.info("使用 VectorIndexAutoRetriever 模式创建查询引擎。")
+    reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
+    reasoning_llm = LiteLLM(**reasoning_llm_params)
+    retriever = VectorIndexAutoRetriever(
+        index,
+        vector_store_info=vector_store_info,
+        similarity_top_k=similarity_top_k,
+        llm=reasoning_llm,
+        verbose=True,
+        similarity_cutoff=similarity_cutoff,
+    )
+    query_engine = RetrieverQueryEngine(
+        retriever=retriever,
+        response_synthesizer=synthesizer,
+        node_postprocessors=postprocessors,
+    )
+    logger.success("自动检索查询引擎创建成功。")
+    return query_engine
+
+
+def _create_standard_query_engine(
+    index: VectorStoreIndex,
+    filters: Optional[MetadataFilters],
+    similarity_top_k: int,
+    similarity_cutoff: float,
+    postprocessors: List,
+) -> BaseQueryEngine:
+    logger.info("使用标准 as_query_engine 模式创建查询引擎。")
+    return index.as_query_engine(
+        response_synthesizer=synthesizer, filters=filters, similarity_top_k=similarity_top_k,
+        node_postprocessors=postprocessors, similarity_cutoff=similarity_cutoff
+    )
+
+
 def get_vector_query_engine(
     vector_store: VectorStore,
     filters: Optional[MetadataFilters] = None,
-    similarity_top_k: int = 15,
-    rerank_top_n: Optional[int] = 3,
+    similarity_top_k: int = 25,
+    rerank_top_n: int = 5,
+    similarity_cutoff: float = 0,
     use_auto_retriever: bool = False,
-    vector_store_info: Optional[VectorStoreInfo] = None,
-    similarity_cutoff: Optional[float] = None,
+    vector_store_info: VectorStoreInfo = get_vector_store_info_default(),
 ) -> BaseQueryEngine:
     
     logger.debug(
@@ -362,51 +459,25 @@ def get_vector_query_engine(
 
     index = VectorStoreIndex.from_vector_store(vector_store)
 
-    postprocessors = []
-    if rerank_top_n and rerank_top_n > 0:
-        reranker = SiliconFlowRerank(
-            api_key=os.getenv("SILICONFLOW_API_KEY"),
-            top_n=rerank_top_n,
-        )
-        postprocessors.append(reranker)
+    reranker = _create_reranker(rerank_top_n)
+    postprocessors = [reranker] if reranker else []
 
     if use_auto_retriever:
-        logger.info("使用 VectorIndexAutoRetriever 模式创建查询引擎。")
-        
-        reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
-        reasoning_llm = LiteLLM(**reasoning_llm_params)
-        final_vector_store_info = vector_store_info or get_default_vector_store_info()
-        
-        retriever = VectorIndexAutoRetriever(
-            index,
-            vector_store_info=final_vector_store_info,
+        return _create_auto_retriever_engine(
+            index=index,
+            vector_store_info=vector_store_info,
             similarity_top_k=similarity_top_k,
-            llm=reasoning_llm,
-            verbose=True,
             similarity_cutoff=similarity_cutoff,
+            postprocessors=postprocessors,
         )
-        query_engine = RetrieverQueryEngine(
-            retriever=retriever,
-            response_synthesizer=synthesizer,
-            node_postprocessors=postprocessors,
-        )
-        logger.success("自动检索查询引擎创建成功。")
-        return query_engine
     else:
-        logger.info("使用标准 as_query_engine 模式创建查询引擎。")
-        retriever_kwargs = {}
-        if similarity_cutoff is not None:
-            retriever_kwargs["similarity_cutoff"] = similarity_cutoff
-
-        query_engine = index.as_query_engine(
-            response_synthesizer=synthesizer,
+        return _create_standard_query_engine(
+            index=index,
             filters=filters,
             similarity_top_k=similarity_top_k,
-            node_postprocessors=postprocessors,
-            **retriever_kwargs,
+            similarity_cutoff=similarity_cutoff,
+            postprocessors=postprocessors,
         )
-        logger.success("标准查询引擎创建成功。")
-        return query_engine
 
 
 ###############################################################################
@@ -444,7 +515,7 @@ async def index_query_batch(query_engine: BaseQueryEngine, questions: List[str])
             try:
                 return await index_query(query_engine, question)
             except Exception as e:
-                logger.error(f"批量查询中，问题 '{question}' 失败: {e}", exc_info=True)
+                logger.error("批量查询中，问题 '{}' 失败: {}", question, e, exc_info=True)
                 return ""
 
     tasks = [safe_query(q) for q in questions]

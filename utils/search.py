@@ -106,8 +106,8 @@ async def web_search(query: str, max_results: int = 10) -> str:
                 return search_results
         except Exception as e:
             last_exception = e
-            logger.warning(f"使用 {name} 搜索失败: {e}")
-            logger.warning(f"{name} 搜索失败的错误信息: {last_exception}")
+            logger.warning("使用 {} 搜索失败: {}", name, e)
+            logger.warning("{} 搜索失败的错误信息: {}", name, last_exception)
             continue
         
     error_msg = f"所有搜索策略均失败。查询: '{query}'。最后错误: {last_exception}"
@@ -500,7 +500,7 @@ async def scrape_and_extract(url: str) -> str:
                 break
         except Exception as e:
             last_exception = e
-            logger.warning(f"抓取策略 '{name}' 失败: {e}")
+            logger.warning("抓取策略 '{}' 失败: {}", name, e)
             continue
 
     if scraped_text:
@@ -520,7 +520,7 @@ async def scrape_and_extract(url: str) -> str:
         cache_searh.set(url, final_text)
         return final_text
     
-    logger.error(f"错误: 所有抓取策略均未能从URL '{url}' 提取到有效内容。最后错误: {last_exception}")
+    logger.error("错误: 所有抓取策略均未能从URL '{}' 提取到有效内容。最后错误: {}", url, last_exception)
     return ""
 
 
@@ -545,4 +545,3 @@ web_search_tools = [
     get_targeted_search_tool(),
     get_web_scraper_tool(),
 ]
-
