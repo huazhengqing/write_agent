@@ -5,13 +5,25 @@ import sys
 from utils.file import log_dir
 
 
+class PropagateHandler(logging.Handler):
+    def emit(self, record: logging.LogRecord):
+        logging.getLogger(record.name).handle(record)
+
+
+_pytest_logger_initialized = False
+
 def init_logger(file_name):
-    logger.remove()  # 移除所有旧的处理器，确保一个干净的配置
-    logger.add(
-        sys.stderr,  # 添加一个处理器到标准错误，确保日志在控制台可见
-        level="DEBUG"
-    )
-    logger.add(
+    global _pytest_logger_initialized
+    if not _pytest_logger_initialized:
+        try:
+            logger.remove()
+        except ValueError:
+            pass
+        # 在测试期间，注释此行可将所有日志输出重定向到文件
+        # logger.add(PropagateHandler(), format="{message}", level="DEBUG")
+        _pytest_logger_initialized = True
+
+    sink_id = logger.add(
         log_dir / f"{file_name}.log",
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         rotation="10 MB",
@@ -20,6 +32,7 @@ def init_logger(file_name):
         backtrace=True,
         diagnose=True,
     )
+    return sink_id
 
 
 def init_logger_by_runid(file_name):
@@ -64,4 +77,3 @@ def ensure_task_logger(run_id: str):
         diagnose=True,
     )
     _SINK_IDS[run_id] = sink_id
-

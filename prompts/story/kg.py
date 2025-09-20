@@ -66,7 +66,7 @@ kg_extraction_prompt_design = """
 现在，请严格遵循以上所有规则，从以下设计文档中提取知识三元组。
 文本:
 ---
-{context_str}
+{text}
 ---
 """
 
@@ -81,16 +81,16 @@ kg_extraction_prompt_write = """
 # 核心原则 (必须严格遵守)
 1.  实体规范化:
     - 实体定义: 主语和宾语必须是明确的实体。这包括：
-        - 命名实体: 人名 (李寻欢), 地名 (风语镇), 组织 (青云宗)。
-        - 具体事物: 物品 (赤霄剑), 功法 (九阳神功), 科技造物 (曲速引擎), 魔法道具 (复活石)。
-        - 抽象概念: 事件 (赤壁之战), 信念 (地球是圆的), 动机 (为父报仇), 情感状态 (极度悲伤), 关系 (变为敌人), 阴谋 (篡位计划)。
-    - 唯一性与消歧: 尽可能将同一实体的不同称谓（如“龙傲天”、“他”、“主角”）归一到最完整的实体名称上。
+        - 命名实体: 人名 ([角色名]), 地名 ([地名]), 组织 ([组织名])。
+        - 具体事物: 物品 ([物品名]), 功法 ([功法名]), 科技造物 ([科技造物名]), 魔法道具 ([魔法道具名])。
+        - 抽象概念: 事件 ([事件名]), 信念 ([信念内容]), 动机 ([动机内容]), 情感状态 ([情感状态]), 关系 ([关系描述]), 阴谋 ([阴谋内容])。
+    - 唯一性与消歧: 尽可能将同一实体的不同称谓（如“[角色A]”、“他”、“主角”）归一到最完整的实体名称上。
     - 完整性: 实体名称应保持完整。
 
 2.  关系精确性:
     - 具体动词: 关系应使用描述实体间具体联系的动词或动词短语（如 `击败`, `创立`, `遇见`, `导致`, `改变了`）。
-    - 属性即关系: 将实体的属性也视为一种关系。例如，“龙傲天修为是炼气期”应提取为 `("龙傲天", "修为是", "炼气期")`。
-    - 状态变化: 将状态变化明确提取为关系。例如，“他的健康状态变为重伤”应提取为 `("他", "健康状态变为", "重伤")`。
+    - 属性即关系: 将实体的属性也视为一种关系。例如，“[角色A]修为是[境界名]”应提取为 `("[角色A]", "修为是", "[境界名]")`。
+    - 状态变化: 将状态变化明确提取为关系。例如，“他的健康状态变为[状态]”应提取为 `("他", "健康状态变为", "[状态]")`。
 
 3.  事实为本:
     - 忠于原文: 仅提取文本中明确陈述的事实。禁止进行主观推断。
@@ -126,7 +126,7 @@ kg_extraction_prompt_write = """
 现在，请严格遵循以上所有规则，从以下小说正文中提取知识三元组。
 文本:
 ---
-{context_str}
+{text}
 ---
 """
 
@@ -149,31 +149,30 @@ kg_gen_cypher_prompt_design = """
 ---
 
 # 核心规则 (必须严格遵守)
-1.  强制状态过滤 (最重要!): 查询路径中的 每一个节点 都必须在 `WHERE` 子句中包含 `status = 'active'` 的过滤条件。例如 `WHERE n1.status = 'active' AND n2.status = 'active'`。
-2.  严格遵循 Schema: 只能使用`图谱 Schema`中明确定义的节点标签 (`__Entity__`)、关系类型和属性。禁止猜测或使用不存在的元素。
-3.  优先使用属性: 在 `MATCH` 子句中，优先使用属性（如 `{name: "实体名"}`）进行匹配。
-4.  关系方向: 对于不确定的关系查询，使用无方向匹配 `-[r]-`。对于明确的从属或因果关系（如“卷包含章”），使用有方向匹配 `->`。
-5.  单行输出: 最终的 Cypher 查询必须是单行文本，不含任何换行符。
-6.  无额外内容: 仅输出 Cypher 查询语句本身或 "INVALID_QUERY"。
-7.  无效查询: 如果问题无法基于给定的`图谱 Schema`回答，固定返回字符串 "INVALID_QUERY"。
+1.  严格遵循 Schema: 只能使用`图谱 Schema`中明确定义的节点标签 (`__Entity__`)、关系类型和属性。禁止猜测或使用不存在的元素。
+2.  优先使用属性: 在 `MATCH` 子句中，优先使用属性（如 `{name: "实体名"}`）进行匹配。
+3.  关系方向: 对于不确定的关系查询，使用无方向匹配 `-[r]-`。对于明确的从属或因果关系（如“卷包含章”），使用有方向匹配 `->`。
+4.  单行输出: 最终的 Cypher 查询必须是单行文本，不含任何换行符。
+5.  无额外内容: 仅输出 Cypher 查询语句本身或 "INVALID_QUERY"。
+6.  无效查询: 如果问题无法基于给定的`图谱 Schema`回答，固定返回字符串 "INVALID_QUERY"。
 
 # 查询策略与示例 (设计图谱)
 
 ## 1. 属性查询
 - 用户问题: '角色A的背景设定是什么?'
-- Cypher 查询: `MATCH (c:__Entity__ {name: "角色A"})-[r:背景是]->(b:__Entity__) WHERE c.status = 'active' AND b.status = 'active' RETURN b.name`
+- Cypher 查询: `MATCH (c:__Entity__ {name: "角色A"})-[r:背景是]->(b:__Entity__) RETURN b.name`
 
 ## 2. 结构查询 (层级关系)
 - 用户问题: '第一卷包含了哪些章节？'
-- Cypher 查询: `MATCH (v:__Entity__ {name: "第一卷"})-[:包含]->(c:__Entity__) WHERE v.status = 'active' AND c.status = 'active' RETURN c.name`
+- Cypher 查询: `MATCH (v:__Entity__ {name: "第一卷"})-[:包含]->(c:__Entity__) RETURN c.name`
 
 ## 3. 关系查询
 - 用户问题: '角色A和角色B的相遇对谁产生了影响?'
-- Cypher 查询: `MATCH (e:__Entity__ {name: "角色A与角色B的相遇"})-[r:正向影响|负向影响]->(t:__Entity__) WHERE e.status = 'active' AND t.status = 'active' RETURN t.name, type(r)`
+- Cypher 查询: `MATCH (e:__Entity__ {name: "角色A与角色B的相遇"})-[r:正向影响|负向影响]->(t:__Entity__) RETURN t.name, type(r)`
 
 ## 4. 定义查询
 - 用户问题: '角色A的设计理念是什么?'
-- Cypher 查询: `MATCH (d:__Entity__)-[:定义了]->(c:__Entity__ {name: "角色A"}) WHERE d.name CONTAINS '设计文档' AND d.status = 'active' AND c.status = 'active' MATCH (d)-[:设计理念是]->(i:__Entity__) WHERE i.status = 'active' RETURN i.name`
+- Cypher 查询: `MATCH (d:__Entity__)-[:定义了]->(c:__Entity__ {name: "角色A"}), (d)-[:设计理念是]->(i:__Entity__) WHERE d.name CONTAINS '设计文档' RETURN i.name`
 
 # 指令
 现在，请严格遵循以上所有规则和策略，为`用户问题`生成单行 Cypher 查询语句。
@@ -195,31 +194,30 @@ kg_gen_cypher_prompt_write = """
 ---
 
 # 核心规则 (必须严格遵守)
-1.  强制状态过滤 (最重要!): 查询路径中的 每一个节点 都必须在 `WHERE` 子句中包含 `status = 'active'` 的过滤条件。例如 `WHERE n1.status = 'active' AND n2.status = 'active'`。
-2.  严格遵循 Schema: 只能使用`图谱 Schema`中明确定义的节点标签 (`__Entity__`)、关系类型和属性。禁止猜测或使用不存在的元素。
-3.  优先使用属性: 在 `MATCH` 子句中，优先使用属性（如 `{name: "实体名"}`）进行匹配。
-4.  关系方向: 对于不确定的关系查询，使用无方向匹配 `-[r]-`。对于明确的动作或因果（如“事件导致状态改变”），使用有方向匹配 `->`。
-5.  单行输出: 最终的 Cypher 查询必须是单行文本，不含任何换行符。
-6.  无额外内容: 仅输出 Cypher 查询语句本身或 "INVALID_QUERY"。
-7.  无效查询: 如果问题无法基于给定的`图谱 Schema`回答，固定返回字符串 "INVALID_QUERY"。
+1.  严格遵循 Schema: 只能使用`图谱 Schema`中明确定义的节点标签 (`__Entity__`)、关系类型和属性。禁止猜测或使用不存在的元素。
+2.  优先使用属性: 在 `MATCH` 子句中，优先使用属性（如 `{name: "实体名"}`）进行匹配。
+3.  关系方向: 对于不确定的关系查询，使用无方向匹配 `-[r]-`。对于明确的动作或因果（如“事件导致状态改变”），使用有方向匹配 `->`。
+4.  单行输出: 最终的 Cypher 查询必须是单行文本，不含任何换行符。
+5.  无额外内容: 仅输出 Cypher 查询语句本身或 "INVALID_QUERY"。
+6.  无效查询: 如果问题无法基于给定的`图谱 Schema`回答，固定返回字符串 "INVALID_QUERY"。
 
 # 查询策略与示例 (正文图谱)
 
 ## 1. 状态查询
 - 用户问题: '角色A的健康状态是什么?'
-- Cypher 查询: `MATCH (c:__Entity__ {name: "角色A"})-[r:健康状态是]->(s:__Entity__) WHERE c.status = 'active' AND s.status = 'active' RETURN s.name`
+- Cypher 查询: `MATCH (c:__Entity__ {name: "角色A"})-[r:健康状态是]->(s:__Entity__) RETURN s.name`
 
 ## 2. 因果链查询
 - 用户问题: '是什么事件导致了角色A状态变为重伤？'
-- Cypher 查询: `MATCH (e:__Entity__)-[:导致]->(r:__Entity__ {name: "角色A状态变为重伤"}) WHERE e.status = 'active' AND r.status = 'active' RETURN e.name`
+- Cypher 查询: `MATCH (e:__Entity__)-[:导致]->(r:__Entity__ {name: "角色A状态变为重伤"}) RETURN e.name`
 
 ## 3. 动机/信念查询
 - 用户问题: '角色A为什么要去探访地点Y?'
-- Cypher 查询: `MATCH (c:__Entity__ {name: "角色A"})-[:持有信念]->(b:__Entity__)-[:导致]->(a:__Entity__ {name: "探访地点Y"}) WHERE c.status = 'active' AND b.status = 'active' AND a.status = 'active' RETURN b.name`
+- Cypher 查询: `MATCH (c:__Entity__ {name: "角色A"})-[:持有信念]->(b:__Entity__)-[:导致]->(a:__Entity__ {name: "探访地点Y"}) RETURN b.name`
 
 ## 4. 事件要素查询
 - 用户问题: '角色A在地点X发现了什么线索?'
-- Cypher 查询: `MATCH (c:__Entity__ {name: "角色A"})-[:位于]->(l:__Entity__ {name: "地点X"}) WHERE c.status = 'active' AND l.status = 'active' MATCH (c)-[:发现线索]->(clue:__Entity__) WHERE clue.status = 'active' RETURN clue.name`
+- Cypher 查询: `MATCH (c:__Entity__ {name: "角色A"})-[:位于]->(l:__Entity__ {name: "地点X"}), (c)-[:发现线索]->(clue:__Entity__) RETURN clue.name`
 
 # 指令
 现在，请严格遵循以上所有规则和策略，为`用户问题`生成单行 Cypher 查询语句。

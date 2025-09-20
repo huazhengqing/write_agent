@@ -25,7 +25,7 @@ cache_search_dir.mkdir(parents=True, exist_ok=True)
 cache_searh = Cache(str(cache_search_dir), expire=60 * 60 * 24 * 7)
 
 
-async def _search_with_searxng(query: str, max_results: int) -> str:
+async def search_with_searxng(query: str, max_results: int) -> str:
     async with httpx.AsyncClient(follow_redirects=True) as client:
         data = {"q": query, "format": "json"}
         headers = {
@@ -61,7 +61,7 @@ async def _search_with_searxng(query: str, max_results: int) -> str:
     return "\n\n---\n\n".join(formatted_results)
 
 
-def _search_with_ddg(query: str, max_results: int) -> str:
+def search_with_ddg(query: str, max_results: int) -> str:
     params = {
         "query": query,
         "max_results": max_results,
@@ -87,8 +87,8 @@ async def web_search(query: str, max_results: int = 10) -> str:
         return cached_result
     
     search_strategies: List[Tuple[str, Callable[[str, int], Any]]] = [
-        ("SearXNG", _search_with_searxng),
-        ("DuckDuckGo", _search_with_ddg),
+        ("SearXNG", search_with_searxng),
+        ("DuckDuckGo", search_with_ddg),
     ]
 
     last_exception = None
@@ -428,7 +428,7 @@ def get_targeted_search_tool() -> FunctionTool:
 ###############################################################################
 
 
-async def _scrape_static(url: str) -> Optional[str]:
+async def scrape_static(url: str) -> Optional[str]:
     async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -453,7 +453,7 @@ async def _scrape_static(url: str) -> Optional[str]:
     return None
 
 
-async def _scrape_dynamic(url: str) -> Optional[str]:
+async def scrape_dynamic(url: str) -> Optional[str]:
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
@@ -486,8 +486,8 @@ async def scrape_and_extract(url: str) -> str:
         return cached_content
     
     scrape_strategies: List[Tuple[str, Callable[[str], Any]]] = [
-        ("静态抓取", _scrape_static),
-        ("动态渲染抓取", _scrape_dynamic),
+        ("静态抓取", scrape_static),
+        ("动态渲染抓取", scrape_dynamic),
     ]
     scraped_text = None
     last_exception = None

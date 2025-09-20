@@ -4,8 +4,8 @@ import os
 import logging
 from pathlib import Path
 import nest_asyncio
+from loguru import logger
 
-# 将项目根目录添加到 sys.path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.log import init_logger
@@ -15,68 +15,34 @@ from tests import test_data
 
 
 def pytest_configure(config):
-    """
-    为 pytest 配置全局警告过滤器。
-    """
-    # 忽略来自 litellm 内部关于 importlib.resources.open_text 的弃用警告
     config.addinivalue_line(
-        "filterwarnings", "ignore:open_text is deprecated. Use files\(\) instead.*:DeprecationWarning"
+        "filterwarnings", "ignore:open_text is deprecated:DeprecationWarning:litellm.*"
     )
-    # 忽略 Pydantic 在序列化不完整模型实例时发出的警告，这在 litellm 的响应对象中可能发生
     config.addinivalue_line(
         "filterwarnings", "ignore:Pydantic serializer warnings:UserWarning"
     )
 
-# -- 会话级 Fixtures --
 
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_environment():
-    """
-    为整个测试会话初始化测试环境。
-    - 应用 nest_asyncio 以便在 pytest 中运行异步代码。
-    - 初始化 LlamaIndex 设置 (LLM, embedding model)。
-    - 为嘈杂的库设置更高的日志级别。
-    """
     nest_asyncio.apply()
     logging.getLogger("litellm").setLevel(logging.WARNING)
-    import warnings
-    warnings.filterwarnings(
-        "ignore", 
-        category=DeprecationWarning,
-        message="open_text is deprecated. Use files() instead.*",
-        module="litellm.*"
-    )
     init_llama_settings()
-    # 这个 fixture 会为会话中的所有测试自动运行。
-    # 不需要 yield 任何东西。
 
 
 @pytest.fixture(scope="module", autouse=True)
 def setup_module_logging(request):
-    """
-    为每个测试模块（文件）设置独立的日志文件。
-    - 在初始化日志前，先删除与当前测试模块同名的旧日志文件
-    """
-    # 从请求中获取模块（测试文件）的路径，并提取文件名（不含扩展名）作为日志名
-    log_filename = Path(request.module.__file__).stem
-    
-    # 构建日志文件路径
-    log_file_path = log_dir / f"{log_filename}.log"
-    
-    # 如果旧日志文件存在，则删除它
-    if os.path.exists(log_file_path):
-        try:
-            os.remove(log_file_path)
-        except Exception as e:
-            print(f"Warning: 无法删除旧日志文件 {log_file_path}: {e}")
-    
-    # 初始化新的日志记录器
-    init_logger(log_filename)
+    log_filename_stem = Path(request.module.__file__).stem
+    log_file = log_dir / f"{log_filename_stem}.log"
+    if log_file.exists():
+        log_file.unlink()
+    sink_id = init_logger(log_filename_stem)
+    yield
+    logger.remove(sink_id)
 
 
 @pytest.fixture(scope="module")
 def test_dirs(tmp_path_factory):
-    """为每个测试模块创建临时的目录。"""
     base_dir = tmp_path_factory.mktemp("vector_tests")
     db_path = base_dir / "chroma_db"
     input_path = base_dir / "input_data"
@@ -85,7 +51,6 @@ def test_dirs(tmp_path_factory):
 
 
 def _write_test_data_to_files(input_dir: str):
-    """将 vector_test_data.py 中的数据写入到临时文件中。"""
     data_map = {
         "simple.md": test_data.VECTOR_TEST_SIMPLE_MD,
         "simple.txt": test_data.VECTOR_TEST_SIMPLE_TXT,
@@ -112,10 +77,6 @@ def _write_test_data_to_files(input_dir: str):
 
 @pytest.fixture(scope="module")
 def ingested_store(test_dirs):
-    """
-    准备一个已灌入所有测试数据的 VectorStore 实例。
-    这个 fixture 的作用域是 module，意味着每个测试文件只会执行一次数据灌入。
-    """
     _write_test_data_to_files(test_dirs["input_path"])
     vector_store = get_vector_store(db_path=test_dirs["db_path"], collection_name="test_collection")
     vector_add_from_dir(vector_store, test_dirs["input_path"], file_metadata_default)

@@ -182,7 +182,7 @@ def _load_and_filter_documents(
     return valid_docs
 
 
-def get_node_parser(content_format: Literal["md", "txt", "json"], content_length: int = 0) -> NodeParser:
+def _get_node_parser(content_format: Literal["md", "txt", "json"], content_length: int = 0) -> NodeParser:
     if content_length > 20000:
         chunk_size = 1024
         chunk_overlap = 200
@@ -246,7 +246,7 @@ def _parse_docs_to_nodes_by_format(documents: List[Document]) -> List[BaseNode]:
         logger.info(f"正在为 {len(format_docs)} 个 '{content_format}' 文件动态解析节点...")
         nodes_for_format = []
         for doc in format_docs:
-            node_parser = get_node_parser(content_format, content_length=len(doc.text))
+            node_parser = _get_node_parser(content_format, content_length=len(doc.text))
             parsed_nodes = node_parser.get_nodes_from_documents([doc], show_progress=False)
             nodes_for_format.extend(filter_invalid_nodes(parsed_nodes))
         logger.info(f"  - 从 '{content_format}' 文件中成功解析出 {len(nodes_for_format)} 个节点。")
@@ -317,7 +317,7 @@ def _parse_content_to_nodes(
     if "date" not in final_metadata:
         final_metadata["date"] = datetime.now().strftime("%Y-%m-%d")
     doc = Document(text=content, metadata=final_metadata, id_=doc_id)
-    node_parser = get_node_parser(content_format, content_length=len(content))
+    node_parser = _get_node_parser(content_format, content_length=len(content))
     return filter_invalid_nodes(node_parser.get_nodes_from_documents([doc], show_progress=False))
 
 

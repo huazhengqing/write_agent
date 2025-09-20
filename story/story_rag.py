@@ -189,8 +189,8 @@ class StoryRAG:
             metadata=doc_metadata,
             doc_id=task.id,
             content_format="md",
-            max_triplets_per_chunk=15,
-            kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_design")[0],
+            chars_per_triplet=50, # 设计文档信息密度较高，每100个字符提取一个三元组
+            kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_design")[0]
         )
         logger.info(f"[{task.id}] design 内容存储完成。")
 
@@ -231,8 +231,8 @@ class StoryRAG:
             metadata=doc_metadata,
             doc_id=task.id,
             content_format="txt",
-            max_triplets_per_chunk=15,
-            kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_write")[0],
+            chars_per_triplet=100, # 正文叙述信息密度较低，每200个字符提取一个三元组
+            kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_write")[0]
         )
         logger.info(f"[{task.id}] write 内容存储完成。")
     

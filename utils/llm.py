@@ -201,7 +201,8 @@ def _handle_llm_failure(
 async def llm_completion(
     llm_params: Dict[str, Any], 
     response_model: Optional[Type[BaseModel]] = None, 
-    validator: Optional[Callable[[Any], None]] = None
+    validator: Optional[Callable[[Any], None]] = None,
+    max_retries: int = 6
 ) -> Dict[str, Any]:
     logger.info("开始执行 llm_completion...")
 
@@ -218,7 +219,6 @@ async def llm_completion(
             "schema": response_model.model_json_schema()
         }
 
-    max_retries = 6
     for attempt in range(max_retries):
 
         system_prompt = ""
@@ -315,7 +315,11 @@ extraction_user_prompt = """
 """
 
 
-async def txt_to_json(cleaned_output: str, response_model: Type[BaseModel]):
+async def txt_to_json(
+    cleaned_output: str, 
+    response_model: Type[BaseModel],
+    max_retries: int = 6
+):
     logger.info(f"开始将文本转换为 JSON, 目标模型: {response_model.__name__}")
     logger.debug(f"待转换的输入文本:\n{cleaned_output}")
 
@@ -328,7 +332,11 @@ async def txt_to_json(cleaned_output: str, response_model: Type[BaseModel]):
         messages=extraction_messages,
         temperature=llm_temperatures["classification"]
     )
-    extraction_response = await llm_completion(llm_params=extraction_llm_params, response_model=response_model)
+    extraction_response = await llm_completion(
+        llm_params=extraction_llm_params, 
+        response_model=response_model,
+        max_retries=max_retries
+    )
     validated_data = extraction_response.validated_data
 
     logger.success("文本成功转换为 JSON 对象。")

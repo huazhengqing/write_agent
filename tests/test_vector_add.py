@@ -1,6 +1,7 @@
 import os
 import sys
 import json
+import hashlib
 import pytest
 import chromadb
 from loguru import logger
@@ -9,7 +10,7 @@ from pathlib import Path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.vector import get_vector_store, vector_add, vector_add_from_dir
-from tests.test_data import VECTOR_TEST_SIMPLE_CN, VECTOR_TEST_SIMPLE_JSON
+from tests.test_data import VECTOR_TEST_SIMPLE_CN, VECTOR_TEST_SIMPLE_JSON, VECTOR_TEST_DATASET
 
 
 @pytest.fixture(scope="function")
@@ -144,3 +145,30 @@ async def test_vector_add_from_empty_dir(vector_store, test_dirs):
     added_from_empty = vector_add_from_dir(vector_store, str(empty_input_dir))
     assert not added_from_empty
     logger.success("--- 从空目录或无效文件目录添加入库测试通过 ---")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("content", VECTOR_TEST_DATASET)
+async def test_vector_add_with_diverse_data(vector_store, content):
+    """
+    测试 vector_add 函数处理来自 test_data.py 的各种格式和复杂度的内容。
+    """
+    # 为每个内容生成唯一的 doc_id 以避免冲突
+    doc_id = f"diverse_test_{hashlib.sha1(content.encode('utf-8')).hexdigest()}"
+    
+    # 简单地猜测内容格式
+    content_format = "json" if content.strip().startswith('{') else "md"
+
+    added = vector_add(
+        vector_store,
+        content=content,
+        metadata={"source": "diverse_test"},
+        doc_id=doc_id,
+        content_format=content_format
+    )
+
+    # vector_add 内部会跳过空/短内容，并返回 False
+    if not content or not content.strip():
+        assert not added, f"空内容 (doc_id: {doc_id}) 应该返回 False"
+    else:
+        assert added, f"有效内容 (doc_id: {doc_id}) 应该返回 True"
