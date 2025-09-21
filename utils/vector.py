@@ -8,94 +8,47 @@ from loguru import logger
 from typing import Any, Callable, Dict, List, Literal, Optional, get_args
 
 from llama_index.core.ingestion import IngestionPipeline
-from llama_index.core import Document, Settings, SimpleDirectoryReader, VectorStoreIndex
+from llama_index.core import (
+    Document,
+    Settings,
+    SimpleDirectoryReader,
+    VectorStoreIndex,
+)
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.vector_stores import VectorStoreQuery
 from llama_index.core.indices.prompt_helper import PromptHelper
 from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core.node_parser import MarkdownElementNodeParser, JSONNodeParser, SentenceSplitter
+from llama_index.core.node_parser import JSONNodeParser, SentenceSplitter
+from llama_index.core.node_parser import MarkdownElementNodeParser
 from llama_index.core.node_parser.interface import NodeParser
 from llama_index.core.retrievers import VectorIndexAutoRetriever
 from llama_index.core.response_synthesizers import CompactAndRefine
 from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo, MetadataInfo
 from llama_index.core.vector_stores.types import VectorStore
-from llama_index.core.schema import BaseNode
+from llama_index.core.schema import BaseNode, TextNode, NodeRelationship, RelatedNodeInfo
 from llama_index.vector_stores.chroma import ChromaVectorStore
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.llms.litellm import LiteLLM
 from llama_index.postprocessor.siliconflow_rerank import SiliconFlowRerank
 
 from utils.config import llm_temperatures, get_llm_params, get_embedding_params
+from utils.vector_prompts import (
+    summary_query_str,
+    text_qa_prompt,
+    refine_prompt,
+    mermaid_summary_prompt,
+)
 
 
 ###############################################################################
-
-
-qa_prompt = """
-# 角色
-你是一位信息提取助手。
-
-# 任务
-从下方的`上下文信息`中，提取与`问题`相关的所有事实和描述，并以清晰的陈述句形式呈现。
-
-# 核心原则
-1.  **忠于原文**: 你的回答必须完全基于`上下文信息`，禁止引入外部知识。
-2.  **提取而非回答**: 你的目标是提取信息片段，而不是直接形成对`问题`的最终答案。如果`上下文信息`只包含部分相关信息，就只输出那部分。
-3.  **无相关则为空**: 如果`上下文信息`与`问题`完全无关，则返回空字符串。
-4.  **直接陈述**: 直接列出事实，不要添加引述性短语。
-
-# 上下文信息
----------------------
-{context_str}
----------------------
-
-# 问题
-{query_str}
-
-# 提取的事实
-"""
-
-
-refine_prompt = """
-# 角色
-你是一位高级信息整合师。
-
-# 任务
-根据`新的上下文`，优化`已有的回答`，以更全面、更精确地回答`原始问题`。
-
-# 工作流程
-1.  **分析新信息**: 仔细阅读`新的上下文`，识别出其中包含的、但`已有的回答`中缺失或不完整的新信息点。
-2.  **比较与整合**: 将新信息点与`已有的回答`进行融合，遵循下方的核心原则。
-3.  **生成新答案**: 构建一个单一、连贯、全面的新答案。
-
-# 核心原则
-1.  **信息完整性**: 最终答案必须无缝整合`已有的回答`和`新的上下文`中的所有相关信息，禁止丢失任何细节。
-2.  **增量优化**: 你的目标是“优化”而非“重写”。只有当`新的上下文`能提供补充、修正或更具体的细节时，才进行修改。
-3.  **冲突处理**: 如果`新的上下文`与`已有的回答`中的信息发生冲突，请综合判断，保留更具体、更可信的信息。如果无法判断优劣，则应同时提及两种说法并明确指出其矛盾之处。
-4.  **无效则返回原文**: 如果`新的上下文`与问题无关，或未能提供任何有价值的新信息，请直接返回`已有的回答`，不要做任何改动。
-5.  **风格一致**: 在生成新答案时，尽量保持`已有的回答`的语言风格和格式，使最终答案浑然一体。
-
-# 原始问题
-{query_str}
-
-# 已有的回答
-{existing_answer}
-
-# 新的上下文
-------------
-{context_str}
-------------
-
-# 优化后的回答
-"""
 
 
 synthesis_llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["synthesis"])
 
 synthesizer = CompactAndRefine(
     llm=LiteLLM(**synthesis_llm_params),
-    text_qa_template=PromptTemplate(qa_prompt),
+    text_qa_template=PromptTemplate(text_qa_prompt),
     refine_template=PromptTemplate(refine_prompt),
     prompt_helper = PromptHelper(
         context_window=synthesis_llm_params.get('context_window', 8192),
@@ -182,6 +135,71 @@ def _load_and_filter_documents(
     return valid_docs
 
 
+class MermaidExtractor:
+    """
+    一个辅助类，专门用于解析Mermaid图表。
+    它会为图表生成一个自然语言摘要，并将摘要和原始代码作为独立的节点返回。
+    """
+
+    def __init__(self, llm: LiteLLM, summary_prompt_str: str):
+        self._llm = llm
+        self._summary_prompt = PromptTemplate(summary_prompt_str)
+
+    def get_nodes(self, mermaid_code: str, metadata: dict) -> List[BaseNode]:
+        if not mermaid_code.strip():
+            return []
+
+        summary_response = self._llm.predict(self._summary_prompt, mermaid_code=mermaid_code)
+
+        summary_node = TextNode(
+            text=f"Mermaid图表摘要:\n{summary_response}",
+            metadata=metadata,
+        )
+        code_node = TextNode(
+            text=f"```mermaid\n{mermaid_code}\n```", metadata=metadata
+        )
+
+        summary_node.relationships[NodeRelationship.NEXT] = RelatedNodeInfo(node_id=code_node.id_)
+        code_node.relationships[NodeRelationship.PREVIOUS] = RelatedNodeInfo(node_id=summary_node.id_)
+        return [summary_node, code_node]
+
+
+class CustomMarkdownNodeParser(MarkdownElementNodeParser):
+    """
+    一个自定义的Markdown节点解析器。
+    它首先分离出Mermaid图表进行特殊处理（生成摘要），
+    然后将其余的Markdown内容交给内置的MarkdownElementNodeParser处理。
+    """
+    def __init__(self, llm: LiteLLM, summary_query_str: str, mermaid_summary_prompt: str, **kwargs: Any):
+        # 将llm和summary_query_str传递给父类，以确保表格摘要功能正常工作
+        super().__init__(llm=llm, summary_query_str=summary_query_str, **kwargs)
+        self.mermaid_extractor = MermaidExtractor(llm=llm, summary_prompt_str=mermaid_summary_prompt)
+
+    def get_nodes_from_node(self, node: TextNode) -> List[BaseNode]:
+        """重写此方法以实现对Mermaid图的特殊处理。"""
+        text = node.get_content()
+        # 使用正则表达式分割文本，保留Mermaid代码块作为独立部分
+        parts = re.split(r"(```mermaid\n.*?\n```)", text, flags=re.DOTALL)
+        
+        final_nodes: List[BaseNode] = []
+        for part in parts:
+            if not part.strip():
+                continue
+            
+            if part.startswith("```mermaid"):
+                # 这是Mermaid图表部分，使用自定义提取器处理
+                mermaid_code = part.removeprefix("```mermaid\n").removesuffix("\n```")
+                final_nodes.extend(self.mermaid_extractor.get_nodes(mermaid_code, node.metadata))
+            else:
+                # 这是普通Markdown部分，创建临时文档并调用父类的方法处理
+                # 这样可以完美复用父类对表格、标题等的原生解析能力
+                temp_node = Document(text=part, metadata=node.metadata)
+                # 直接调用父类的 get_nodes_from_node 方法，以避免无限递归
+                final_nodes.extend(super().get_nodes_from_node(temp_node))
+                
+        return final_nodes
+
+
 def _get_node_parser(content_format: Literal["md", "txt", "json"], content_length: int = 0) -> NodeParser:
     if content_length > 20000:
         chunk_size = 1024
@@ -204,13 +222,11 @@ def _get_node_parser(content_format: Literal["md", "txt", "json"], content_lengt
             chunk_size=chunk_size, 
             chunk_overlap=chunk_overlap,
         )
-    return MarkdownElementNodeParser(
+    # 使用自定义的Markdown解析器，以支持Mermaid图表和自定义中文表格摘要
+    return CustomMarkdownNodeParser(
         llm=Settings.llm,
-        chunk_size=chunk_size, 
-        chunk_overlap=chunk_overlap, 
-        # num_workers=3,
-        include_metadata=True,
-        show_progress=False,
+        summary_query_str=summary_query_str,
+        mermaid_summary_prompt=mermaid_summary_prompt
     )
 
 

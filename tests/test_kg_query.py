@@ -34,8 +34,10 @@ def realistic_kg_stores(tmp_path_factory):
     此 Fixture 在模块级别仅执行一次，以提高效率。
     """
     module_tmp_path = tmp_path_factory.mktemp("kg_realistic")
-    kg_db_path = module_tmp_path / "kuzu_db_realistic"
-    vector_db_path = module_tmp_path / "chroma_for_kg_realistic"
+    kg_db_path = str(module_tmp_path / "kuzu_db_realistic")
+    vector_db_path = str(module_tmp_path / "chroma_for_kg_realistic")
+
+    yield kg_db_path, vector_db_path
 
     kg_store = get_kg_store(db_path=str(kg_db_path))
     vector_store = get_vector_store(db_path=str(vector_db_path), collection_name="kg_realistic_hybrid")
@@ -43,29 +45,28 @@ def realistic_kg_stores(tmp_path_factory):
     # 直接从内存灌入数据，不再创建和读取文件
     logger.info("--- (Fixture) 开始将真实场景数据添加入知识图谱 ---")
     
-    realistic_data = [
-        ("1.1_design_worldview", VECTOR_TEST_NOVEL_WORLDVIEW, "md"),
-        ("1.2_design_characters", VECTOR_TEST_NOVEL_CHARACTERS, "json"),
-        ("1.3_design_plot_arc1", VECTOR_TEST_NOVEL_PLOT_ARC, "md"),
-        ("1.4_design_factions", VECTOR_TEST_NOVEL_FACTIONS, "md"),
-        ("3.1.1_write_chapter1", VECTOR_TEST_NOVEL_CHAPTER, "md"),
-    ]
+    # realistic_data = [
+    #     ("1.1_design_worldview", VECTOR_TEST_NOVEL_WORLDVIEW, "md"),
+    #     ("1.2_design_characters", VECTOR_TEST_NOVEL_CHARACTERS, "json"),
+    #     ("1.3_design_plot_arc1", VECTOR_TEST_NOVEL_PLOT_ARC, "md"),
+    #     ("1.4_design_factions", VECTOR_TEST_NOVEL_FACTIONS, "md"),
+    #     ("3.1.1_write_chapter1", VECTOR_TEST_NOVEL_CHAPTER, "md"),
+    # ]
 
-    for doc_id, content, content_format in realistic_data:
-        # 模拟文件名作为 source
-        source_name = f"{doc_id}.{'json' if content_format == 'json' else 'md'}"
-        kg_add(
-            kg_store=kg_store,
-            vector_store=vector_store,
-            content=content,
-            metadata={"source": source_name, "doc_id": doc_id},
-            doc_id=doc_id,
-            content_format=content_format,
-            chars_per_triplet=120,
-        )
+    # for doc_id, content, content_format in realistic_data:
+    #     # 模拟文件名作为 source
+    #     source_name = f"{doc_id}.{'json' if content_format == 'json' else 'md'}"
+    #     kg_add(
+    #         kg_store=kg_store,
+    #         vector_store=vector_store,
+    #         content=content,
+    #         metadata={"source": source_name, "doc_id": doc_id},
+    #         doc_id=doc_id,
+    #         content_format=content_format,
+    #         chars_per_triplet=120,
+    #     )
 
     logger.success("--- (Fixture) 真实场景数据全部添加完毕 ---")
-    yield kg_store, vector_store
 
 
 @pytest.mark.asyncio
@@ -98,8 +99,30 @@ async def test_kg_query_single(basic_kg_stores):
 @pytest.mark.asyncio
 async def test_realistic_kg_queries_batch(realistic_kg_stores):
     """测试针对已灌入真实数据的图谱进行复杂的批量查询。"""
-    kg_store, vector_store = realistic_kg_stores
+    kg_db_path, vector_db_path = realistic_kg_stores
+    kg_store = get_kg_store(db_path=kg_db_path)
+    vector_store = get_vector_store(db_path=vector_db_path, collection_name="kg_realistic_hybrid")
     kg_query_engine = get_kg_query_engine(kg_store=kg_store, kg_vector_store=vector_store)
+
+    realistic_data = [
+        ("1.1_design_worldview", VECTOR_TEST_NOVEL_WORLDVIEW, "md"),
+        ("1.2_design_characters", VECTOR_TEST_NOVEL_CHARACTERS, "json"),
+        ("1.3_design_plot_arc1", VECTOR_TEST_NOVEL_PLOT_ARC, "md"),
+        ("1.4_design_factions", VECTOR_TEST_NOVEL_FACTIONS, "md"),
+        ("3.1.1_write_chapter1", VECTOR_TEST_NOVEL_CHAPTER, "md"),
+    ]
+
+    for doc_id, content, content_format in realistic_data:
+        # 模拟文件名作为 source
+        source_name = f"{doc_id}.{'json' if content_format == 'json' else 'md'}"
+        kg_add(
+            kg_store=kg_store,
+            vector_store=vector_store,
+            content=content,
+            metadata={"source": source_name, "doc_id": doc_id},
+            doc_id=doc_id,
+            content_format=content_format,
+        )
 
     questions = [
         "龙傲天和叶良辰是什么关系？他们之间发生了什么？",

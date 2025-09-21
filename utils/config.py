@@ -56,9 +56,14 @@ llms_api = {
                 "context_window": 131072,
             }, 
             # {
+            #     "model": "openrouter/deepseek/deepseek-r1-0528",
+            #     "api_key": os.getenv("OPENROUTER_API_KEY"),
+            #     "context_window": 163840,
+            # },
+            # {
             #     "model": "openrouter/deepseek/deepseek-r1-0528-qwen3-8b",
             #     "api_key": os.getenv("OPENROUTER_API_KEY"),
-            #     "context_window": 32000,
+            #     "context_window": 131072,
             # },
         ]
     },
@@ -89,9 +94,14 @@ llms_api = {
                 "context_window": 131072,
             }, 
             # {
+            #     "model": "openrouter/deepseek/deepseek-chat-v3-0324",
+            #     "api_key": os.getenv("OPENROUTER_API_KEY"),
+            #     "context_window": 163840,
+            # },
+            # {
             #     "model": "openrouter/deepseek/deepseek-r1-0528-qwen3-8b",
             #     "api_key": os.getenv("OPENROUTER_API_KEY"),
-            #     "context_window": 32000,
+            #     "context_window": 131072,
             # },
         ]
     },
@@ -99,7 +109,7 @@ llms_api = {
         "model": "openai/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B",
         "api_base": "https://api.siliconflow.cn/v1/",
         "api_key": os.getenv("SILICONFLOW_API_KEY"),
-        "context_window": 128000,
+        "context_window": 131072,
         "fallbacks": [
             {
                 "model": "openrouter/google/gemini-2.0-flash-exp:free",
@@ -172,50 +182,12 @@ def get_llm_params(
     if messages is not None:
         llm_params["messages"] = copy.deepcopy(messages)
 
-    llm_params["retry_on_exceptions"] = [e for e in llm_api_params["exceptions_to_fallback_on"] if e != "RateLimitError"]
-    llm_params["max_retries"] = llm_params.get("num_retries", 3)
+    # `max_retries` 用于 llama-index LiteLLM 包装器的重试机制。
+    # 我们将其设置为 1 (即尝试1次，不重试)，以便让 litellm 自身更复杂的回退和重试逻辑优先执行。
+    # llm_params 中的 `num_retries` 参数会被传递给 litellm，用于控制其内部重试。
+    llm_params["max_retries"] = 1
 
     return llm_params
-
-
-###############################################################################
-
-
-litellm.fallbacks = [
-    {
-        "model": "openrouter/deepseek/deepseek-r1-0528:free",
-        "api_key": os.getenv("OPENROUTER_API_KEY"),
-        "context_window": 163840,
-    }, 
-    {
-        "model": "openai/deepseek-ai/DeepSeek-R1-0528",
-        "api_base": "https://api-inference.modelscope.cn/v1/",
-        "api_key": os.getenv("modelscope_API_KEY"), 
-        "context_window": 163840,
-    }, 
-    {
-        "model": "gemini/gemini-2.5-flash-lite",
-        "api_key": os.getenv("GEMINI_API_KEY"), 
-        "context_window": 1048576,
-    }, 
-    {
-        "model": "groq/llama-3.1-8b-instant",
-        "api_key": os.getenv("GROQ_API_KEY"), 
-        "context_window": 131072,
-    }, 
-    {
-        "model": "groq/qwen/qwen3-32b",
-        "api_key": os.getenv("GROQ_API_KEY"), 
-        "context_window": 131072,
-    }, 
-    # {
-    #     "model": "openrouter/deepseek/deepseek-r1-0528-qwen3-8b",
-    #     "api_key": os.getenv("OPENROUTER_API_KEY"),
-    #     "context_window": 32000,
-    # },
-]
-
-litellm.exceptions_to_fallback_on = llm_api_params["exceptions_to_fallback_on"]
 
 
 ###############################################################################

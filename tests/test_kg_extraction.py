@@ -20,10 +20,6 @@ from tests.test_data import (
 )
 
 
-# MODEL_GROUPS = ["fast", "summary", "reasoning"]
-MODEL_GROUPS = ["summary"]
-
-
 def _validate_triplets(result_str: str) -> List[Tuple[str, str, str]]:
     """
     验证并解析LLM返回的三元组结果，增加更健壮的错误处理
@@ -127,7 +123,6 @@ async def _extract_triplets_from_chunks(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("llm_group", MODEL_GROUPS)
 @pytest.mark.parametrize(
     "test_id, text_content, expected_entities",
     [
@@ -162,7 +157,6 @@ async def test_kg_extraction_design_from_chunks(llm_group, test_id, text_content
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("llm_group", MODEL_GROUPS)
 async def test_kg_extraction_write_from_chunks(llm_group):
     """
     测试在模拟真实分块流程下，使用 write 提示词从小说正文中提取三元组。
@@ -191,7 +185,6 @@ async def test_kg_extraction_write_from_chunks(llm_group):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("llm_group", MODEL_GROUPS)
 async def test_kg_extraction_empty_input(llm_group):
     """测试处理空输入的情况。"""
     logger.info(f"--- 测试空输入三元组提取 (模型组: {llm_group}) ---")
@@ -209,7 +202,6 @@ async def test_kg_extraction_empty_input(llm_group):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("llm_group", MODEL_GROUPS)
 async def test_kg_extraction_consistency(llm_group):
     """
     测试多次对相同内容进行分块提取时结果的一致性。

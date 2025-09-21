@@ -14,6 +14,7 @@ from tests.test_data import (
     VECTOR_TEST_NOVEL_CHARACTERS,
     VECTOR_TEST_NOVEL_PLOT_ARC,
     VECTOR_TEST_NOVEL_STRUCTURED_INFO,
+    VECTOR_TEST_COMPOSITE_STRUCTURE,
 )
 
 
@@ -52,6 +53,11 @@ def realistic_store(ingested_store):
         "1.4_design_structured": {
             "content": VECTOR_TEST_NOVEL_STRUCTURED_INFO,
             "metadata": {"task_id": "1.4", "type": "design", "status": "active"}
+        },
+        # 添加包含表格和Mermaid图的复合结构文档
+        "1.5_design_composite": {
+            "content": VECTOR_TEST_COMPOSITE_STRUCTURE,
+            "metadata": {"task_id": "1.5", "type": "design", "status": "active"}
         }
     }
 
@@ -116,6 +122,27 @@ async def test_query_structured_data(realistic_store):
     logger.info(f"Q_cross: {question_cross}\nA_cross: {result_cross}")
     assert "北冥魔殿" in result_cross
     logger.success("--- 结构化数据查询测试通过 ---")
+
+
+@pytest.mark.asyncio
+async def test_query_composite_structure(realistic_store):
+    """测试针对包含表格和Mermaid图的复合结构文档的查询。"""
+    logger.info("--- 测试：复合结构（表格+图表）查询 ---")
+    query_engine = get_vector_query_engine(realistic_store, similarity_top_k=5, rerank_top_n=3)
+
+    # 问题1: 查询表格摘要
+    question_table = "萧炎在哪个门派？"
+    result_table = await index_query(query_engine, question_table)
+    logger.info(f"Q_table: {question_table}\nA_table: {result_table}")
+    assert "炎盟" in result_table
+
+    # 问题2: 查询Mermaid图摘要
+    question_diagram = "龙傲天和风清扬是什么关系？"
+    result_diagram = await index_query(query_engine, question_diagram)
+    logger.info(f"Q_diagram: {question_diagram}\nA_diagram: {result_diagram}")
+    assert "师徒" in result_diagram
+
+    logger.success("--- 复合结构查询测试通过 ---")
 
 
 @pytest.mark.asyncio

@@ -15,7 +15,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from utils.config import get_llm_params, llm_temperatures
 from utils.llm import get_llm_messages, llm_completion
 from prompts.story import summary as summary_prompts
-from utils.vector import qa_prompt, refine_prompt
+from utils.vector import text_qa_prompt, refine_prompt
 
 
 # 用于摘要测试的长文本, 包含所有关键元素：角色、情节、事件、场景、伏笔、时间、地点、转折、因果关系、对话、战斗、悬念、物品以及角色状态变化。
@@ -129,7 +129,7 @@ async def test_compact_and_refine_synthesizer():
     )
     synthesizer = CompactAndRefine(
         llm=LiteLLM(**synthesis_llm_params),
-        text_qa_template=PromptTemplate(qa_prompt),
+        text_qa_template=PromptTemplate(text_qa_prompt),
         refine_template=PromptTemplate(refine_prompt),
         prompt_helper = PromptHelper(
             context_window=synthesis_llm_params.get('context_window', 8192),

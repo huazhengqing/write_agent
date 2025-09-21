@@ -10,7 +10,12 @@ from pathlib import Path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.vector import get_vector_store, vector_add, vector_add_from_dir
-from tests.test_data import VECTOR_TEST_SIMPLE_CN, VECTOR_TEST_SIMPLE_JSON, VECTOR_TEST_DATASET
+from tests.test_data import (
+    VECTOR_TEST_SIMPLE_CN, 
+    VECTOR_TEST_SIMPLE_JSON, 
+    VECTOR_TEST_DATASET, 
+    VECTOR_TEST_COMPOSITE_STRUCTURE
+)
 
 
 @pytest.fixture(scope="function")
@@ -31,6 +36,42 @@ async def test_vector_add_single(vector_store):
     # 测试添加 JSON 内容
     added_json = vector_add(vector_store, content=VECTOR_TEST_SIMPLE_JSON, metadata={"type": "json", "source": "manual_json"}, content_format="json", doc_id="manual_json_1")
     assert added_json
+
+
+@pytest.mark.asyncio
+async def test_vector_add_composite_structure(vector_store, test_dirs):
+    """测试 vector_add 处理包含表格和Mermaid图的复合Markdown文档。"""
+    logger.info("--- 测试 vector_add (复合结构) ---")
+
+    doc_id = "composite_doc_1"
+    added = vector_add(
+        vector_store,
+        content=VECTOR_TEST_COMPOSITE_STRUCTURE,
+        metadata={"type": "composite", "source": "manual_composite"},
+        content_format="md",
+        doc_id=doc_id
+    )
+    assert added
+
+    # 验证数据库中的节点
+    client = chromadb.PersistentClient(path=test_dirs["db_path"])
+    collection = client.get_collection("ingestion_test")
+    
+    retrieved_docs = collection.get(where={"doc_id": doc_id})
+    documents = retrieved_docs['documents']
+    
+    assert len(documents) >= 4, "应为普通文本、表格摘要、表格代码、图表摘要、图表代码生成至少4个节点"
+
+    doc_texts_str = "\n".join(documents)
+
+    # 1. 验证 Mermaid 图摘要和代码
+    assert "Mermaid图表摘要" in doc_texts_str, "应包含Mermaid图的摘要节点"
+    assert "师徒" in doc_texts_str and "挚友" in doc_texts_str, "Mermaid摘要内容应正确反映关系"
+    assert "```mermaid" in doc_texts_str, "应包含Mermaid图的原始代码节点"
+
+    # 2. 验证表格
+    assert "| 姓名 | 门派 | 职位 |" in doc_texts_str, "应包含表格的原始节点"
+    logger.success("--- vector_add (复合结构) 测试通过 ---")
 
 
 @pytest.mark.asyncio

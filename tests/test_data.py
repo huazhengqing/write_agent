@@ -366,6 +366,29 @@ VECTOR_TEST_PHILOSOPHICAL_TEXT = """
 另一方面，如果我们认为意识具有非物质性，那么它如何与物质世界（如我们的大脑）相互作用？这引出了二元论的古老难题。在数字化的时代，一个人的思想和记忆可以被部分复制和存储，这是否意味着意识本身也可以被分割或转移？这些问题挑战着我们对自我、存在和现实的基本认知。
 """
 
+VECTOR_TEST_COMPOSITE_STRUCTURE = """
+# 复合结构文档示例
+
+这是一个包含表格和Mermaid图的复合结构文档。
+
+## 势力成员表
+
+| 姓名 | 门派 | 职位 |
+|---|---|---|
+| 萧炎 | 炎盟 | 盟主 |
+| 林动 | 武境 | 武祖 |
+| 叶凡 | 天庭 | 天帝 |
+
+## 主角关系图
+
+""" + "```" + """mermaid
+graph TD
+    A[龙傲天] -->|师徒| B(风清扬)
+    A -->|挚友| D(赵日天)
+    A -->|宿敌| C(叶良辰)
+""" + "```" + """
+"""
+
 # ==============================================================================
 # 3. 特殊格式与代码块 (Special Formats & Code Blocks)
 # 涵盖Markdown内嵌的Mermaid图、各类代码块、特殊字符等。
@@ -823,6 +846,7 @@ VECTOR_TEST_DATASET = list(set([
     VECTOR_TEST_NOVEL_STRUCTURED_INFO,
     VECTOR_TEST_CONVERSATIONAL_LOG,
     VECTOR_TEST_PHILOSOPHICAL_TEXT,
+    VECTOR_TEST_COMPOSITE_STRUCTURE,
     # 3. 特殊格式与代码块
     VECTOR_TEST_DIAGRAM_CONTENT,
     VECTOR_TEST_COMPLEX_MERMAID_DIAGRAM,
@@ -887,6 +911,7 @@ VECTOR_TEST_DATA_BY_TYPE = {
         VECTOR_TEST_TECHNICAL_BOOK_CHAPTER,
         VECTOR_TEST_CONVERSATIONAL_LOG,
         VECTOR_TEST_PHILOSOPHICAL_TEXT,
+        VECTOR_TEST_COMPOSITE_STRUCTURE,
     ],
     "json": [
         VECTOR_TEST_SIMPLE_JSON,

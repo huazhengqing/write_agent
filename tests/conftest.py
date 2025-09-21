@@ -23,6 +23,14 @@ def pytest_configure(config):
     )
 
 
+def pytest_generate_tests(metafunc):
+    """为所有需要 `llm_group` 参数的测试自动进行参数化。"""
+    if "llm_group" in metafunc.fixturenames:
+        # MODEL_GROUPS = ["fast", "summary", "reasoning"]
+        MODEL_GROUPS = ["summary"]
+        metafunc.parametrize("llm_group", MODEL_GROUPS)
+
+
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_environment():
     nest_asyncio.apply()

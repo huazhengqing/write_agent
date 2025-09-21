@@ -8,10 +8,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.llm import llm_completion, get_llm_params, get_llm_messages, llm_temperatures
 from prompts.story.kg import kg_gen_cypher_prompt_design, kg_gen_cypher_prompt_write
-
-
-# MODEL_GROUPS = ["fast", "summary", "reasoning"]
-MODEL_GROUPS = ["summary"]
+from utils.kg import kg_gen_cypher_prompt
 
 
 SCHEMA_DESIGN = """
@@ -44,6 +41,21 @@ WRITE_QUERIES = [
     ("龙傲天的宿敌是谁？", "INVALID_QUERY"), # 测试当关系不存在于Schema中时的处理
 ]
 
+SCHEMA_GENERIC = """
+Node properties: [{'properties': [('name', 'STRING'), ('doc_ids', 'STRING[]')], 'label': '__Entity__'}, {'properties': [('date', 'STRING'), ('name', 'STRING')], 'label': 'Event'}]
+Relationship properties: [{'properties': [('label', 'STRING')], 'label': 'relationship'}]
+Relationships: [('__Entity__', '宿敌是', '__Entity__'), ('__Entity__', '属于', '__Entity__'), ('Event', '位于', '__Entity__')]
+"""
+
+GENERIC_QUERIES = [
+    ("实体A和实体B是什么关系?", 'MATCH (a:__Entity__ {name: "实体A"})-[r]-(b:__Entity__ {name: "实体B"})'),
+    ("实体A的宿敌的组织是什么？", 'MATCH (a:__Entity__ {name: "实体A"})-[:宿敌是]-(enemy:__Entity__)-[:属于]->(faction:__Entity__)'),
+    ("组织A有多少个成员?", 'MATCH (p:__Entity__)-[:属于]->(s:__Entity__ {name: "组织A"})'),
+    ("2024年在地点A发生了什么事件?", "MATCH (e:Event)-[:位于]->(l:__Entity__ {name: \"地点A\"}) WHERE e.date STARTS WITH '2024'"),
+    ("介绍一下实体A", 'MATCH (n:__Entity__ {name: "实体A"})'),
+    ("一个不存在的关系", "INVALID_QUERY"),
+]
+
 
 def _validate_cypher_query(query_str: str, question: str, expected_pattern: str):
     """
@@ -60,70 +72,72 @@ def _validate_cypher_query(query_str: str, question: str, expected_pattern: str)
     assert expected_pattern in query_str, f"生成的查询 '{query_str}' 未包含预期模式 '{expected_pattern}'"
 
 
+async def _run_cypher_gen_test(
+    llm_group: str,
+    question: str,
+    expected_pattern: str,
+    schema: str,
+    prompt: str,
+    test_name: str,
+):
+    """
+    执行单个Cypher生成测试的辅助函数。
+    """
+    logger.info(f"--- 测试 Cypher 生成 ({test_name}) | 模型组: {llm_group} | 问题: {question} ---")
+
+    # 1. 准备LLM参数和消息
+    llm_params = get_llm_params(llm_group=llm_group, temperature=llm_temperatures["classification"])
+    
+    context_dict = {
+        "query_str": question,
+        "schema": schema
+    }
+    messages = get_llm_messages(
+        system_prompt=prompt,
+        context_dict_system=context_dict
+    )
+    llm_params["messages"] = messages
+
+    # 2. 调用LLM
+    response = await llm_completion(llm_params)
+    result_str = response.content.strip()
+
+    logger.info(f"模型组 '{llm_group}' 生成的 Cypher 查询:\n{result_str}")
+
+    # 3. 验证结果
+    _validate_cypher_query(result_str, question, expected_pattern)
+    
+    logger.success(f"--- Cypher 生成 ({test_name}) 测试通过 | 模型组: {llm_group} ---")
+
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("llm_group", MODEL_GROUPS)
 @pytest.mark.parametrize("question, expected_pattern", DESIGN_QUERIES)
 async def test_kg_gen_cypher_design(llm_group, question, expected_pattern):
     """
     测试针对设计文档知识图谱的Cypher查询生成。
     """
-    logger.info(f"--- 测试 Cypher 生成 (Design) | 模型组: {llm_group} | 问题: {question} ---")
-
-    # 1. 准备LLM参数和消息
-    llm_params = get_llm_params(llm_group=llm_group, temperature=llm_temperatures["classification"])
-    
-    context_dict = {
-        "query_str": question,
-        "schema": SCHEMA_DESIGN
-    }
-    # 注意：这里的提示词模板变量是 {query_str} 和 {schema}，它们应该直接在 system_prompt 中格式化
-    messages = get_llm_messages(
-        system_prompt=kg_gen_cypher_prompt_design,
-        context_dict_system=context_dict
+    await _run_cypher_gen_test(
+        llm_group, question, expected_pattern, SCHEMA_DESIGN, kg_gen_cypher_prompt_design, "Design"
     )
-    llm_params["messages"] = messages
-
-    # 2. 调用LLM
-    response = await llm_completion(llm_params)
-    result_str = response.content.strip()
-
-    logger.info(f"模型组 '{llm_group}' 生成的 Cypher 查询:\n{result_str}")
-
-    # 3. 验证结果
-    _validate_cypher_query(result_str, question, expected_pattern)
-    
-    logger.success(f"--- Cypher 生成 (Design) 测试通过 | 模型组: {llm_group} ---")
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("llm_group", MODEL_GROUPS)
 @pytest.mark.parametrize("question, expected_pattern", WRITE_QUERIES)
 async def test_kg_gen_cypher_write(llm_group, question, expected_pattern):
     """
     测试针对小说正文知识图谱的Cypher查询生成。
     """
-    logger.info(f"--- 测试 Cypher 生成 (Write) | 模型组: {llm_group} | 问题: {question} ---")
-
-    # 1. 准备LLM参数和消息
-    llm_params = get_llm_params(llm_group=llm_group, temperature=llm_temperatures["classification"])
-    
-    context_dict = {
-        "query_str": question,
-        "schema": SCHEMA_WRITE
-    }
-    messages = get_llm_messages(
-        system_prompt=kg_gen_cypher_prompt_write,
-        context_dict_system=context_dict
+    await _run_cypher_gen_test(
+        llm_group, question, expected_pattern, SCHEMA_WRITE, kg_gen_cypher_prompt_write, "Write"
     )
-    llm_params["messages"] = messages
 
-    # 2. 调用LLM
-    response = await llm_completion(llm_params)
-    result_str = response.content.strip()
 
-    logger.info(f"模型组 '{llm_group}' 生成的 Cypher 查询:\n{result_str}")
-
-    # 3. 验证结果
-    _validate_cypher_query(result_str, question, expected_pattern)
-    
-    logger.success(f"--- Cypher 生成 (Write) 测试通过 | 模型组: {llm_group} ---")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("question, expected_pattern", GENERIC_QUERIES)
+async def test_kg_gen_cypher_generic(llm_group, question, expected_pattern):
+    """
+    测试通用的Cypher查询生成。
+    """
+    await _run_cypher_gen_test(
+        llm_group, question, expected_pattern, SCHEMA_GENERIC, kg_gen_cypher_prompt, "Generic"
+    )
