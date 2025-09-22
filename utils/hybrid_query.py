@@ -8,7 +8,7 @@ from llama_index.core.tools import QueryEngineTool
 from utils.config import llm_temperatures, get_llm_params
 from utils.llm import get_llm_messages, llm_completion
 from utils.vector import index_query
-from utils.agent import call_react_agent, react_system_prompt
+from utils.react_agent import call_react_agent, react_system_prompt
 from hybrid_prompts import synthesis_system_prompt, synthesis_user_prompt
 
 

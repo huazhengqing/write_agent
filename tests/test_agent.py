@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 from llama_index.core.tools import FunctionTool
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from utils.agent import call_react_agent
+from utils.react_agent import call_react_agent
 
 
 # 定义一个简单的 Pydantic 模型用于测试

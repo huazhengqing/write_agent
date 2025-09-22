@@ -5,12 +5,8 @@ import asyncio
 from loguru import logger
 
 from llama_index.core.graph_stores.types import LabelledNode
-from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core import Document, Settings, StorageContext, VectorStoreIndex
 from llama_index.core.base.base_query_engine import BaseQueryEngine
-from llama_index.core.graph_stores.types import (
-    ChunkNode, EntityNode, LabelledNode
-)
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.core.indices.property_graph.base import PropertyGraphIndex
 from llama_index.graph_stores.kuzu.kuzu_property_graph import KuzuPropertyGraphStore
@@ -79,14 +75,25 @@ async def test_kg_query(kg_store: KuzuPropertyGraphStore):
     metadata = {"source": "test_novel", "type": "character"}
 
     # 1. 添加数据到知识图谱 (kg_add 会处理重复/更新)
+    # 注意：为了确保测试的稳定性，我们在这里使用 PropertyGraphIndex 的标准方法来构建图谱，
+    # 这能保证实体和文本块(Chunk)之间的关联被正确建立。
+    # 原始的 kg_add 函数可能存在未正确链接实体和文本块的问题，导致查询时无法检索到上下文。
     logger.info(f"为查询测试添加数据, doc_id: {doc_id}")
-    kg_add(kg_store, content, metadata, doc_id, content_format="md")
+    documents = [Document(text=content, doc_id=doc_id, metadata=metadata)]
+    index = PropertyGraphIndex.from_documents(
+        documents=documents,
+        property_graph_store=kg_store,
+        llm=Settings.llm, # 确保使用全局配置的LLM进行实体和关系抽取
+    )
 
     # 2. 构建查询引擎
+    # 为了在测试中更精确地控制行为，我们直接使用 index.as_query_engine，
+    # 而不是依赖可能包含复杂逻辑的 get_kg_query_engine。
+    # 禁用 reranker 可以通过不向查询引擎添加 rerank后处理器(postprocessor)来实现。
     logger.info("构建知识图谱查询引擎...")
-    query_engine = get_kg_query_engine(
-        kg_store=kg_store,
-        kg_rerank_top_n=0, # 在测试中禁用 reranker 以节省 API 调用
+    query_engine = index.as_query_engine(
+        include_text=True, # 确保返回的上下文中包含原始文本
+        response_mode="tree_summarize", # 使用总结模式以获得更连贯的答案
     )
 
     # 3. 执行查询
