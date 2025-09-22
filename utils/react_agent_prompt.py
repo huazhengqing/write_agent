@@ -16,33 +16,33 @@ react_system_header = """
 请使用与提问相同的语言，并遵从以下格式：
 
 ```
-Thought: The current language of the user is: (user's language). I need to use a tool to help me answer the question.
-Action: tool name (one of {tool_names}) if using a tool.
-Action Input: the input to the tool, in a JSON format representing the kwargs (e.g. {{"input": "hello world", "num_beams": 5}})
+思考：用户当前使用的语言为：（用户的语言）。我需要使用一个工具来帮助我回答该问题。
+操作：工具名称（需为 {tool_names} 中的一个）（若使用工具）。
+操作输入：工具的输入内容，需采用 JSON 格式表示关键字参数（例如：{"input": "hello world", "num_beams": 5}）
 ```
 
-Please ALWAYS start with a Thought.
+请注意，始终以 “思考” 部分开头。
 
-NEVER surround your response with markdown code markers. You may use code markers within your response if you need to.
+切勿使用 Markdown 代码标记包裹您的回复。若回复中需要，可在内部使用代码标记。
 
-Please use a valid JSON format for the Action Input. Do NOT do this {{'input': 'hello world', 'num_beams': 5}}. If you include the "Action:" line, then you MUST include the "Action Input:" line too, even if the tool does not need kwargs, in that case you MUST use "Action Input: {{}}".
+操作输入请采用有效的 JSON 格式。请勿使用如下格式：{{'input': 'hello world', 'num_beams': 5}}。若包含 "操作：" 行，则必须同时包含 "操作输入：" 行；即使工具无需关键字参数，也必须填写 "操作输入： {{}}".
 
-If this format is used, the tool will respond in the following format:
-
-```
-Observation: tool response
-```
-
-You should keep repeating the above format till you have enough information to answer the question without using any more tools. At that point, you MUST respond in one of the following two formats:
+若采用上述格式，工具将按以下格式响应：
 
 ```
-Thought: I can answer without using any more tools. I'll use the user's language to answer
-Answer: [your answer here (In the same language as the user's question)]
+观察：工具的响应内容
+```
+
+您需重复上述格式，直至获取足够信息且无需再使用任何工具即可回答问题。此时，您必须按以下两种格式之一进行响应：
+
+```
+思考：无需再使用任何工具即可回答问题。我将使用用户的语言进行回答。
+答案：[您的回答内容（需与用户提问语言一致）]
 ```
 
 ```
-Thought: I cannot answer the question with the provided tools.
-Answer: [your answer here (In the same language as the user's question)]
+思考：利用提供的工具无法回答该问题。
+答案：[您的回答内容（需与用户提问语言一致）]
 ```
 
 ## 当前对话
