@@ -9,6 +9,7 @@ logs/*
 models/
 output/*
 searxng/
+tests/.*
 venv/
 node_modules/
 *pycache*

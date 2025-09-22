@@ -50,12 +50,29 @@ def setup_module_logging(request):
 
 
 @pytest.fixture(scope="module")
-def test_dirs(tmp_path_factory):
-    base_dir = tmp_path_factory.mktemp("vector_tests")
-    db_path = base_dir / "chroma_db"
-    input_path = base_dir / "input_data"
+def test_dirs(tmp_path_factory) -> dict:
+    """为所有测试创建统一的临时目录。"""
+    base_dir = tmp_path_factory.mktemp(".tests_workspace")
+    vector_db_path = base_dir / ".chroma_db"
+    kg_db_path = base_dir / ".kuzu_db"
+    input_path = base_dir / ".input_data"
+
+    # 创建所有需要的目录
+    vector_db_path.mkdir()
+    kg_db_path.mkdir()
     input_path.mkdir()
-    return {"db_path": str(db_path), "input_path": str(input_path)}
+
+    logger.info(f"创建统一测试临时目录: {base_dir}")
+
+    paths = {
+        "vector_db_path": str(vector_db_path),
+        "kg_db_path": str(kg_db_path),
+        "input_path": str(input_path),
+    }
+
+    yield paths
+
+    logger.info(f"统一测试临时目录 {base_dir} 将被 pytest 自动清理。")
 
 
 def _write_test_data_to_files(input_dir: str):

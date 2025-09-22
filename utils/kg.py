@@ -39,28 +39,6 @@ reasoning_llm_params = get_llm_params(llm_group="summary", temperature=llm_tempe
 llm_for_reasoning = LiteLLM(**reasoning_llm_params)
 
 
-# class PatchedKuzuPropertyGraphStore(KuzuPropertyGraphStore):
-#     _schema_cache: Optional[dict] = None
-
-#     @property
-#     def supports_structured_queries(self) -> bool:
-#         return True
-
-#     def get_schema(self, refresh: bool = False) -> dict:
-#         if self._schema_cache is not None and not refresh:
-#             return self._schema_cache
-
-#         schema = super().get_schema()
-#         self._schema_cache = schema
-#         return schema
-
-#     def get_all_nodes(self) -> List[LabelledNode]:
-#         return self.get()
-    
-#     def clear_schema_cache(self):
-#         self._schema_cache = None
-
-
 def get_kg_store(db_path: str) -> KuzuPropertyGraphStore:
     logger.info(f"正在访问或创建知识图谱存储: path='{db_path}'")
     parent_dir = os.path.dirname(db_path)
