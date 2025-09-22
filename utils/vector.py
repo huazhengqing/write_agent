@@ -1,10 +1,12 @@
 import os
 import re
 import asyncio
+import hashlib
 from datetime import datetime
 from pathlib import Path
 import chromadb
 from loguru import logger
+from diskcache import Cache
 from typing import Any, Callable, Dict, List, Literal, Optional, get_args
 
 from llama_index.core.ingestion import IngestionPipeline
@@ -33,6 +35,7 @@ from llama_index.llms.litellm import LiteLLM
 from llama_index.postprocessor.siliconflow_rerank import SiliconFlowRerank
 
 from utils.config import llm_temperatures, get_llm_params, get_embedding_params
+from utils.file import cache_dir
 from utils.vector_prompts import (
     summary_query_str,
     text_qa_prompt,
@@ -41,7 +44,35 @@ from utils.vector_prompts import (
 )
 
 
-###############################################################################
+def init_llama_settings():
+    llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["summarization"])
+    Settings.llm = LiteLLM(**llm_params)
+    
+    Settings.prompt_helper = PromptHelper(
+        context_window=llm_params.get('context_window', 8192),
+        num_output=llm_params.get('max_tokens', 2048),
+        chunk_overlap_ratio=0.2,
+    )
+
+    embedding_params = get_embedding_params()
+    embed_model_name = embedding_params.pop('model')
+    Settings.embed_model = LiteLLMEmbedding(model_name=embed_model_name, **embedding_params)
+
+init_llama_settings()
+
+
+def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
+    db_path_obj = Path(db_path)
+    db_path_obj.mkdir(parents=True, exist_ok=True)
+
+    db = chromadb.PersistentClient(path=str(db_path_obj))
+    chroma_collection = db.get_or_create_collection(collection_name)
+    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+
+    store_cache_path = db_path_obj / f"{collection_name}.cache.db"
+    vector_store.cache = Cache(str(store_cache_path), size_limit=int(32 * (1024**2)))
+    
+    return vector_store
 
 
 synthesis_llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["synthesis"])
@@ -56,43 +87,6 @@ synthesizer = CompactAndRefine(
         chunk_overlap_ratio=0.2,
     )
 )
-
-
-###############################################################################
-
-
-def init_llama_settings():
-    logger.info("正在初始化 LlamaIndex 全局设置...")
-    llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["summarization"])
-    Settings.llm = LiteLLM(**llm_params)
-    logger.debug(f"全局 LLM 设置为: {llm_params['model']}")
-    
-    Settings.prompt_helper = PromptHelper(
-        context_window=llm_params.get('context_window', 8192),
-        num_output=llm_params.get('max_tokens', 2048),
-        chunk_overlap_ratio=0.2,
-    )
-
-    embedding_params = get_embedding_params()
-    embed_model_name = embedding_params.pop('model')
-    Settings.embed_model = LiteLLMEmbedding(model_name=embed_model_name, **embedding_params)
-    logger.debug(f"全局嵌入模型设置为: {embed_model_name}")
-    logger.success("LlamaIndex 全局设置初始化完成。")
-
-init_llama_settings()
-
-
-###############################################################################
-
-
-def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
-    logger.info(f"正在访问或创建向量存储: path='{db_path}', collection='{collection_name}'")
-    os.makedirs(db_path, exist_ok=True)
-    db = chromadb.PersistentClient(path=db_path)
-    chroma_collection = db.get_or_create_collection(collection_name)
-    vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
-    logger.success(f"成功获取向量存储 collection='{collection_name}'。")
-    return vector_store
 
 
 ###############################################################################
@@ -313,27 +307,6 @@ def vector_add_from_dir(
     return True
 
 
-def _is_content_too_similar(
-    vector_store: VectorStore,
-    content: str,
-    threshold: float = 0.999,
-    doc_id: Optional[str] = None
-) -> bool:
-    logger.debug(f"正在为 doc_id '{doc_id}' 检查内容相似性...")
-    query_embedding = Settings.embed_model.get_text_embedding(content)
-    vector_store_query = VectorStoreQuery(
-        query_embedding=query_embedding, similarity_top_k=1, filters=None
-    )
-    query_result = vector_store.query(vector_store_query)
-    if query_result.nodes and query_result.similarities:
-        is_updating_itself = doc_id and query_result.nodes[0].ref_doc_id == doc_id
-        if not is_updating_itself and query_result.similarities[0] > threshold:
-            logger.warning(f"发现与 doc_id '{doc_id}' 内容高度相似 (相似度: {query_result.similarities[0]:.4f}) 的文档 (ID: '{query_result.nodes[0].ref_doc_id}'), 跳过添加。")
-            return True
-    logger.debug("未发现高度相似的现有内容。")
-    return False
-
-
 def _parse_content_to_nodes(
     content: str,
     metadata: Dict[str, Any],
@@ -357,31 +330,33 @@ def vector_add(
     metadata: Dict[str, Any],
     content_format: Literal["md", "txt", "json"] = "md",
     doc_id: Optional[str] = None,
-    check_similarity: bool = False,
-    similarity_threshold: float = 0.999,
 ) -> bool:
     logger.info(f"开始向向量库添加内容, doc_id='{doc_id}', format='{content_format}'...")
     if not content or not content.strip() or "生成报告时出错" in content:
         logger.warning(f"🤷 内容为空或包含错误，跳过存入向量库。元数据: {metadata}")
         return False
-    
-    if check_similarity and _is_content_too_similar(vector_store, content, similarity_threshold, doc_id):
-        return False
 
-    if doc_id:
-        logger.info(f"正在从向量库中删除 doc_id '{doc_id}' 的旧节点...")
-        vector_store.delete(ref_doc_id=doc_id)
+    new_content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
+    doc_cache = getattr(vector_store, "cache", None)
+    if doc_cache and doc_cache.get(new_content_hash):
+        logger.info(f"内容 (hash: {new_content_hash[:8]}...) 已存在，跳过重复添加。")
+        return True
 
-    nodes_to_insert = _parse_content_to_nodes(content, metadata, content_format, doc_id)
+    effective_doc_id = doc_id or new_content_hash
+
+    nodes_to_insert = _parse_content_to_nodes(content, metadata, content_format, effective_doc_id)
     if not nodes_to_insert:
-        logger.warning(f"内容 (doc_id: {doc_id}) 未解析出任何有效节点，跳过添加。")
+        logger.warning(f"内容 (id: {effective_doc_id}) 未解析出任何有效节点，跳过添加。")
         return False
 
-    logger.info(f"准备将 {len(nodes_to_insert)} 个节点 (doc_id: {doc_id}) 注入 IngestionPipeline...")
+    logger.info(f"准备将 {len(nodes_to_insert)} 个节点 (id: {effective_doc_id}) 注入 IngestionPipeline...")
     pipeline = IngestionPipeline(vector_store=vector_store)
     pipeline.run(nodes=nodes_to_insert)
 
-    logger.success(f"成功将内容 (doc_id: {doc_id}, {len(nodes_to_insert)}个节点) 添加到向量库。")
+    if doc_cache:
+        doc_cache.set(new_content_hash, True)
+
+    logger.success(f"成功将内容 (id: {effective_doc_id}, {len(nodes_to_insert)}个节点) 添加到向量库。")
     return True
 
 
@@ -461,22 +436,6 @@ def _create_auto_retriever_engine(
     return query_engine
 
 
-def _create_standard_query_engine(
-    index: VectorStoreIndex,
-    filters: Optional[MetadataFilters],
-    similarity_top_k: int,
-    similarity_cutoff: float,
-    postprocessors: List,
-) -> BaseQueryEngine:
-    logger.info("正在创建标准查询引擎...")
-    query_engine = index.as_query_engine(
-        response_synthesizer=synthesizer, filters=filters, similarity_top_k=similarity_top_k,
-        node_postprocessors=postprocessors, similarity_cutoff=similarity_cutoff
-    )
-    logger.success("标准查询引擎创建成功。")
-    return query_engine
-
-
 def get_vector_query_engine(
     vector_store: VectorStore,
     filters: Optional[MetadataFilters] = None,
@@ -509,13 +468,15 @@ def get_vector_query_engine(
             postprocessors=postprocessors,
         )
     else:
-        query_engine = _create_standard_query_engine(
-            index=index,
-            filters=filters,
+        logger.info("正在创建标准查询引擎...")
+        query_engine = index.as_query_engine(
+            response_synthesizer=synthesizer, 
+            filters=filters, 
             similarity_top_k=similarity_top_k,
-            similarity_cutoff=similarity_cutoff,
-            postprocessors=postprocessors,
+            node_postprocessors=postprocessors, 
+            similarity_cutoff=similarity_cutoff
         )
+        logger.success("标准查询引擎创建成功。")
     
     logger.success("向量查询引擎构建成功。")
     return query_engine

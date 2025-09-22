@@ -3,8 +3,11 @@ import json
 from typing import Any, Dict, List, Literal, Optional
 import hashlib
 import time
+from pathlib import Path
 import kuzu
+from diskcache import Cache
 import llama_index.graph_stores.kuzu.utils as kuzu_utils
+from llama_index.graph_stores.kuzu import utils as kuzu_utils
 from loguru import logger
 
 from llama_index.core import Document, Settings, StorageContext, VectorStoreIndex
@@ -23,12 +26,8 @@ from llama_index.postprocessor.siliconflow_rerank.base import SiliconFlowRerank
 
 from utils.config import llm_temperatures, get_llm_params
 from utils.vector import synthesizer
-from utils.kg_prompts import (
-    kg_extraction_prompt,
-)
-
-
-###############################################################################
+from utils.kg_prompts import kg_extraction_prompt
+from utils.file import cache_dir
 
 
 llm_params_for_extraction = get_llm_params(llm_group="summary", temperature=llm_temperatures["classification"])
@@ -40,46 +39,19 @@ llm_for_reasoning = LiteLLM(**reasoning_llm_params)
 
 
 def get_kg_store(db_path: str) -> KuzuPropertyGraphStore:
-    logger.info(f"正在访问或创建知识图谱存储: path='{db_path}'")
-    parent_dir = os.path.dirname(db_path)
-    if parent_dir:
-        os.makedirs(parent_dir, exist_ok=True)
-    db = kuzu.Database(db_path)
-    logger.debug(f"Kuzu 数据库实例已创建: {db_path}")
+    db_path_obj = Path(db_path)
+    db_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
-    conn = kuzu.Connection(db)
-    conn.execute("CREATE NODE TABLE IF NOT EXISTS __Document__(doc_id STRING, content_hash STRING, PRIMARY KEY (doc_id))")
-    logger.debug("确保 __Document__ 表存在。")
+    db = kuzu.Database(str(db_path_obj))
+    kg_store = KuzuPropertyGraphStore(db, embed_model=Settings.embed_model)
 
-    kg_store = KuzuPropertyGraphStore(
-        db,
-        embed_model=Settings.embed_model,
-    )
-    logger.success(f"成功获取知识图谱存储。")
+    store_cache_path = Path(f"{db_path_obj}.cache.db")
+    kg_store.cache = Cache(str(store_cache_path), size_limit=int(32 * (1024**2)))
+
     return kg_store
 
 
 ###############################################################################
-
-
-def _is_content_unchanged(
-    kg_store: KuzuPropertyGraphStore, doc_id: str, new_content_hash: str
-) -> bool:
-    logger.debug(f"正在为 doc_id '{doc_id}' 检查内容哈希值...")
-    hash_check_query = "MATCH (d:__Document__ {doc_id: $doc_id}) RETURN d.content_hash AS old_hash"
-    query_result = kg_store.structured_query(hash_check_query, param_map={"doc_id": doc_id})
-    
-    if not query_result:
-        logger.debug(f"未在 __Document__ 表中找到 doc_id '{doc_id}' 的记录，视为新内容。")
-        return False
-        
-    old_hash = query_result[0].get('old_hash')
-    if old_hash == new_content_hash:
-        logger.debug(f"内容哈希值匹配 (old: {old_hash[:8]}..., new: {new_content_hash[:8]}...), 内容未改变。")
-        return True
-    else:
-        logger.debug(f"内容哈希值不匹配 (old: {old_hash[:8]}..., new: {new_content_hash[:8]}...), 内容已改变。")
-        return False
 
 
 def _get_kg_node_parser(
@@ -109,19 +81,6 @@ def _get_kg_node_parser(
     return parser
 
 
-def _update_document_hash(
-    kg_store: KuzuPropertyGraphStore, 
-    doc_id: str, 
-    content_hash: str
-):
-    logger.debug(f"正在更新 doc_id '{doc_id}' 的内容哈希值为 '{content_hash[:8]}...'")
-    hash_update_query = """
-    MERGE (d:__Document__ {doc_id: $doc_id})
-    SET d.content_hash = $content_hash
-    """
-    kg_store.structured_query(hash_update_query, param_map={"doc_id": doc_id, "content_hash": content_hash})
-
-
 def kg_add(
     kg_store: KuzuPropertyGraphStore,
     content: str,
@@ -134,25 +93,18 @@ def kg_add(
     chunk_overlap: int = 400,
 ) -> None:
     logger.info(f"开始向知识图谱添加内容, doc_id='{doc_id}', format='{content_format}'...")
-
-    # kg_store.clear_schema_cache()
     
+    doc_cache = getattr(kg_store, "cache", None)
     new_content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
-    if _is_content_unchanged(kg_store, doc_id, new_content_hash):
-        logger.info(f"内容 (doc_id: {doc_id}) 未发生变化，跳过知识图谱更新。")
+    if doc_cache and doc_cache.get(new_content_hash):
+        logger.info(f"内容 (hash: {new_content_hash[:8]}...) 已存在，跳过知识图谱更新。")
         return
-
-    logger.info(f"内容 (doc_id: {doc_id}) 已更新，正在删除旧索引并重新构建...")
-    delete_query = "MATCH (c:Chunk {ref_doc_id: $doc_id}) DETACH DELETE c"
-    kg_store.structured_query(delete_query, param_map={"doc_id": doc_id})
-    logger.debug(f"已从知识图谱中删除 doc_id '{doc_id}' 的旧 Chunk 节点。")
 
     doc = Document(id_=doc_id, text=content, metadata=metadata)
     kg_node_parser = _get_kg_node_parser(
         content_format, len(content), chunk_size=chunk_size, chunk_overlap=chunk_overlap
     )
 
-    # chunk_size 直接从函数参数获取，确保一致性
     max_triplets_per_chunk = max(1, round(chunk_size / chars_per_triplet))
     logger.info(f"根据 chars_per_triplet={chars_per_triplet} 和 chunk_size={chunk_size}，动态设置 max_triplets_per_chunk={max_triplets_per_chunk}")
     
@@ -178,7 +130,8 @@ def kg_add(
     )
     logger.info(f"PropertyGraphIndex 核心处理完成，耗时: {time.time() - step_start_time:.2f}s")
 
-    _update_document_hash(kg_store, doc_id, new_content_hash)
+    if doc_cache:
+        doc_cache.set(new_content_hash, True)
 
     logger.success(f"成功处理内容 (doc_id: {doc_id}) 到知识图谱和向量库。")
 
