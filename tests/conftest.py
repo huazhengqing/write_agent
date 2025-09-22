@@ -81,11 +81,3 @@ def _write_test_data_to_files(input_dir: str):
     for filename, content in data_map.items():
         if content and content.strip():
             (Path(input_dir) / filename).write_text(content, encoding='utf-8')
-
-
-@pytest.fixture(scope="module")
-def ingested_store(test_dirs):
-    _write_test_data_to_files(test_dirs["input_path"])
-    vector_store = get_vector_store(db_path=test_dirs["db_path"], collection_name="test_collection")
-    vector_add_from_dir(vector_store, test_dirs["input_path"], file_metadata_default)
-    return vector_store

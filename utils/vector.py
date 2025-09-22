@@ -62,8 +62,10 @@ synthesizer = CompactAndRefine(
 
 
 def init_llama_settings():
+    logger.info("正在初始化 LlamaIndex 全局设置...")
     llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["summarization"])
     Settings.llm = LiteLLM(**llm_params)
+    logger.debug(f"全局 LLM 设置为: {llm_params['model']}")
     
     Settings.prompt_helper = PromptHelper(
         context_window=llm_params.get('context_window', 8192),
@@ -74,6 +76,8 @@ def init_llama_settings():
     embedding_params = get_embedding_params()
     embed_model_name = embedding_params.pop('model')
     Settings.embed_model = LiteLLMEmbedding(model_name=embed_model_name, **embedding_params)
+    logger.debug(f"全局嵌入模型设置为: {embed_model_name}")
+    logger.success("LlamaIndex 全局设置初始化完成。")
 
 init_llama_settings()
 
@@ -82,10 +86,12 @@ init_llama_settings()
 
 
 def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
+    logger.info(f"正在访问或创建向量存储: path='{db_path}', collection='{collection_name}'")
     os.makedirs(db_path, exist_ok=True)
     db = chromadb.PersistentClient(path=db_path)
     chroma_collection = db.get_or_create_collection(collection_name)
     vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
+    logger.success(f"成功获取向量存储 collection='{collection_name}'。")
     return vector_store
 
 
@@ -109,7 +115,7 @@ def _load_and_filter_documents(
     input_dir: str,
     metadata_func: Callable[[str], dict]
 ) -> List[Document]:
-    """从目录加载文档并过滤掉空文件。"""
+    logger.info(f"开始从目录 '{input_dir}' 加载和过滤文档...")
     reader = SimpleDirectoryReader(
         input_dir=input_dir,
         required_exts=[".md", ".txt", ".json"],
@@ -121,9 +127,8 @@ def _load_and_filter_documents(
     if not documents:
         logger.warning(f"🤷 在 '{input_dir}' 目录中未找到任何符合要求的文件。")
         return []
-
-    logger.info(f"🔍 找到 {len(documents)} 个文件，开始过滤和解析...")
     
+    logger.debug(f"从 '{input_dir}' 初始加载了 {len(documents)} 个文档。")
     valid_docs = []
     for doc in documents:
         file_path = Path(doc.metadata.get("file_path", doc.id_))
@@ -132,15 +137,11 @@ def _load_and_filter_documents(
             continue
         valid_docs.append(doc)
     
+    logger.success(f"完成文档加载和过滤，共获得 {len(valid_docs)} 个有效文档。")
     return valid_docs
 
 
 class MermaidExtractor:
-    """
-    一个辅助类，专门用于解析Mermaid图表。
-    它会为图表生成一个自然语言摘要，并将摘要和原始代码作为独立的节点返回。
-    """
-
     def __init__(self, llm: LiteLLM, summary_prompt_str: str):
         self._llm = llm
         self._summary_prompt = PromptTemplate(summary_prompt_str)
@@ -149,7 +150,9 @@ class MermaidExtractor:
         if not mermaid_code.strip():
             return []
 
+        logger.debug("正在为 Mermaid 图表生成摘要...")
         summary_response = self._llm.predict(self._summary_prompt, mermaid_code=mermaid_code)
+        logger.debug(f"Mermaid 图表摘要生成完毕，长度: {len(summary_response)}")
 
         summary_node = TextNode(
             text=f"Mermaid图表摘要:\n{summary_response}",
@@ -158,27 +161,22 @@ class MermaidExtractor:
         code_node = TextNode(
             text=f"```mermaid\n{mermaid_code}\n```", metadata=metadata
         )
+        logger.debug(f"创建了 Mermaid 摘要节点 (ID: {summary_node.id_}) 和代码节点 (ID: {code_node.id_})。")
 
         summary_node.relationships[NodeRelationship.NEXT] = RelatedNodeInfo(node_id=code_node.id_)
         code_node.relationships[NodeRelationship.PREVIOUS] = RelatedNodeInfo(node_id=summary_node.id_)
+        logger.debug("已在摘要节点和代码节点之间建立双向关系。")
         return [summary_node, code_node]
 
 
 class CustomMarkdownNodeParser(MarkdownElementNodeParser):
-    """
-    一个自定义的Markdown节点解析器。
-    它首先分离出Mermaid图表进行特殊处理（生成摘要），
-    然后将其余的Markdown内容交给内置的MarkdownElementNodeParser处理。
-    """
     def __init__(self, llm: LiteLLM, summary_query_str: str, mermaid_summary_prompt: str, **kwargs: Any):
-        # 将llm和summary_query_str传递给父类，以确保表格摘要功能正常工作
         super().__init__(llm=llm, summary_query_str=summary_query_str, **kwargs)
         self.mermaid_extractor = MermaidExtractor(llm=llm, summary_prompt_str=mermaid_summary_prompt)
 
     def get_nodes_from_node(self, node: TextNode) -> List[BaseNode]:
-        """重写此方法以实现对Mermaid图的特殊处理。"""
+        logger.debug(f"CustomMarkdownNodeParser: 开始从节点 (ID: {node.id_}) 提取子节点...")
         text = node.get_content()
-        # 使用正则表达式分割文本，保留Mermaid代码块作为独立部分
         parts = re.split(r"(```mermaid\n.*?\n```)", text, flags=re.DOTALL)
         
         final_nodes: List[BaseNode] = []
@@ -187,16 +185,19 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
                 continue
             
             if part.startswith("```mermaid"):
-                # 这是Mermaid图表部分，使用自定义提取器处理
+                logger.debug("在 Markdown 中检测到 Mermaid 图表，正在提取...")
                 mermaid_code = part.removeprefix("```mermaid\n").removesuffix("\n```")
-                final_nodes.extend(self.mermaid_extractor.get_nodes(mermaid_code, node.metadata))
+                mermaid_nodes = self.mermaid_extractor.get_nodes(mermaid_code, node.metadata)
+                logger.debug(f"  - Mermaid 图表部分提取了 {len(mermaid_nodes)} 个节点。")
+                final_nodes.extend(mermaid_nodes)
             else:
-                # 这是普通Markdown部分，创建临时文档并调用父类的方法处理
-                # 这样可以完美复用父类对表格、标题等的原生解析能力
+                logger.debug("在 Markdown 中检测到常规文本部分，正在使用父解析器处理...")
                 temp_node = Document(text=part, metadata=node.metadata)
-                # 直接调用父类的 get_nodes_from_node 方法，以避免无限递归
-                final_nodes.extend(super().get_nodes_from_node(temp_node))
+                regular_nodes = super().get_nodes_from_node(temp_node)
+                logger.debug(f"  - 常规文本部分解析出 {len(regular_nodes)} 个节点。")
+                final_nodes.extend(regular_nodes)
                 
+        logger.debug(f"CustomMarkdownNodeParser 完成处理，共生成 {len(final_nodes)} 个子节点。")
         return final_nodes
 
 
@@ -211,18 +212,22 @@ def _get_node_parser(content_format: Literal["md", "txt", "json"], content_lengt
         chunk_size = 256
         chunk_overlap = 64
 
+    logger.debug(f"为 '{content_format}' (长度: {content_length}) 选择节点解析器。")
+
     if content_format == "json":
+        logger.debug("使用 JSONNodeParser。")
         return JSONNodeParser(
             include_metadata=True,
             max_depth=5, 
             levels_to_keep=2
         )
     elif content_format == "txt":
+        logger.debug(f"使用 SentenceSplitter, chunk_size={chunk_size}, chunk_overlap={chunk_overlap}。")
         return SentenceSplitter(
             chunk_size=chunk_size, 
             chunk_overlap=chunk_overlap,
         )
-    # 使用自定义的Markdown解析器，以支持Mermaid图表和自定义中文表格摘要
+    logger.debug("使用 CustomMarkdownNodeParser。")
     return CustomMarkdownNodeParser(
         llm=Settings.llm,
         summary_query_str=summary_query_str,
@@ -231,16 +236,20 @@ def _get_node_parser(content_format: Literal["md", "txt", "json"], content_lengt
 
 
 def filter_invalid_nodes(nodes: List[BaseNode]) -> List[BaseNode]:
-    """过滤掉无效的节点（内容为空或仅包含空白/非词汇字符）。"""
     valid_nodes = []
+    initial_count = len(nodes)
     for node in nodes:
         if node.text.strip() and re.search(r'\w', node.text):
             valid_nodes.append(node)
+    
+    removed_count = initial_count - len(valid_nodes)
+    if removed_count > 0:
+        logger.debug(f"过滤掉 {removed_count} 个无效或空节点。")
     return valid_nodes
 
 
 def _parse_docs_to_nodes_by_format(documents: List[Document]) -> List[BaseNode]:
-    """根据文件格式将文档解析为节点。"""
+    logger.info("开始按文件格式解析文档为节点...")
     docs_by_format: Dict[str, List[Document]] = {
         "md": [], 
         "txt": [], 
@@ -259,7 +268,7 @@ def _parse_docs_to_nodes_by_format(documents: List[Document]) -> List[BaseNode]:
         if not format_docs:
             continue
         
-        logger.info(f"正在为 {len(format_docs)} 个 '{content_format}' 文件动态解析节点...")
+        logger.info(f"正在处理 {len(format_docs)} 个 '{content_format}' 文件...")
         nodes_for_format = []
         for doc in format_docs:
             node_parser = _get_node_parser(content_format, content_length=len(doc.text))
@@ -268,6 +277,7 @@ def _parse_docs_to_nodes_by_format(documents: List[Document]) -> List[BaseNode]:
         logger.info(f"  - 从 '{content_format}' 文件中成功解析出 {len(nodes_for_format)} 个节点。")
         all_nodes.extend(nodes_for_format)
     
+    logger.success(f"文档解析完成，总共生成 {len(all_nodes)} 个节点。")
     return all_nodes
 
 
@@ -276,6 +286,7 @@ def vector_add_from_dir(
     input_dir: str,
     metadata_func: Callable[[str], dict] = file_metadata_default,
 ) -> bool:
+    logger.info(f"开始从目录 '{input_dir}' 添加内容到向量库...")
     documents = _load_and_filter_documents(input_dir, metadata_func)
     if not documents:
         return False
@@ -294,6 +305,7 @@ def vector_add_from_dir(
         else:
             logger.warning(f"发现并移除了重复的节点ID: {node.id_}。这可能由包含多个表格的Markdown文件引起。")
 
+    logger.info(f"准备将 {len(unique_nodes)} 个唯一节点注入 IngestionPipeline...")
     pipeline = IngestionPipeline(vector_store=vector_store)
     pipeline.run(nodes=unique_nodes)
 
@@ -304,12 +316,11 @@ def vector_add_from_dir(
 def _is_content_too_similar(
     vector_store: VectorStore,
     content: str,
-    threshold: float,
+    threshold: float = 0.999,
     doc_id: Optional[str] = None
 ) -> bool:
-    """检查内容是否与向量库中现有文档过于相似。"""
+    logger.debug(f"正在为 doc_id '{doc_id}' 检查内容相似性...")
     query_embedding = Settings.embed_model.get_text_embedding(content)
-    logger.trace(f"为 doc_id '{doc_id}' 生成的嵌入向量 (前10维): {query_embedding[:10]}")
     vector_store_query = VectorStoreQuery(
         query_embedding=query_embedding, similarity_top_k=1, filters=None
     )
@@ -319,6 +330,7 @@ def _is_content_too_similar(
         if not is_updating_itself and query_result.similarities[0] > threshold:
             logger.warning(f"发现与 doc_id '{doc_id}' 内容高度相似 (相似度: {query_result.similarities[0]:.4f}) 的文档 (ID: '{query_result.nodes[0].ref_doc_id}'), 跳过添加。")
             return True
+    logger.debug("未发现高度相似的现有内容。")
     return False
 
 
@@ -328,13 +340,15 @@ def _parse_content_to_nodes(
     content_format: Literal["md", "txt", "json"],
     doc_id: Optional[str] = None,
 ) -> List[BaseNode]:
-    """将单个内容字符串解析为节点列表。"""
+    logger.info(f"开始为 doc_id '{doc_id}' 解析内容为节点 (格式: {content_format})...")
     final_metadata = metadata.copy()
     if "date" not in final_metadata:
         final_metadata["date"] = datetime.now().strftime("%Y-%m-%d")
     doc = Document(text=content, metadata=final_metadata, id_=doc_id)
     node_parser = _get_node_parser(content_format, content_length=len(content))
-    return filter_invalid_nodes(node_parser.get_nodes_from_documents([doc], show_progress=False))
+    nodes = filter_invalid_nodes(node_parser.get_nodes_from_documents([doc], show_progress=False))
+    logger.info(f"为 doc_id '{doc_id}' 解析出 {len(nodes)} 个节点。")
+    return nodes
 
 
 def vector_add(
@@ -346,6 +360,7 @@ def vector_add(
     check_similarity: bool = False,
     similarity_threshold: float = 0.999,
 ) -> bool:
+    logger.info(f"开始向向量库添加内容, doc_id='{doc_id}', format='{content_format}'...")
     if not content or not content.strip() or "生成报告时出错" in content:
         logger.warning(f"🤷 内容为空或包含错误，跳过存入向量库。元数据: {metadata}")
         return False
@@ -362,6 +377,7 @@ def vector_add(
         logger.warning(f"内容 (doc_id: {doc_id}) 未解析出任何有效节点，跳过添加。")
         return False
 
+    logger.info(f"准备将 {len(nodes_to_insert)} 个节点 (doc_id: {doc_id}) 注入 IngestionPipeline...")
     pipeline = IngestionPipeline(vector_store=vector_store)
     pipeline.run(nodes=nodes_to_insert)
 
@@ -409,10 +425,12 @@ def get_vector_store_info_default() -> VectorStoreInfo:
 
 def _create_reranker(rerank_top_n: int) -> Optional[SiliconFlowRerank]:
     if rerank_top_n and rerank_top_n > 0:
+        logger.debug(f"正在创建 Reranker, top_n={rerank_top_n}")
         return SiliconFlowRerank(
             api_key=os.getenv("SILICONFLOW_API_KEY"),
             top_n=rerank_top_n,
         )
+    logger.debug("rerank_top_n 为 0 或未设置, 不创建 Reranker。")
     return None
 
 
@@ -423,7 +441,7 @@ def _create_auto_retriever_engine(
     similarity_cutoff: float,
     postprocessors: List,
 ) -> BaseQueryEngine:
-    logger.info("使用 VectorIndexAutoRetriever 模式创建查询引擎。")
+    logger.info("正在创建 Auto-Retriever 查询引擎...")
     reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
     reasoning_llm = LiteLLM(**reasoning_llm_params)
     retriever = VectorIndexAutoRetriever(
@@ -439,7 +457,7 @@ def _create_auto_retriever_engine(
         response_synthesizer=synthesizer,
         node_postprocessors=postprocessors,
     )
-    logger.success("自动检索查询引擎创建成功。")
+    logger.success("Auto-Retriever 查询引擎创建成功。")
     return query_engine
 
 
@@ -450,11 +468,13 @@ def _create_standard_query_engine(
     similarity_cutoff: float,
     postprocessors: List,
 ) -> BaseQueryEngine:
-    logger.info("使用标准 as_query_engine 模式创建查询引擎。")
-    return index.as_query_engine(
+    logger.info("正在创建标准查询引擎...")
+    query_engine = index.as_query_engine(
         response_synthesizer=synthesizer, filters=filters, similarity_top_k=similarity_top_k,
         node_postprocessors=postprocessors, similarity_cutoff=similarity_cutoff
     )
+    logger.success("标准查询引擎创建成功。")
+    return query_engine
 
 
 def get_vector_query_engine(
@@ -466,7 +486,7 @@ def get_vector_query_engine(
     use_auto_retriever: bool = False,
     vector_store_info: VectorStoreInfo = get_vector_store_info_default(),
 ) -> BaseQueryEngine:
-    
+    logger.info("开始构建向量查询引擎...")
     logger.debug(
         f"参数: similarity_top_k={similarity_top_k}, rerank_top_n={rerank_top_n}, "
         f"use_auto_retriever={use_auto_retriever}, filters={filters}, "
@@ -474,12 +494,14 @@ def get_vector_query_engine(
     )
 
     index = VectorStoreIndex.from_vector_store(vector_store)
+    logger.debug("从 VectorStore 创建 VectorStoreIndex 完成。")
 
     reranker = _create_reranker(rerank_top_n)
     postprocessors = [reranker] if reranker else []
+    logger.debug(f"已配置 {len(postprocessors)} 个后处理器。")
 
     if use_auto_retriever:
-        return _create_auto_retriever_engine(
+        query_engine = _create_auto_retriever_engine(
             index=index,
             vector_store_info=vector_store_info,
             similarity_top_k=similarity_top_k,
@@ -487,13 +509,16 @@ def get_vector_query_engine(
             postprocessors=postprocessors,
         )
     else:
-        return _create_standard_query_engine(
+        query_engine = _create_standard_query_engine(
             index=index,
             filters=filters,
             similarity_top_k=similarity_top_k,
             similarity_cutoff=similarity_cutoff,
             postprocessors=postprocessors,
         )
+    
+    logger.success("向量查询引擎构建成功。")
+    return query_engine
 
 
 ###############################################################################
@@ -502,16 +527,26 @@ def get_vector_query_engine(
 async def index_query(query_engine: BaseQueryEngine, question: str) -> str:
     if not question:
         return ""
-
-    logger.info(f"开始执行索引查询: '{question}'")
+    
+    logger.info(f"开始执行向量索引查询: '{question}'")
     result = await query_engine.aquery(question)
 
     answer = str(getattr(result, "response", "")).strip()
-    if not result or not getattr(result, "source_nodes", []) or not answer or answer == "Empty Response":
+    source_nodes = getattr(result, "source_nodes", [])
+
+    if not source_nodes or not answer or answer == "Empty Response":
         logger.warning(f"查询 '{question}' 未检索到任何源节点或有效响应，返回空回答。")
         answer = ""
+    else:
+        logger.info(f"查询 '{question}' 检索到 {len(source_nodes)} 个源节点。")
+        for i, node in enumerate(source_nodes):
+            logger.debug(
+                f"  - 源节点 {i+1} (ID: {node.node_id}, 分数: {node.score:.4f}):\n"
+                f"{node.get_content()[:200]}..."
+            )
+        logger.success(f"成功完成对 '{question}' 的查询, 生成回答长度: {len(answer)}")
 
-    logger.debug(f"问题 '{question}' 的回答: {answer}")
+    logger.debug(f"问题 '{question}' 的回答:\n{answer}")
 
     return answer
 
@@ -520,10 +555,7 @@ async def index_query_batch(query_engine: BaseQueryEngine, questions: List[str])
     if not questions:
         return []
 
-    logger.info(f"接收到 {len(questions)} 个索引查询问题。")
-    logger.debug(f"问题列表: \n{questions}")
-
-    # 使用 Semaphore 限制并发量为3，防止对LLM API造成过大压力。
+    logger.info(f"开始执行 {len(questions)} 个问题的批量向量查询...")
     sem = asyncio.Semaphore(3)
 
     async def safe_query(question: str) -> str:
@@ -537,5 +569,5 @@ async def index_query_batch(query_engine: BaseQueryEngine, questions: List[str])
     tasks = [safe_query(q) for q in questions]
     results = await asyncio.gather(*tasks)
 
-    logger.success(f"批量查询完成。")
+    logger.success(f"批量向量查询完成，成功处理 {len(results)} 个问题。")
     return results

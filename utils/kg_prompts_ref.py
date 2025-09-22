@@ -1,65 +1,6 @@
 from typing import Any, Dict, List, Literal, Optional, Tuple
 
 
-DEFAULT_ENTITIES = Literal[
-    "PRODUCT",
-    "MARKET",
-    "TECHNOLOGY",
-    "EVENT",
-    "CONCEPT",
-    "ORGANIZATION",
-    "PERSON",
-    "LOCATION",
-    "TIME",
-    "MISCELLANEOUS",
-]
-
-DEFAULT_RELATIONS = Literal[
-    "USED_BY",
-    "USED_FOR",
-    "LOCATED_IN",
-    "PART_OF",
-    "WORKED_ON",
-    "HAS",
-    "IS_A",
-    "BORN_IN",
-    "DIED_IN",
-    "HAS_ALIAS",
-]
-
-# Convert the above dict schema into a list of triples
-Triple = Tuple[str, str, str]
-DEFAULT_VALIDATION_SCHEMA: List[Triple] = [
-    ("PRODUCT", "USED_BY", "PRODUCT"),
-    ("PRODUCT", "USED_FOR", "MARKET"),
-    ("PRODUCT", "HAS", "TECHNOLOGY"),
-    ("MARKET", "LOCATED_IN", "LOCATION"),
-    ("MARKET", "HAS", "TECHNOLOGY"),
-    ("TECHNOLOGY", "USED_BY", "PRODUCT"),
-    ("TECHNOLOGY", "USED_FOR", "MARKET"),
-    ("TECHNOLOGY", "LOCATED_IN", "LOCATION"),
-    ("TECHNOLOGY", "PART_OF", "ORGANIZATION"),
-    ("TECHNOLOGY", "IS_A", "PRODUCT"),
-    ("EVENT", "LOCATED_IN", "LOCATION"),
-    ("EVENT", "PART_OF", "ORGANIZATION"),
-    ("CONCEPT", "USED_BY", "TECHNOLOGY"),
-    ("CONCEPT", "USED_FOR", "PRODUCT"),
-    ("ORGANIZATION", "LOCATED_IN", "LOCATION"),
-    ("ORGANIZATION", "PART_OF", "ORGANIZATION"),
-    ("ORGANIZATION", "PART_OF", "MARKET"),
-    ("PERSON", "BORN_IN", "LOCATION"),
-    ("PERSON", "BORN_IN", "TIME"),
-    ("PERSON", "DIED_IN", "LOCATION"),
-    ("PERSON", "DIED_IN", "TIME"),
-    ("PERSON", "WORKED_ON", "EVENT"),
-    ("PERSON", "WORKED_ON", "PRODUCT"),
-    ("PERSON", "WORKED_ON", "CONCEPT"),
-    ("PERSON", "WORKED_ON", "TECHNOLOGY"),
-    ("LOCATION", "LOCATED_IN", "LOCATION"),
-    ("LOCATION", "PART_OF", "LOCATION"),
-]
-
-
 DEFAULT_SCHEMA_PATH_EXTRACT_PROMPT = (
     "Give the following text, extract the knowledge graph according to the provided schema. "
     "Try to limit to the output {max_triplets_per_chunk} extracted paths.s\n"

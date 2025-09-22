@@ -166,8 +166,7 @@ class StoryRAG:
         header = " ".join(filter(None, header_parts))
         content = f"# 任务\n{header}\n\n{content}"
         vector_store = get_story_vector_store(task.run_id, "design")
-        kg_store = get_story_kg_store(task.run_id, "design_kg")
-        kg_vector_store = get_story_vector_store(task.run_id, "design_kg")
+        kg_store = get_story_kg_store(task.run_id, "design")
         doc_metadata = {
             "task_id": task.id,
             "hierarchical_position": task.hierarchical_position,
@@ -184,7 +183,6 @@ class StoryRAG:
         logger.info(f"[{task.id}] design 内容向量化完成, 开始构建知识图谱...")
         kg_add(
             kg_store=kg_store,
-            vector_store=kg_vector_store,
             content=content,
             metadata=doc_metadata,
             doc_id=task.id,
@@ -217,8 +215,7 @@ class StoryRAG:
 
     def save_write(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 write 内容 (构建知识图谱)...")
-        kg_store = get_story_kg_store(task.run_id, "write_kg")
-        kg_vector_store = get_story_vector_store(task.run_id, "write_kg")
+        kg_store = get_story_kg_store(task.run_id, "write")
         doc_metadata = {
             "task_id": task.id,
             "hierarchical_position": task.hierarchical_position,
@@ -226,7 +223,6 @@ class StoryRAG:
         }
         kg_add(
             kg_store=kg_store,
-            vector_store=kg_vector_store,
             content=content,
             metadata=doc_metadata,
             doc_id=task.id,
@@ -513,8 +509,7 @@ class StoryRAG:
             return ""
 
         vector_store = get_story_vector_store(task.run_id, "design")
-        kg_store = get_story_kg_store(task.run_id, "design_kg")
-        kg_vector_store = get_story_vector_store(task.run_id, "design_kg")
+        kg_store = get_story_kg_store(task.run_id, "design")
 
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
@@ -533,7 +528,6 @@ class StoryRAG:
         # 创建知识图谱查询引擎
         kg_query_engine = get_kg_query_engine(
             kg_store=kg_store,
-            kg_vector_store=kg_vector_store,
             kg_similarity_top_k=600,
             kg_rerank_top_n=100,
         )
@@ -565,8 +559,7 @@ class StoryRAG:
             return ""
 
         summary_vector_store = get_story_vector_store(task.run_id, "summary")
-        kg_store = get_story_kg_store(task.run_id, "write_kg")
-        kg_vector_store = get_story_vector_store(task.run_id, "write_kg")
+        kg_store = get_story_kg_store(task.run_id, "write")
 
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
@@ -585,7 +578,6 @@ class StoryRAG:
         # 创建正文的知识图谱查询引擎
         kg_query_engine = get_kg_query_engine(
             kg_store=kg_store,
-            kg_vector_store=kg_vector_store,
             kg_similarity_top_k=600,
             kg_rerank_top_n=100,
         )
