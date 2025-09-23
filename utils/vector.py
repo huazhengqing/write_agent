@@ -383,7 +383,7 @@ async def index_query(query_engine: BaseQueryEngine, question: str) -> str:
     answer = str(getattr(result, "response", "")).strip()
     source_nodes = getattr(result, "source_nodes", [])
 
-    if not source_nodes or not answer or answer == "Empty Response":
+    if not source_nodes or not answer or answer == "Empty Response" or "无法回答" in answer:
         logger.warning(f"查询 '{question}' 未检索到任何源节点或有效响应, 返回空回答。")
         answer = ""
     else:
