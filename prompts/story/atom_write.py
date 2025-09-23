@@ -31,11 +31,11 @@ system_prompt = """
 - 格式: 纯JSON对象, 无额外文本。
 - 字段:
     - `reasoning`: (必需) 判定依据。
-    - `update_goal`: (可选) 优化后的【核心目标】。
-    - `update_instructions`: (可选) 优化后的【具体指令】。
-    - `update_input_brief`: (可选) 优化后的【输入指引】。
-    - `update_constraints`: (可选) 优化后的【限制和禁忌】。
-    - `update_acceptance_criteria`: (可选) 优化后的【验收标准】。
+    - `update_goal`: (可选) 优化后的[核心目标]。
+    - `update_instructions`: (可选) 优化后的[具体指令]。
+    - `update_input_brief`: (可选) 优化后的[输入指引]。
+    - `update_constraints`: (可选) 优化后的[限制和禁忌]。
+    - `update_acceptance_criteria`: (可选) 优化后的[验收标准]。
     - `atom_result`: (必需) `atom` | `complex`。
     - `complex_reasons`: (`atom`时省略, `complex`时必需) 从`#判定规则`的`原因枚举`中选择, 格式为字符串列表。
 - JSON转义: `"` 和 `\\` 必须正确转义。

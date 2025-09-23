@@ -84,30 +84,31 @@ def input_dir_with_test_files(test_dirs) -> str:
     return input_path
 
 
+data_map_for_test_files = {
+    "simple.md": test_data.VECTOR_TEST_SIMPLE_MD,
+    "simple.txt": test_data.VECTOR_TEST_SIMPLE_TXT,
+    "simple.json": test_data.VECTOR_TEST_SIMPLE_JSON,
+    "character_info.md": test_data.VECTOR_TEST_CHARACTER_INFO,
+    "worldview.md": test_data.VECTOR_TEST_WORLDVIEW,
+    "table_data.md": test_data.VECTOR_TEST_TABLE_DATA,
+    "large_table_data.md": test_data.VECTOR_TEST_LARGE_TABLE_DATA,
+    "structured.json": test_data.VECTOR_TEST_STRUCTURED_JSON,
+    "multi_paragraph.md": test_data.VECTOR_TEST_MULTI_PARAGRAPH,
+    "diagram.md": test_data.VECTOR_TEST_DIAGRAM_CONTENT,
+    "complex_mermaid_diagram.md": test_data.VECTOR_TEST_COMPLEX_MERMAID_DIAGRAM,
+    "composite_structure.md": test_data.VECTOR_TEST_COMPOSITE_STRUCTURE,
+    "nested_list.md": test_data.VECTOR_TEST_NESTED_LIST,
+    "special_chars.md": test_data.VECTOR_TEST_SPECIAL_CHARS,
+    "novel_worldview.md": test_data.VECTOR_TEST_NOVEL_WORLDVIEW,
+    "novel_characters.json": test_data.VECTOR_TEST_NOVEL_CHARACTERS,
+    "novel_plot.md": test_data.VECTOR_TEST_NOVEL_PLOT_ARC,
+    "report_outline.md": test_data.VECTOR_TEST_REPORT_OUTLINE,
+    "report_market.json": test_data.VECTOR_TEST_REPORT_MARKET_DATA,
+    "complex_markdown.md": test_data.VECTOR_TEST_COMPLEX_MARKDOWN,
+}
+
 def _write_test_data_to_files(input_dir: str):
-    data_map = {
-        "simple.md": test_data.VECTOR_TEST_SIMPLE_MD,
-        "simple.txt": test_data.VECTOR_TEST_SIMPLE_TXT,
-        "simple.json": test_data.VECTOR_TEST_SIMPLE_JSON,
-        "character_info.md": test_data.VECTOR_TEST_CHARACTER_INFO,
-        "worldview.md": test_data.VECTOR_TEST_WORLDVIEW,
-        "table_data.md": test_data.VECTOR_TEST_TABLE_DATA,
-        "large_table_data.md": test_data.VECTOR_TEST_LARGE_TABLE_DATA,
-        "structured.json": test_data.VECTOR_TEST_STRUCTURED_JSON,
-        "multi_paragraph.md": test_data.VECTOR_TEST_MULTI_PARAGRAPH,
-        "diagram.md": test_data.VECTOR_TEST_DIAGRAM_CONTENT,
-        "complex_mermaid_diagram.md": test_data.VECTOR_TEST_COMPLEX_MERMAID_DIAGRAM,
-        "composite_structure.md": test_data.VECTOR_TEST_COMPOSITE_STRUCTURE,
-        "nested_list.md": test_data.VECTOR_TEST_NESTED_LIST,
-        "special_chars.md": test_data.VECTOR_TEST_SPECIAL_CHARS,
-        "novel_worldview.md": test_data.VECTOR_TEST_NOVEL_WORLDVIEW,
-        "novel_characters.json": test_data.VECTOR_TEST_NOVEL_CHARACTERS,
-        "novel_plot.md": test_data.VECTOR_TEST_NOVEL_PLOT_ARC,
-        "report_outline.md": test_data.VECTOR_TEST_REPORT_OUTLINE,
-        "report_market.json": test_data.VECTOR_TEST_REPORT_MARKET_DATA,
-        "complex_markdown.md": test_data.VECTOR_TEST_COMPLEX_MARKDOWN,
-    }
-    for filename, content in data_map.items():
+    for filename, content in data_map_for_test_files.items():
         if content and content.strip():
             (Path(input_dir) / filename).write_text(content, encoding='utf-8')
 

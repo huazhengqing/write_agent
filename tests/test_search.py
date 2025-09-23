@@ -25,7 +25,7 @@ pytestmark = pytest.mark.asyncio
 
 
 async def test_search_with_searxng_success(monkeypatch):
-    """【单元测试】测试 search_with_searxng 成功时能正确格式化结果。"""
+    """[单元测试]测试 search_with_searxng 成功时能正确格式化结果。"""
     logger.info("--- 测试 search_with_searxng (成功) ---")
     mock_response = MagicMock()
     mock_response.json.return_value = {
@@ -52,7 +52,7 @@ async def test_search_with_searxng_success(monkeypatch):
 
 
 async def test_search_with_searxng_empty_results(monkeypatch):
-    """【单元测试】测试 search_with_searxng 返回空结果时的异常处理。"""
+    """[单元测试]测试 search_with_searxng 返回空结果时的异常处理。"""
     logger.info("--- 测试 search_with_searxng (空结果) ---")
     mock_response = MagicMock()
     mock_response.json.return_value = {"results": []}
@@ -72,7 +72,7 @@ async def test_search_with_searxng_empty_results(monkeypatch):
 
 
 async def test_search_with_searxng_http_error(monkeypatch):
-    """【单元测试】测试 search_with_searxng HTTP错误时的异常处理。"""
+    """[单元测试]测试 search_with_searxng HTTP错误时的异常处理。"""
     logger.info("--- 测试 search_with_searxng (HTTP错误) ---")
     mock_response = MagicMock()
     mock_response.raise_for_status.side_effect = httpx.HTTPError("HTTP Error")
@@ -91,7 +91,7 @@ async def test_search_with_searxng_http_error(monkeypatch):
 
 
 def test_search_with_ddg_success(monkeypatch):
-    """【单元测试】测试 search_with_ddg 成功时能正确格式化结果。"""
+    """[单元测试]测试 search_with_ddg 成功时能正确格式化结果。"""
     logger.info("--- 测试 search_with_ddg (成功) ---")
     
     mock_ddg_instance = MagicMock()
@@ -114,7 +114,7 @@ def test_search_with_ddg_success(monkeypatch):
 
 
 def test_search_with_ddg_empty_results(monkeypatch):
-    """【单元测试】测试 search_with_ddg 返回空结果时的异常处理。"""
+    """[单元测试]测试 search_with_ddg 返回空结果时的异常处理。"""
     logger.info("--- 测试 search_with_ddg (空结果) ---")
     mock_ddg_instance = MagicMock()
     mock_ddg_instance.text.return_value = []
@@ -131,7 +131,7 @@ def test_search_with_ddg_empty_results(monkeypatch):
 
 
 async def test_scrape_static_success(monkeypatch):
-    """【单元测试】测试 scrape_static 成功抓取和提取。"""
+    """[单元测试]测试 scrape_static 成功抓取和提取。"""
     logger.info("--- 测试 scrape_static (成功) ---")
     mock_response = MagicMock()
     mock_response.text = "<html><body><p>Static Content</p></body></html>"
@@ -156,7 +156,7 @@ async def test_scrape_static_success(monkeypatch):
 
 
 async def test_scrape_static_short_content(monkeypatch):
-    """【单元测试】测试 scrape_static 提取到的内容太短时的处理。"""
+    """[单元测试]测试 scrape_static 提取到的内容太短时的处理。"""
     logger.info("--- 测试 scrape_static (内容太短) ---")
     mock_response = MagicMock()
     mock_response.text = "<html><body><p>Short Content</p></body></html>"
@@ -181,7 +181,7 @@ async def test_scrape_static_short_content(monkeypatch):
 
 
 async def test_scrape_static_empty_html(monkeypatch):
-    """【单元测试】测试 scrape_static 返回空HTML时的处理。"""
+    """[单元测试]测试 scrape_static 返回空HTML时的处理。"""
     logger.info("--- 测试 scrape_static (空HTML) ---")
     mock_response = MagicMock()
     mock_response.text = ""
@@ -201,7 +201,7 @@ async def test_scrape_static_empty_html(monkeypatch):
 
 
 async def test_scrape_static_http_error(monkeypatch):
-    """【单元测试】测试 scrape_static HTTP错误时的异常处理。"""
+    """[单元测试]测试 scrape_static HTTP错误时的异常处理。"""
     logger.info("--- 测试 scrape_static (HTTP错误) ---")
     mock_response = MagicMock()
     mock_response.raise_for_status.side_effect = httpx.HTTPError("HTTP Error")
@@ -220,7 +220,7 @@ async def test_scrape_static_http_error(monkeypatch):
 
 
 async def test_scrape_dynamic_success(monkeypatch):
-    """【单元测试】测试 scrape_dynamic 成功抓取和提取。"""
+    """[单元测试]测试 scrape_dynamic 成功抓取和提取。"""
     logger.info("--- 测试 scrape_dynamic (成功) ---")
     
     mock_page = AsyncMock()
@@ -258,7 +258,7 @@ async def test_scrape_dynamic_success(monkeypatch):
 
 
 async def test_scrape_dynamic_short_content(monkeypatch):
-    """【单元测试】测试 scrape_dynamic 提取到的内容太短时返回HTML。"""
+    """[单元测试]测试 scrape_dynamic 提取到的内容太短时返回HTML。"""
     logger.info("--- 测试 scrape_dynamic (内容太短) ---")
     
     mock_page = AsyncMock()
@@ -299,7 +299,7 @@ async def test_scrape_dynamic_short_content(monkeypatch):
 
 
 async def test_scrape_dynamic_empty_html(monkeypatch):
-    """【单元测试】测试 scrape_dynamic 返回空HTML时的异常处理。"""
+    """[单元测试]测试 scrape_dynamic 返回空HTML时的异常处理。"""
     logger.info("--- 测试 scrape_dynamic (空HTML) ---")
     
     mock_page = AsyncMock()
@@ -332,7 +332,7 @@ async def test_scrape_dynamic_empty_html(monkeypatch):
 
 @pytest.mark.integration
 async def test_web_search_live():
-    """【集成测试】测试 web_search 函数的实时通用网络搜索功能。"""
+    """[集成测试]测试 web_search 函数的实时通用网络搜索功能。"""
     logger.info("--- 测试 web_search (实时) ---")
     query = "大型语言模型最新进展"
     results = await web_search(query, max_results=3)
@@ -346,7 +346,7 @@ async def test_web_search_live():
 
 
 async def test_web_search_cache_hit(monkeypatch):
-    """【单元测试】测试 web_search 缓存命中的情况。"""
+    """[单元测试]测试 web_search 缓存命中的情况。"""
     logger.info("--- 测试 web_search (缓存命中) ---")
     
     # 模拟缓存
@@ -362,7 +362,7 @@ async def test_web_search_cache_hit(monkeypatch):
 
 
 async def test_web_search_cache_miss(monkeypatch):
-    """【单元测试】测试 web_search 缓存未命中的情况。"""
+    """[单元测试]测试 web_search 缓存未命中的情况。"""
     logger.info("--- 测试 web_search (缓存未命中) ---")
     
     # 模拟缓存未命中
@@ -386,7 +386,7 @@ async def test_web_search_cache_miss(monkeypatch):
 
 
 async def test_web_search_failure_raises_error(monkeypatch):
-    """【单元测试】测试当所有搜索策略失败时, web_search 是否引发 RuntimeError。"""
+    """[单元测试]测试当所有搜索策略失败时, web_search 是否引发 RuntimeError。"""
     logger.info("--- 测试 web_search (全部失败) ---")
     # 模拟两种搜索策略都引发异常
     mock_searxng = AsyncMock(side_effect=Exception("SearXNG failed"))
@@ -419,7 +419,7 @@ async def test_web_search_failure_raises_error(monkeypatch):
     ],
 )
 async def test_targeted_search_query_construction(monkeypatch, platforms, expected_sites):
-    """【单元测试】测试 targeted_search 是否能从别名、分类和未知平台正确构建搜索查询。"""
+    """[单元测试]测试 targeted_search 是否能从别名、分类和未知平台正确构建搜索查询。"""
     logger.info(f"--- 测试 targeted_search 查询构建 (platforms: {platforms}) ---")
     mock_web_search = AsyncMock(return_value="Mocked search result")
     monkeypatch.setattr("utils.search.web_search", mock_web_search)
@@ -447,7 +447,7 @@ async def test_targeted_search_query_construction(monkeypatch, platforms, expect
 
 
 async def test_targeted_search_no_platforms(monkeypatch):
-    """【单元测试】测试当未提供平台时, targeted_search 是否回退到通用搜索。"""
+    """[单元测试]测试当未提供平台时, targeted_search 是否回退到通用搜索。"""
     logger.info("--- 测试 targeted_search (无平台) ---")
     mock_web_search = AsyncMock(return_value="Mocked search result")
     monkeypatch.setattr("utils.search.web_search", mock_web_search)
@@ -462,7 +462,7 @@ async def test_targeted_search_no_platforms(monkeypatch):
 
 @pytest.mark.integration
 async def test_targeted_search_live():
-    """【集成测试】测试 targeted_search 函数的实时定向网站搜索功能。"""
+    """[集成测试]测试 targeted_search 函数的实时定向网站搜索功能。"""
     logger.info("--- 测试 targeted_search (实时) ---")
     query = "AIGC"
     platforms = ["知乎", "36氪"]
@@ -479,7 +479,7 @@ async def test_targeted_search_live():
 
 @pytest.mark.integration
 async def test_scrape_and_extract_live():
-    """【集成测试】测试 scrape_and_extract 函数在已知URL上的实时抓取和提取功能。"""
+    """[集成测试]测试 scrape_and_extract 函数在已知URL上的实时抓取和提取功能。"""
     logger.info("--- 测试 scrape_and_extract (实时) ---")
     # 知乎专栏是一个很好的候选者, 因为它可能需要动态抓取
     url = "https://zhuanlan.zhihu.com/p/616386443"
@@ -493,7 +493,7 @@ async def test_scrape_and_extract_live():
 
 
 async def test_scrape_content_truncation(monkeypatch):
-    """【单元测试】测试过长的抓取内容是否被正确截断到句子末尾。"""
+    """[单元测试]测试过长的抓取内容是否被正确截断到句子末尾。"""
     logger.info("--- 测试 scrape_and_extract (内容截断) ---")
     max_length = 500 # Use a smaller length for easier testing
     # 创建一个带有多种句子结束符的长模拟文本
@@ -525,7 +525,7 @@ async def test_scrape_content_truncation(monkeypatch):
 
 
 async def test_scrape_failure_returns_empty_string(monkeypatch, caplog):
-    """【单元测试】测试当所有抓取策略失败时, scrape_and_extract 是否返回空字符串并记录错误。"""
+    """[单元测试]测试当所有抓取策略失败时, scrape_and_extract 是否返回空字符串并记录错误。"""
     logger.info("--- 测试 scrape_and_extract (全部失败) ---")
     url = "http://non-existent-url.com"
     mockscrape_static = AsyncMock(side_effect=Exception("Static scrape failed"))
@@ -550,7 +550,7 @@ async def test_scrape_failure_returns_empty_string(monkeypatch, caplog):
 
 
 async def test_scrape_fallback_strategy(monkeypatch, caplog):
-    """【单元测试】测试抓取策略的降级: 静态失败后, 动态成功。"""
+    """[单元测试]测试抓取策略的降级: 静态失败后, 动态成功。"""
     logger.info("--- 测试 scrape_and_extract (降级策略) ---")
     url = "http://requires-js.com"
     expected_content = "这是由JavaScript动态加载的内容。"
@@ -577,7 +577,7 @@ async def test_scrape_fallback_strategy(monkeypatch, caplog):
 
 
 def test_get_web_search_tool():
-    """【单元测试】测试 get_web_search_tool 是否正确创建工具。"""
+    """[单元测试]测试 get_web_search_tool 是否正确创建工具。"""
     logger.info("--- 测试 get_web_search_tool ---")
     tool = get_web_search_tool()
     
@@ -589,7 +589,7 @@ def test_get_web_search_tool():
 
 
 def test_get_targeted_search_tool():
-    """【单元测试】测试 get_targeted_search_tool 是否正确创建工具。"""
+    """[单元测试]测试 get_targeted_search_tool 是否正确创建工具。"""
     logger.info("--- 测试 get_targeted_search_tool ---")
     tool = get_targeted_search_tool()
     
@@ -601,7 +601,7 @@ def test_get_targeted_search_tool():
 
 
 def test_get_web_scraper_tool():
-    """【单元测试】测试 get_web_scraper_tool 是否正确创建工具。"""
+    """[单元测试]测试 get_web_scraper_tool 是否正确创建工具。"""
     logger.info("--- 测试 get_web_scraper_tool ---")
     tool = get_web_scraper_tool()
     
@@ -613,7 +613,7 @@ def test_get_web_scraper_tool():
 
 
 def test_web_search_tools():
-    """【单元测试】测试 web_search_tools 是否包含所有必要的工具。"""
+    """[单元测试]测试 web_search_tools 是否包含所有必要的工具。"""
     logger.info("--- 测试 web_search_tools ---")
     
     assert len(web_search_tools) == 3

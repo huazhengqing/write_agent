@@ -9,6 +9,7 @@ from loguru import logger
 from diskcache import Cache
 from typing import Any, Callable, Dict, List, Literal, Optional, get_args
 
+from llama_index.core.bridge.pydantic import PrivateAttr
 from llama_index.core.ingestion import IngestionPipeline
 from llama_index.core import (
     Document,
@@ -44,6 +45,11 @@ from utils.vector_prompts import (
     mermaid_summary_prompt,
     vector_store_query_prompt
 )
+
+
+ChromaVectorStore.model_config['extra'] = 'allow'
+if hasattr(ChromaVectorStore, 'model_rebuild'):
+    ChromaVectorStore.model_rebuild(force=True)
 
 
 def init_llama_settings():
@@ -166,15 +172,17 @@ class MermaidExtractor:
 
 
 class CustomMarkdownNodeParser(MarkdownElementNodeParser):
+    _mermaid_extractor: MermaidExtractor = PrivateAttr()
+
     def __init__(self, llm: LiteLLM, summary_query_str: str, mermaid_summary_prompt: str, **kwargs: Any):
         super().__init__(llm=llm, summary_query_str=summary_query_str, **kwargs)
-        self.mermaid_extractor = MermaidExtractor(llm=llm, summary_prompt_str=mermaid_summary_prompt)
+        self._mermaid_extractor = MermaidExtractor(llm=llm, summary_prompt_str=mermaid_summary_prompt)
 
     def get_nodes_from_node(self, node: TextNode) -> List[BaseNode]:
         logger.debug(f"CustomMarkdownNodeParser: 开始从节点 (ID: {node.id_}) 提取子节点...")
         text = node.get_content()
         parts = re.split(r"(```mermaid\n.*?\n```)", text, flags=re.DOTALL)
-        
+
         final_nodes: List[BaseNode] = []
         for part in parts:
             if not part.strip():
@@ -183,7 +191,7 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
             if part.startswith("```mermaid"):
                 logger.debug("在 Markdown 中检测到 Mermaid 图表, 正在提取...")
                 mermaid_code = part.removeprefix("```mermaid\n").removesuffix("\n```")
-                mermaid_nodes = self.mermaid_extractor.get_nodes(mermaid_code, node.metadata)
+                mermaid_nodes = self._mermaid_extractor.get_nodes(mermaid_code, node.metadata)
                 logger.debug(f"  - Mermaid 图表部分提取了 {len(mermaid_nodes)} 个节点。")
                 final_nodes.extend(mermaid_nodes)
             else:
@@ -192,7 +200,7 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
                 regular_nodes = super().get_nodes_from_node(temp_node)
                 logger.debug(f"  - 常规文本部分解析出 {len(regular_nodes)} 个节点。")
                 final_nodes.extend(regular_nodes)
-                
+
         logger.debug(f"CustomMarkdownNodeParser 完成处理, 共生成 {len(final_nodes)} 个子节点。")
         return final_nodes
 

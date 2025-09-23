@@ -70,10 +70,10 @@ FINAL_DECISION_system_prompt_JSON = """
 
 DEEP_DIVE_system_prompt = """
 # 角色
-你是一名顶尖的网络小说市场分析师, 专精于【{platform}】平台的【{genre}】题材。
+你是一名顶尖的网络小说市场分析师, 专精于[{platform}]平台的[{genre}]题材。
 
 # 任务
-为【{platform}】平台的【{genre}】题材, 生成一份深度洞察报告。
+为[{platform}]平台的[{genre}]题材, 生成一份深度洞察报告。
 
 # 工作流程
 1.  **信息整合**: 仔细阅读提供的上下文信息。
@@ -96,7 +96,7 @@ DEEP_DIVE_system_prompt = """
 ---
 
 # 输出结构 (Markdown)
-## 【{platform}】平台 - 【{genre}】题材深度分析报告
+## [{platform}]平台 - [{genre}]题材深度分析报告
 
 ### 1. 核心标签与流行元素
 - **高频标签**: [总结3-5个最高频标签, 基于作品和评论]
@@ -145,12 +145,12 @@ OPPORTUNITY_GENERATION_system_prompt = """
 根据输入信息, 构思3个全新的、有商业潜力、且互相差异化的小说选题。
 
 # 创作原则
-- **机会导向**: 创意回应【新兴机会与蓝海方向】。
-- **跨界优先**: 至少一个选题深度融合【跨界融合】建议。
+- **机会导向**: 创意回应[新兴机会与蓝海方向]。
+- **跨界优先**: 至少一个选题深度融合[跨界融合]建议。
 - **灵感融合**: 融入报告中提到的外部热点、流行文化等元素。
-- **风险规避**: 避开【常见“毒点”】。
-- **爽点聚焦**: 围绕【核心爽点】构建。
-- **避免重复**: 与【历史创意参考】显著区别。
+- **风险规避**: 避开[常见“毒点”]。
+- **爽点聚焦**: 围绕[核心爽点]构建。
+- **避免重复**: 与[历史创意参考]显著区别。
 - **强制差异化**: 3个选题需在核心卖点、切入角度、题材融合、目标读者等维度上存在显著差异, 确保多样性。
 
 # 输出结构 (Markdown)
@@ -185,12 +185,12 @@ NOVEL_CONCEPT_system_prompt = """
 顶级小说策划人。
 
 # 任务
-从【初步选题列表】中选择最佳选题(优先跨界融合), 并将其扩展为一份详细、创新的【小说创意】文档。
+从[初步选题列表]中选择最佳选题(优先跨界融合), 并将其扩展为一份详细、创新的[小说创意]文档。
 
 # 工作流程
 1.  **选择选题**: 从列表中选择评级最高、最具潜力的选题, 并说明选择理由。
 2.  **模式挖掘与创新 (核心)**:
-    - **解构范式**: 分析【历史成功案例参考】的底层成功模式(如节奏、反馈循环、爽点逻辑、心理满足), 而不是模仿表面情节。
+    - **解构范式**: 分析[历史成功案例参考]的底层成功模式(如节奏、反馈循环、爽点逻辑、心理满足), 而不是模仿表面情节。
     - **重塑应用**: 将提炼出的成功范式, 创造性地应用到新选题中, 生成全新的设定。
 3.  **深度研究 (工具使用)**:
     - **知识库挖掘**: 使用 `story_market_vector` 查询相关历史创意和报告, 复用成功范式, 避免失败模式。
@@ -294,7 +294,7 @@ async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionRes
     user_prompt_parts = ["请对以下深度分析报告进行评估、排序, 并选出最佳方案: "]
     for i, report_data in enumerate(reports):
         user_prompt_parts.append(
-            f"\n---\n\n# 候选方案 {i+1}: 【{report_data['platform']}】 - 【{report_data['genre']}】\n{report_data['report']}"
+            f"\n---\n\n# 候选方案 {i+1}: [{report_data['platform']}] - [{report_data['genre']}]\n{report_data['report']}"
         )
     user_prompt = "".join(user_prompt_parts)
     messages = get_llm_messages(system_prompt=FINAL_DECISION_system_prompt_JSON, user_prompt=user_prompt)
@@ -304,7 +304,7 @@ async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionRes
     if not decision:
         logger.error("最终决策失败, LLM未返回有效结果。")
         raise ValueError("最终决策失败。")
-    logger.success(f"最终决策完成。选择: 【{decision.final_choice.platform}】 - 【{decision.final_choice.genre}】")
+    logger.success(f"最终决策完成。选择: [{decision.final_choice.platform}] - [{decision.final_choice.genre}]")
     return decision
 
 
@@ -317,7 +317,7 @@ async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionRes
     cache_expiration=604800,
 )
 async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: str, broad_scan_report: str, opportunity_report: str) -> Optional[str]:
-    logger.info(f"对【{platform} - {genre}】启动深度分析...")
+    logger.info(f"对[{platform} - {genre}]启动深度分析...")
     system_prompt = DEEP_DIVE_system_prompt.format(
         platform=platform,
         genre=genre,
@@ -325,12 +325,12 @@ async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: s
         broad_scan_report=broad_scan_report,
         opportunity_report=opportunity_report
     )
-    user_prompt = f"请开始为【{platform}】平台的【{genre}】题材生成深度分析报告。"
+    user_prompt = f"请开始为[{platform}]平台的[{genre}]题材生成深度分析报告。"
     report = await query_react(
         agent_system_prompt=system_prompt, query_str=user_prompt
     )
     if not report:
-        logger.error(f"为【{platform} - {genre}】生成深度分析报告失败。")
+        logger.error(f"为[{platform} - {genre}]生成深度分析报告失败。")
         return None
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -353,7 +353,7 @@ async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: s
 )
 async def task_generate_opportunities(market_report: str, genre: str) -> Optional[str]:
     logger.info("启动创意脑暴, 生成小说选题...")
-    logger.info(f"正在查询【{genre}】相关的历史创意库, 避免重复...")
+    logger.info(f"正在查询[{genre}]相关的历史创意库, 避免重复...")
     
     query_engine = get_vector_query_engine(
         vector_store=get_market_vector_store(),
@@ -397,7 +397,7 @@ async def task_generate_opportunities(market_report: str, genre: str) -> Optiona
 )
 async def task_generate_novel_concept(opportunities_report: str, platform: str, genre: str) -> Optional[str]:
     logger.info("深化选题, 生成详细小说创意...")
-    logger.info(f"正在查询【{platform} - {genre}】相关的历史成功案例...")
+    logger.info(f"正在查询[{platform} - {genre}]相关的历史成功案例...")
 
     query_engine = get_vector_query_engine(
         vector_store=get_market_vector_store(),
@@ -444,13 +444,13 @@ async def task_generate_novel_concept(opportunities_report: str, platform: str, 
     cache_expiration=604800,
 )
 def task_save_markdown(platform: str, genre: str, deep_dive_report: str, final_opportunities: str, detailed_concept: str) -> bool:
-    logger.info(f"生成【{platform} - {genre}】的汇总 Markdown 文件...")
+    logger.info(f"生成[{platform} - {genre}]的汇总 Markdown 文件...")
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     file_name = f"{platform.replace(' ', '_')}_{genre.replace(' ', '_')}_{timestamp}_summary.md"
     file_path = data_market_dir / file_name
 
     summary_content = f"""
-# 【{platform}】平台 - 【{genre}】创意总结报告
+# [{platform}]平台 - [{genre}]创意总结报告
 
 ## 深度分析报告
 {deep_dive_report}
@@ -539,11 +539,11 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
                     "report": report_content
                     }
                 )
-                logger.success(f"完成【{candidate.platform} - {candidate.genre}】的深度分析。")
+                logger.success(f"完成[{candidate.platform} - {candidate.genre}]的深度分析。")
             else:
-                logger.error(f"【{candidate.platform} - {candidate.genre}】的深度分析返回空, 将忽略此方案。")
+                logger.error(f"[{candidate.platform} - {candidate.genre}]的深度分析返回空, 将忽略此方案。")
         except Exception as e:
-            logger.error(f"【{candidate.platform} - {candidate.genre}】的深度分析失败: {e}, 将忽略此方案。")
+            logger.error(f"[{candidate.platform} - {candidate.genre}]的深度分析失败: {e}, 将忽略此方案。")
 
     if not deep_dive_reports:
         logger.error("所有方案的深度分析均失败, 工作流终止。")
@@ -572,7 +572,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
         )
 
         logger.info("--- 最终市场方向决策 ---")
-        logger.info(f"选择: 【{final_choice_obj.platform}】 - 【{final_choice_obj.genre}】")
+        logger.info(f"选择: [{final_choice_obj.platform}] - [{final_choice_obj.genre}]")
         logger.info(f"理由: {final_choice_obj.reasoning}")
 
         task_save_vector(
@@ -591,7 +591,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
             "report": next((r['report'] for r in deep_dive_reports if r['platform'] == final_choice_obj.platform and r['genre'] == final_choice_obj.genre), None)
         }
         logger.info("--- 最终市场方向决策 ---")
-        logger.info(f"选择: 【{final_choice_obj.platform}】 - 【{final_choice_obj.genre}】")
+        logger.info(f"选择: [{final_choice_obj.platform}] - [{final_choice_obj.genre}]")
         logger.info(f"理由: {final_choice_obj.reasoning}")
         logger.info(f"完整排名:\n{json.dumps([r.model_dump() for r in final_decision_result.ranking], indent=2, ensure_ascii=False)}")
         task_save_vector(
@@ -607,7 +607,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
     deep_dive_report = final_choice_data["report"]
 
     if not deep_dive_report:
-        logger.error(f"最终选择的方案【{chosen_platform} - {chosen_genre}】没有有效的深度分析报告, 工作流终止。")
+        logger.error(f"最终选择的方案[{chosen_platform} - {chosen_genre}]没有有效的深度分析报告, 工作流终止。")
         return
 
     # 后续流程 (机会生成, 创意深化)

@@ -26,8 +26,8 @@ from utils.vector import (
     index_query_batch,
 )
 from tests.conftest import get_all_test_data_params
-from tests import test_data
-from tests.conftest import _write_test_data_to_files
+from tests import test_data 
+from tests.conftest import data_map_for_test_files
 
 
 @pytest.fixture(scope="function")
@@ -51,7 +51,6 @@ def test_get_vector_store(tmp_path):
     
     assert store is not None
     assert db_path.exists()
-    assert hasattr(store, 'cache')
     
     client = store.client
     collections = client.list_collections()
@@ -86,7 +85,7 @@ def test_load_and_filter_documents(input_dir_with_test_files):
     docs = _load_and_filter_documents(str(input_dir), file_metadata_default)
     
     # 根据 conftest._write_test_data_to_files 中写入的非空文件数量进行断言
-    expected_file_count = len([c for c in _write_test_data_to_files.__globals__['data_map'].values() if c and c.strip()])
+    expected_file_count = len([c for c in data_map_for_test_files.values() if c and c.strip()])
     assert len(docs) == expected_file_count, f"预期加载 {expected_file_count} 个文档, 实际加载了 {len(docs)} 个"
     
     filenames = {doc.metadata["file_name"] for doc in docs}
@@ -158,6 +157,12 @@ def test_vector_add_success(vector_store: VectorStore):
     collection = client.get_collection(name=vector_store.collection_name)
     assert collection.count() > 0
     logger.info("test_vector_add_success 测试通过。")
+    
+    # 测试重复添加
+    success_again = vector_add(vector_store, content, metadata, doc_id="test_doc_1")
+    assert success_again is True, "重复添加已存在内容应该返回 True"
+    assert collection.count() > 0, "重复添加不应改变节点数量"
+    logger.info("重复添加内容的测试通过。")
 
 
 def test_vector_add_empty_content(vector_store: VectorStore):

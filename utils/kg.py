@@ -30,6 +30,11 @@ from utils.kg_prompts import kg_extraction_prompt
 from utils.file import cache_dir
 
 
+KuzuPropertyGraphStore.model_config['extra'] = 'allow'
+if hasattr(KuzuPropertyGraphStore, 'model_rebuild'):
+    KuzuPropertyGraphStore.model_rebuild(force=True)
+
+
 llm_params_for_extraction = get_llm_params(llm_group="summary", temperature=llm_temperatures["classification"])
 llm_for_extraction = LiteLLM(**llm_params_for_extraction)
 

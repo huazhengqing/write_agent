@@ -43,17 +43,17 @@ ANALYZE_EXTERNAL_TRENDS_system_prompt = """
 你是一名敏锐的流行文化分析师, 擅长捕捉跨界趋势。
 
 # 任务
-为【{platform}】平台的【{genre}】题材, 生成一份外部热点趋势分析报告。你需要利用工具进行网络搜索, 并以简洁的Markdown格式输出。
+为[{platform}]平台的[{genre}]题材, 生成一份外部热点趋势分析报告。你需要利用工具进行网络搜索, 并以简洁的Markdown格式输出。
 
 # 工作流程
-1.  研究: 使用 `social_media_trends_search` 等工具, 主动搜索与【{genre}】题材相关的外部趋势。
+1.  研究: 使用 `social_media_trends_search` 等工具, 主动搜索与[{genre}]题材相关的外部趋势。
     - 跨界热点: 在B站、微博、抖音、小红书等社交媒体上, 搜索与该题材相关的“热门话题”、“流行文化”、“影视游戏IP”、“出圈meme”。(示例: `targeted_search(platforms=['B站', '抖音'], query='{genre} 热门话题')`)
     - 增长潜力: 搜索该题材关键词的近期热度指数(如百度指数、微信指数), 评估其大众化潜力。
     - 核心讨论: 浏览相关话题下的高赞评论和讨论, 了解大众对该题材的核心看法和期待。
 2.  总结: 将你的发现综合成一份简明的Markdown报告。
 
 # 输出要求
-## 【{platform}】-【{genre}】外部趋势分析报告
+## [{platform}]-[{genre}]外部趋势分析报告
 
 - 核心趋势: [总结1-2个最显著的外部流行趋势]
 - 跨界潜力: [评估该题材与影视、游戏、短视频等领域结合的可能性和切入点]
@@ -142,19 +142,19 @@ CHOOSE_OPPORTUNITY_user_prompt = """
     cache_expiration=604800,
 )
 async def task_analyze_external_trends(platform: str, genre: str) -> tuple[str, str, str]:
-    logger.info(f"为【{platform} - {genre}】分析外部趋势...")
+    logger.info(f"为[{platform} - {genre}]分析外部趋势...")
     system_prompt = ANALYZE_EXTERNAL_TRENDS_system_prompt.format(platform=platform, genre=genre)
-    user_prompt = f"请开始为【{platform}】平台的【{genre}】题材生成外部趋势分析报告。"
+    user_prompt = f"请开始为[{platform}]平台的[{genre}]题材生成外部趋势分析报告。"
     report = await query_react(
         agent_system_prompt=system_prompt, query_str=user_prompt
     )
     if report:
-        logger.success(f"为【{platform} - {genre}】完成了外部趋势分析。")
+        logger.success(f"为[{platform} - {genre}]完成了外部趋势分析。")
         return platform, genre, report
     else:
-        error_msg = f"为【{platform} - {genre}】分析外部趋势时Agent调用失败或返回空。"
+        error_msg = f"为[{platform} - {genre}]分析外部趋势时Agent调用失败或返回空。"
         logger.error(error_msg)
-        return platform, genre, f"## 【{platform}】-【{genre}】外部趋势分析报告\n\n生成报告时出错: {error_msg}"
+        return platform, genre, f"## [{platform}]-[{genre}]外部趋势分析报告\n\n生成报告时出错: {error_msg}"
 
 
 @task(

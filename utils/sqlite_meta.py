@@ -19,10 +19,10 @@ Table: t_book_meta
 - root_name: TEXT - 根任务的名字, 书名, 报告名。
 - length: TEXT - 预估总字数。
 - day_wordcount_goal: INTEGER - 每日字数目标。
-- instructions: TEXT - 任务的【具体指令】。
-- input_brief: TEXT - 任务的【输入指引】。
-- constraints: TEXT - 任务的【限制和禁忌】。
-- acceptance_criteria: TEXT - 任务的【验收标准】。
+- instructions: TEXT - 任务的[具体指令]。
+- input_brief: TEXT - 任务的[输入指引]。
+- constraints: TEXT - 任务的[限制和禁忌]。
+- acceptance_criteria: TEXT - 任务的[验收标准]。
 - created_at: TIMESTAMP - 记录创建时的时间戳。
 - updated_at: TIMESTAMP - 记录最后更新时的时间戳。
 """
