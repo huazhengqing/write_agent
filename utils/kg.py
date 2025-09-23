@@ -126,7 +126,6 @@ def kg_add(
     logger.debug("KG 路径提取器 (SimpleLLMPathExtractor) 创建完成。")
 
     logger.info(f"开始为 doc_id '{doc_id}' 构建知识图谱索引...")
-    step_start_time = time.time()
     PropertyGraphIndex.from_documents(
         [doc],
         llm=llm_for_extraction,
@@ -137,7 +136,6 @@ def kg_add(
         embed_model=Settings.embed_model,
         show_progress=False,
     )
-    logger.info(f"PropertyGraphIndex 核心处理完成, 耗时: {time.time() - step_start_time:.2f}s")
 
     if doc_cache:
         doc_cache.set(new_content_hash, True)
@@ -154,20 +152,14 @@ def get_kg_query_engine(
     top_n: int = 100,
 ) -> BaseQueryEngine:
     logger.info("开始构建知识图谱查询引擎...")
-    logger.debug(
-        f"参数: kg_similarity_top_k={kg_similarity_top_k}, top_n={top_n}"
-    )
 
-    step_time = time.time()
     kg_index = PropertyGraphIndex.from_existing(
         property_graph_store=kg_store,
         llm=llm_for_reasoning,
         embed_kg_nodes=True,
         embed_model=Settings.embed_model,
     )
-    logger.debug(f"从现有存储加载PropertyGraphIndex完成, 耗时: {time.time() - step_time:.2f}s")
 
-    step_time = time.time()
     postprocessors = []
     if top_n > 0:
         reranker = SiliconFlowRerank(
@@ -175,9 +167,7 @@ def get_kg_query_engine(
             top_n=top_n,
         )
         postprocessors.append(reranker)
-        logger.debug(f"Reranker创建完成, 耗时: {time.time() - step_time:.2f}s")
 
-    step_time = time.time()
     from llama_index.core.indices.knowledge_graph.retrievers import (
         KGRetrieverMode,
         KGTableRetriever,
@@ -190,7 +180,6 @@ def get_kg_query_engine(
         llm=llm_for_reasoning,
         include_text=True,
     )
-    logger.debug(f"as_query_engine调用完成, 耗时: {time.time() - step_time:.2f}s")
 
     logger.success("知识图谱查询引擎构建成功。")
     return query_engine
