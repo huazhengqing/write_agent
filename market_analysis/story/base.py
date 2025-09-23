@@ -1,45 +1,27 @@
-import json
 import os
 import sys
-from typing import List, Optional, Tuple
+from typing import List, Optional
+from functools import lru_cache
 from llama_index.core.tools import QueryEngineTool
 from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.core.vector_stores import VectorStoreInfo
-from llama_index.core.schema import NodeWithScore
+from llama_index.core.vector_stores import VectorStoreInfo, MetadataInfo
 from loguru import logger
-from llama_index.core import Document, SimpleDirectoryReader, VectorStoreIndex
-from llama_index.core.base.base_query_engine import BaseQueryEngine
-from llama_index.core.indices.prompt_helper import PromptHelper
-from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core.node_parser import MarkdownNodeParser, SentenceSplitter, get_leaf_nodes
-from llama_index.core.postprocessor import LLMRerank
-from llama_index.core.retrievers import VectorIndexAutoRetriever
-from llama_index.core.tools import QueryEngineTool
-from llama_index.core.response_synthesizers import CompactAndRefine
-from llama_index.core.schema import NodeWithScore
-from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo
-from llama_index.core.vector_stores.types import VectorStore
-from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.embeddings.litellm import LiteLLMEmbedding
-from llama_index.llms.litellm import LiteLLM
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
-from utils.llm import llm_temperatures
+
 from utils.react_agent import call_react_agent
 from utils.file import data_market_dir
 from utils.search import web_search_tools
 from utils.vector import get_vector_query_engine, get_vector_store
 
 
-_vector_store: Optional[ChromaVectorStore] = None
+@lru_cache(maxsize=1)
 def get_market_vector_store() -> ChromaVectorStore:
-    global _vector_store
-    if _vector_store is None:
-        logger.info("正在初始化故事市场分析的向量库...")
-        _vector_store = get_vector_store(
-            db_path=str(data_market_dir / "story"),
-            collection_name="story_market"
-        )
-    return _vector_store
+    """获取或初始化故事市场分析的向量存储。使用lru_cache实现单例模式。"""
+    return get_vector_store(
+        db_path=str(data_market_dir / "story"),
+        collection_name="story_market"
+    )
 
 
 BROAD_SCAN_system_prompt = """
@@ -98,19 +80,19 @@ def get_vector_query_tool() -> QueryEngineTool:
     vector_store_info = VectorStoreInfo(
         content_info="关于网络小说市场的各种研究文档, 包括平台档案、市场动态、新人机会、外部趋势、深度分析、决策报告和小说创意等。",
         metadata_info=[
-            {
-                "name": "type",
-                "type": "str",
-                "description": (
+            MetadataInfo(
+                name="type",
+                type="str",
+                description=(
                     "文档类型。可选值为 'platform_profile' (平台档案), "
                     "'broad_scan_report' (市场动态简报), 'new_author_opportunity_report' (新人机会评估报告), "
                     "'external_trend_report' (外部趋势分析报告), 'market_analysis_result' (初步市场机会决策报告), "
                     "'deep_dive_report' (深度分析报告), 'final_decision_report' (最终决策报告), "
                     "'opportunity_generation_report' (小说选题建议), 'novel_concept' (详细小说创意)。"
                 ),
-            },
-            {"name": "platform", "type": "str", "description": "平台名称, 例如 '番茄小说', '起点中文网'。"},
-            {"name": "genre", "type": "str", "description": "题材名称, 例如 '都市脑洞', '东方玄幻'。"},
+            ),
+            MetadataInfo(name="platform", type="str", description="平台名称, 例如 '番茄小说', '起点中文网'。"),
+            MetadataInfo(name="genre", type="str", description="题材名称, 例如 '都市脑洞', '东方玄幻'。"),
         ]
     )
 
@@ -150,9 +132,7 @@ async def query_react(
     result = await call_react_agent(
         system_prompt=agent_system_prompt,
         user_prompt=query_str,
-        tools=get_market_tools(),
-        llm_group="reasoning",
-        temperature=llm_temperatures["reasoning"]
+        tools=get_market_tools()
     )
     if not isinstance(result, str):
         logger.warning(f"Agent 返回了非字符串类型, 将其强制转换为字符串: {type(result)}")

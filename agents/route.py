@@ -1,7 +1,8 @@
 from utils.models import RouteOutput, Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures
-from story.story_rag import get_story_rag
 from utils.loader import load_prompts
+
+from story.story_rag import get_story_rag
 
 
 async def route(task: Task) -> str:

@@ -1,3 +1,4 @@
+import threading
 from loguru import logger
 from pathlib import Path
 import logging
@@ -64,16 +65,22 @@ def init_logger_by_runid(file_name):
 
 
 _SINK_IDS = {}
+_SINK_LOCK = threading.Lock()
+
 def ensure_task_logger(run_id: str):
     if run_id in _SINK_IDS:
         return
-    sink_id = logger.add(
-        log_dir / f"{run_id}.log",
-        filter=lambda record: record["extra"].get("run_id") == run_id,
-        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
-        level="DEBUG",
-        enqueue=True,
-        backtrace=True,
-        diagnose=True,
-    )
-    _SINK_IDS[run_id] = sink_id
+
+    with _SINK_LOCK:
+        if run_id in _SINK_IDS:
+            return
+        sink_id = logger.add(
+            log_dir / f"{run_id}.log",
+            filter=lambda record: record["extra"].get("run_id") == run_id,
+            format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
+            level="DEBUG",
+            enqueue=True,
+            backtrace=True,
+            diagnose=True,
+        )
+        _SINK_IDS[run_id] = sink_id

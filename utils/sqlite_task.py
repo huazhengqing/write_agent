@@ -3,6 +3,7 @@ import json
 import collections
 import threading
 from loguru import logger
+from functools import lru_cache
 from typing import List, Optional, Dict
 from utils.models import Task, natural_sort_key
 from utils.file import data_dir
@@ -508,17 +509,9 @@ class TaskDB:
 ###############################################################################
 
 
-_stores: Dict[str, TaskDB] = {}
-_lock = threading.Lock()
+@lru_cache(maxsize=None)
 def get_task_db(run_id: str) -> TaskDB:
-    with _lock:
-        if run_id in _stores:
-            return _stores[run_id]
-        logger.info(f"为 run_id '{run_id}' 创建新的 TaskDB 实例。")
-        db_path = data_dir / run_id / "task.db"
-        db_path.parent.mkdir(parents=True, exist_ok=True)
-        store = TaskDB(db_path=str(db_path))
-        _stores[run_id] = store
-        return store
-
-
+    db_path = data_dir / run_id / "task.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    store = TaskDB(db_path=str(db_path))
+    return store

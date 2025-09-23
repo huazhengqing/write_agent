@@ -2,6 +2,7 @@ import sqlite3
 import threading
 from loguru import logger
 from typing import List, Optional, Dict, Any
+from functools import lru_cache
 from utils.models import Task
 from utils.file import data_dir
 
@@ -149,16 +150,9 @@ class BookMetaDB:
 ###############################################################################
 
 
-_db_instance: Optional[BookMetaDB] = None
-_db_lock = threading.Lock()
-
+@lru_cache(maxsize=1)
 def get_meta_db() -> BookMetaDB:
-    global _db_instance
-    with _db_lock:
-        if _db_instance is None:
-            logger.info("正在创建全局 BookMetaDB 实例...")
-            db_path = data_dir / "books.db"
-            db_path.parent.mkdir(parents=True, exist_ok=True)
-            _db_instance = BookMetaDB(db_path=str(db_path))
-        return _db_instance
-
+    db_path = data_dir / "books.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    instance = BookMetaDB(db_path=str(db_path))
+    return instance

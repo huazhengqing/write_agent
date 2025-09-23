@@ -10,7 +10,9 @@ from loguru import logger
 from datetime import datetime
 from llama_index.core import Document
 from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from market_analysis.story.base import query_react

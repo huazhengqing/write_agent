@@ -2,8 +2,11 @@ import os
 import sys
 from typing import Any, Optional, Tuple
 from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
+from datetime import datetime
 from loguru import logger
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
+
 from market_analysis.story.base import (
     ASSESS_NEW_AUTHOR_OPPORTUNITY_system_prompt,
     BROAD_SCAN_system_prompt,
@@ -41,13 +44,13 @@ async def task_load_platform_profile(platform: str) -> Tuple[str, str]:
         similarity_top_k=1,
         top_n=None, # 无需重排
     )
-    contents = await index_query(
+    content = await index_query(
         query_engine=query_engine,
-        questions=[f"{platform} 平台档案"]
+        question=f"{platform} 平台档案"
     )
 
-    if contents:
-        profile_content = contents[0]
+    if content:
+        profile_content = content
         logger.success(f"已加载 '{platform}' 的基础信息。")
     else:
         logger.warning(
@@ -120,15 +123,19 @@ async def task_new_author_opportunity(platform: str) -> str:
     retries=1,
     retry_delay_seconds=10,
 )
-def task_save_vector(content: Optional[str], doc_type: str, content_format: str = "text", **metadata: Any) -> bool:
+def task_save_vector(content: Optional[str], doc_type: str, content_format: str = "md", **metadata: Any) -> bool:
     if not content:
         logger.warning(f"内容为空, 跳过保存向量。元数据: doc_type={doc_type}, metadata={metadata}")
         return False
 
     final_metadata = metadata.copy()
     final_metadata["type"] = doc_type
+    # 自动添加保存日期, 方便按时间查询
+    if "save_date" not in final_metadata:
+        final_metadata["save_date"] = datetime.now().strftime("%Y-%m-%d")
+
     return vector_add(
-        vector_store =get_market_vector_store(),
+        vector_store=get_market_vector_store(),
         content=content,
         metadata=final_metadata,
         content_format=content_format,

@@ -9,7 +9,9 @@ from loguru import logger
 from datetime import datetime
 from llama_index.core import Document
 from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from utils.file import data_market_dir
@@ -359,14 +361,13 @@ async def task_generate_opportunities(market_report: str, genre: str) -> Optiona
         similarity_top_k=10,
         top_n=5,
     )
-    historical_concepts_contents = await index_query(
+    historical_concepts_str = await index_query(
         query_engine=query_engine,
-        questions=[f"{genre} 小说核心创意"],
+        question=f"{genre} 小说核心创意",
     )
 
-    if historical_concepts_contents:
-        historical_concepts_str = "\n\n---\n\n".join(historical_concepts_contents)
-        logger.success(f"查询到 {len(historical_concepts_contents)} 份历史创意, 将用于规避重复。")
+    if historical_concepts_str:
+        logger.success(f"查询到历史创意, 将用于规避重复。")
     else:
         historical_concepts_str = "无相关历史创意可供参考。"
         logger.info("无相关历史创意可供参考。")
@@ -407,14 +408,13 @@ async def task_generate_novel_concept(opportunities_report: str, platform: str, 
         similarity_top_k=5,
         top_n=3,
     )
-    historical_success_contents = await index_query(
+    historical_success_cases_str = await index_query(
         query_engine=query_engine,
-        questions=[f"{platform} {genre} 爆款成功小说创意案例"],
+        question=f"{platform} {genre} 爆款成功小说创意案例",
     )
 
-    if historical_success_contents:
-        historical_success_cases_str = "\n\n---\n\n".join(historical_success_contents)
-        logger.success(f"查询到 {len(historical_success_contents)} 份成功案例, 将用于借鉴。")
+    if historical_success_cases_str:
+        logger.success(f"查询到成功案例, 将用于借鉴。")
     else:
         historical_success_cases_str = "无相关历史成功案例可供参考。"
         logger.info("无相关历史成功案例可供参考。")
@@ -426,9 +426,7 @@ async def task_generate_novel_concept(opportunities_report: str, platform: str, 
     concept = await call_react_agent(
         system_prompt=NOVEL_CONCEPT_system_prompt,
         user_prompt=user_prompt,
-        llm_group='reasoning',
-        tools=get_market_tools(),
-        temperature=0.7
+        tools=get_market_tools()
     )
     if not concept:
         logger.error("生成详细小说创意失败。")

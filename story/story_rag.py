@@ -6,11 +6,12 @@ import re
 from datetime import datetime
 import sys
 import threading
+from functools import lru_cache
 from loguru import logger
 from diskcache import Cache
 from typing import Dict, Any, List, Literal, Optional, Callable
 from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from utils.sqlite_task import get_task_db
 from utils.file import get_text_file_path, text_file_append, text_file_read
 from utils.models import Task, get_sibling_ids_up_to_current
@@ -25,6 +26,7 @@ from utils.llm import (
     get_llm_params,
     llm_completion
 )
+
 from story.base import get_story_kg_store, get_story_vector_store
 
 
@@ -596,9 +598,7 @@ class StoryRAG:
 
 ###############################################################################
 
-_rag_instance = None
+
+@lru_cache(maxsize=1)
 def get_story_rag():
-    global _rag_instance
-    if _rag_instance is None:
-        _rag_instance = StoryRAG()
-    return _rag_instance
+    return StoryRAG()

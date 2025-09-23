@@ -6,16 +6,19 @@ import asyncio
 from typing import Optional, List
 from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
 from loguru import logger
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from market_analysis.story.base import get_market_vector_store
-from utils.vector import get_vector_query_engine, index_query
+from utils.vector import get_vector_query_engine, index_query_batch
 
 
 async def market_query(
     query_texts: List[str],
-    query_date: Optional[str] = None
+    query_date: Optional[str] = None,
+    similarity_top_k: int = 5,
 ) -> Optional[str]:
     filters = None
     if query_date:
@@ -23,13 +26,11 @@ async def market_query(
         filters = MetadataFilters(filters=[ExactMatchFilter(key="date", value=query_date)])
 
     query_engine = get_vector_query_engine(
-        vector_store=get_market_vector_store(),
-        filters=filters
+        vector_store=get_market_vector_store(), filters=filters, similarity_top_k=similarity_top_k
     )
 
-    node_contents = await index_query(
-        query_engine=query_engine,
-        questions=query_texts
+    node_contents = await index_query_batch(
+        query_engine=query_engine, questions=query_texts
     )
 
     if not node_contents:
@@ -37,7 +38,7 @@ async def market_query(
         return None
 
     answer = "\n\n---\n\n".join(node_contents)
-    logger.info(answer)
+    logger.success(f"查询成功，返回总长度为 {len(answer)} 的内容。最终结果将在终端打印。")
     return answer
 
 
@@ -51,5 +52,6 @@ if __name__ == "__main__":
         "飞卢的最新热门题材有哪些?",
     ]
     print(f"\n\n{'='*20} 批量查询 {'='*20}")
-    asyncio.run(market_query(query_texts=queries))
-
+    result = asyncio.run(market_query(query_texts=queries))
+    if result:
+        print(result)

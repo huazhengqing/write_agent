@@ -1,5 +1,4 @@
 import pytest
-import sys
 import os
 import logging
 from pathlib import Path
@@ -7,7 +6,6 @@ import nest_asyncio
 from loguru import logger
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 from utils.log import init_logger
 from utils.file import log_dir
 from utils.vector import init_llama_settings, get_vector_store, vector_add_from_dir, file_metadata_default
@@ -92,9 +90,12 @@ def _write_test_data_to_files(input_dir: str):
         "character_info.md": test_data.VECTOR_TEST_CHARACTER_INFO,
         "worldview.md": test_data.VECTOR_TEST_WORLDVIEW,
         "table_data.md": test_data.VECTOR_TEST_TABLE_DATA,
+        "large_table_data.md": test_data.VECTOR_TEST_LARGE_TABLE_DATA,
         "structured.json": test_data.VECTOR_TEST_STRUCTURED_JSON,
         "multi_paragraph.md": test_data.VECTOR_TEST_MULTI_PARAGRAPH,
         "diagram.md": test_data.VECTOR_TEST_DIAGRAM_CONTENT,
+        "complex_mermaid_diagram.md": test_data.VECTOR_TEST_COMPLEX_MERMAID_DIAGRAM,
+        "composite_structure.md": test_data.VECTOR_TEST_COMPOSITE_STRUCTURE,
         "nested_list.md": test_data.VECTOR_TEST_NESTED_LIST,
         "special_chars.md": test_data.VECTOR_TEST_SPECIAL_CHARS,
         "novel_worldview.md": test_data.VECTOR_TEST_NOVEL_WORLDVIEW,
@@ -107,3 +108,57 @@ def _write_test_data_to_files(input_dir: str):
     for filename, content in data_map.items():
         if content and content.strip():
             (Path(input_dir) / filename).write_text(content, encoding='utf-8')
+
+
+def get_all_test_data_params():
+    """为数据覆盖率测试提供统一的参数。"""
+    # (test_id, content, content_format, expect_success)
+    params = [
+        # 1. 基础与边缘用例
+        ("empty", test_data.VECTOR_TEST_EMPTY, "text", False),
+        ("simple_txt", test_data.VECTOR_TEST_SIMPLE_TXT, "text", True),
+        ("simple_cn", test_data.VECTOR_TEST_SIMPLE_CN, "text", True),
+        ("simple_md", test_data.VECTOR_TEST_SIMPLE_MD, "md", True),
+        ("simple_json", test_data.VECTOR_TEST_SIMPLE_JSON, "json", True),
+        ("mixed_lang", test_data.VECTOR_TEST_MIXED_LANG, "md", True),
+        # 2. 结构化内容
+        ("table_data", test_data.VECTOR_TEST_TABLE_DATA, "md", True),
+        ("large_table_data", test_data.VECTOR_TEST_LARGE_TABLE_DATA, "md", True),
+        ("nested_list", test_data.VECTOR_TEST_NESTED_LIST, "md", True),
+        ("structured_json", test_data.VECTOR_TEST_STRUCTURED_JSON, "json", True),
+        ("deep_hierarchy_json", test_data.VECTOR_TEST_DEEP_HIERARCHY_JSON, "json", True),
+        ("multi_paragraph", test_data.VECTOR_TEST_MULTI_PARAGRAPH, "md", True),
+        ("complex_markdown", test_data.VECTOR_TEST_COMPLEX_MARKDOWN, "md", True),
+        ("novel_structured_info", test_data.VECTOR_TEST_NOVEL_STRUCTURED_INFO, "md", True),
+        ("conversational_log", test_data.VECTOR_TEST_CONVERSATIONAL_LOG, "md", True),
+        ("philosophical_text", test_data.VECTOR_TEST_PHILOSOPHICAL_TEXT, "md", True),
+        ("composite_structure", test_data.VECTOR_TEST_COMPOSITE_STRUCTURE, "md", True),
+        # 3. 特殊格式与代码块
+        ("diagram_content", test_data.VECTOR_TEST_DIAGRAM_CONTENT, "md", True),
+        ("complex_mermaid_diagram", test_data.VECTOR_TEST_COMPLEX_MERMAID_DIAGRAM, "md", True),
+        ("special_chars", test_data.VECTOR_TEST_SPECIAL_CHARS, "md", True),
+        ("md_with_code_block", test_data.VECTOR_TEST_MD_WITH_CODE_BLOCK, "md", True),
+        ("json_with_code_block", test_data.VECTOR_TEST_JSON_WITH_CODE_BLOCK, "json", True),
+        ("md_with_complex_json_code_block", test_data.VECTOR_TEST_MD_WITH_COMPLEX_JSON_CODE_BLOCK, "md", True),
+        # 4. 领域场景: 小说创作
+        ("character_info", test_data.VECTOR_TEST_CHARACTER_INFO, "md", True),
+        ("worldview", test_data.VECTOR_TEST_WORLDVIEW, "md", True),
+        ("novel_worldview", test_data.VECTOR_TEST_NOVEL_WORLDVIEW, "md", True),
+        ("novel_characters", test_data.VECTOR_TEST_NOVEL_CHARACTERS, "json", True),
+        ("novel_plot_arc", test_data.VECTOR_TEST_NOVEL_PLOT_ARC, "md", True),
+        ("novel_magic_system", test_data.VECTOR_TEST_NOVEL_MAGIC_SYSTEM, "md", True),
+        ("novel_factions", test_data.VECTOR_TEST_NOVEL_FACTIONS, "md", True),
+        ("novel_chapter", test_data.VECTOR_TEST_NOVEL_CHAPTER, "md", True),
+        ("novel_summary", test_data.VECTOR_TEST_NOVEL_SUMMARY, "md", True),
+        ("novel_full_outline", test_data.VECTOR_TEST_NOVEL_FULL_OUTLINE, "md", True),
+        # 5. 领域场景: 报告撰写
+        ("report_outline", test_data.VECTOR_TEST_REPORT_OUTLINE, "md", True),
+        ("detailed_report_outline", test_data.VECTOR_TEST_DETAILED_REPORT_OUTLINE, "md", True),
+        ("report_market_data", test_data.VECTOR_TEST_REPORT_MARKET_DATA, "json", True),
+        ("report_tech_trends", test_data.VECTOR_TEST_REPORT_TECH_TRENDS, "md", True),
+        ("report_case_study", test_data.VECTOR_TEST_REPORT_CASE_STUDY, "md", True),
+        # 6. 领域场景: 技术文档
+        ("technical_book_chapter", test_data.VECTOR_TEST_TECHNICAL_BOOK_CHAPTER, "md", True),
+    ]
+    ids = [p[0] for p in params]
+    return {"params": params, "ids": ids}

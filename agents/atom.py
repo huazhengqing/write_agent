@@ -1,8 +1,10 @@
 import os
+
 from utils.models import AtomOutput, Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures
-from story.story_rag import get_story_rag
 from utils.loader import load_prompts
+
+from story.story_rag import get_story_rag
 
 
 async def atom(task: Task) -> Task:

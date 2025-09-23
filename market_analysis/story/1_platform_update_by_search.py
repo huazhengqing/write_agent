@@ -5,7 +5,9 @@ import sys
 import asyncio
 from typing import List, Optional
 from loguru import logger
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
+
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
 from utils.file import data_market_dir
@@ -109,7 +111,6 @@ async def search_platform(platform: str) -> Optional[str]:
     md_content = await call_react_agent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        temperature=0.1
     )
 
     if not md_content:
