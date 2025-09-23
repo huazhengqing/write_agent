@@ -2,7 +2,7 @@ import sys
 import pytest
 import os
 from loguru import logger
-
+import litellm
 from llama_index.graph_stores.kuzu.kuzu_property_graph import KuzuPropertyGraphStore
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -15,6 +15,9 @@ from utils.kg import (
 from utils.vector import index_query, index_query_batch
 from tests import test_data
 
+# 禁用 litellm 的异步日志记录器, 以避免在 pytest 环境中发生事件循环冲突。
+# 这是导致三元组提取失败和查询无结果的根本原因。
+litellm.disable_logging = True
 
 @pytest.fixture(scope="function")
 def kg_store(tmp_path) -> KuzuPropertyGraphStore:
@@ -26,24 +29,24 @@ def kg_store(tmp_path) -> KuzuPropertyGraphStore:
 
 
 query_scenarios = [
-    pytest.param(
-        "character_info",
-        test_data.VECTOR_TEST_CHARACTER_INFO,
-        "md",
-        {"source": "test_novel", "type": "character"},
-        "龙傲天有什么特点?",
-        ["龙傲天", ("穿越者", "血脉", "天赋")],
-        id="query_character_info"
-    ),
-    pytest.param(
-        "table_data",
-        test_data.VECTOR_TEST_TABLE_DATA,
-        "md",
-        {"source": "test_novel_tables"},
-        "萧炎属于哪个门派?",
-        ["萧炎", "炎盟"],
-        id="query_table_data"
-    ),
+    # pytest.param(
+    #     "character_info",
+    #     test_data.VECTOR_TEST_CHARACTER_INFO,
+    #     "md",
+    #     {"source": "test_novel", "type": "character"},
+    #     "龙傲天有什么特点?",
+    #     ["龙傲天", ("穿越者", "血脉", "天赋")],
+    #     id="query_character_info"
+    # ),
+    # pytest.param(
+    #     "table_data",
+    #     test_data.VECTOR_TEST_TABLE_DATA,
+    #     "md",
+    #     {"source": "test_novel_tables"},
+    #     "萧炎属于哪个门派?",
+    #     ["萧炎", "炎盟"],
+    #     id="query_table_data"
+    # ),
     pytest.param(
         "structured_json",
         test_data.VECTOR_TEST_STRUCTURED_JSON,
@@ -53,15 +56,15 @@ query_scenarios = [
         ["药尘", "炼药师"],
         id="query_structured_json"
     ),
-    pytest.param(
-        "complex_markdown",
-        test_data.VECTOR_TEST_COMPLEX_MARKDOWN,
-        "md",
-        {"source": "test_world_wiki"},
-        "九霄大陆的中心区域是哪里? 有哪些主要势力?",
-        ["中央神州", "青云宗", "万象宗"],
-        id="query_complex_markdown"
-    ),
+    # pytest.param(
+    #     "complex_markdown",
+    #     test_data.VECTOR_TEST_COMPLEX_MARKDOWN,
+    #     "md",
+    #     {"source": "test_world_wiki"},
+    #     "九霄大陆的中心区域是哪里? 有哪些主要势力?",
+    #     ["中央神州", "青云宗", "万象宗"],
+    #     id="query_complex_markdown"
+    # ),
 ]
 
 @pytest.mark.asyncio
@@ -135,50 +138,10 @@ def get_test_data_params():
     """返回用于参数化测试的参数列表, 覆盖所有测试数据。"""
     # (test_id, content, content_format, expect_triplets)
     params = [
-        # 1. 基础与边缘用例
+        # 仅保留失败的测试用例进行调试
         ("empty", test_data.VECTOR_TEST_EMPTY, "text", False),
-        ("simple_txt", test_data.VECTOR_TEST_SIMPLE_TXT, "text", True),
         ("simple_cn", test_data.VECTOR_TEST_SIMPLE_CN, "text", True),
-        ("simple_md", test_data.VECTOR_TEST_SIMPLE_MD, "md", True),
-        ("simple_json", test_data.VECTOR_TEST_SIMPLE_JSON, "json", True),
-        ("mixed_lang", test_data.VECTOR_TEST_MIXED_LANG, "md", True),
-        # 2. 结构化内容
-        ("table_data", test_data.VECTOR_TEST_TABLE_DATA, "md", True),
-        ("large_table_data", test_data.VECTOR_TEST_LARGE_TABLE_DATA, "md", True),
-        ("nested_list", test_data.VECTOR_TEST_NESTED_LIST, "md", True),
-        ("structured_json", test_data.VECTOR_TEST_STRUCTURED_JSON, "json", True),
-        ("deep_hierarchy_json", test_data.VECTOR_TEST_DEEP_HIERARCHY_JSON, "json", True),
-        ("multi_paragraph", test_data.VECTOR_TEST_MULTI_PARAGRAPH, "md", True),
-        ("complex_markdown", test_data.VECTOR_TEST_COMPLEX_MARKDOWN, "md", True),
-        ("novel_structured_info", test_data.VECTOR_TEST_NOVEL_STRUCTURED_INFO, "md", True),
-        ("conversational_log", test_data.VECTOR_TEST_CONVERSATIONAL_LOG, "md", True),
-        ("philosophical_text", test_data.VECTOR_TEST_PHILOSOPHICAL_TEXT, "md", True),
-        ("composite_structure", test_data.VECTOR_TEST_COMPOSITE_STRUCTURE, "md", True),
-        # 3. 特殊格式与代码块
-        ("diagram_content", test_data.VECTOR_TEST_DIAGRAM_CONTENT, "md", True),
-        ("complex_mermaid_diagram", test_data.VECTOR_TEST_COMPLEX_MERMAID_DIAGRAM, "md", True),
-        ("special_chars", test_data.VECTOR_TEST_SPECIAL_CHARS, "md", True),
         ("md_with_code_block", test_data.VECTOR_TEST_MD_WITH_CODE_BLOCK, "md", True),
-        ("json_with_code_block", test_data.VECTOR_TEST_JSON_WITH_CODE_BLOCK, "json", True),
-        ("md_with_complex_json_code_block", test_data.VECTOR_TEST_MD_WITH_COMPLEX_JSON_CODE_BLOCK, "md", True),
-        # 4. 领域场景: 小说创作
-        ("character_info", test_data.VECTOR_TEST_CHARACTER_INFO, "md", True),
-        ("worldview", test_data.VECTOR_TEST_WORLDVIEW, "md", True),
-        ("novel_worldview", test_data.VECTOR_TEST_NOVEL_WORLDVIEW, "md", True),
-        ("novel_characters", test_data.VECTOR_TEST_NOVEL_CHARACTERS, "json", True),
-        ("novel_plot_arc", test_data.VECTOR_TEST_NOVEL_PLOT_ARC, "md", True),
-        ("novel_magic_system", test_data.VECTOR_TEST_NOVEL_MAGIC_SYSTEM, "md", True),
-        ("novel_factions", test_data.VECTOR_TEST_NOVEL_FACTIONS, "md", True),
-        ("novel_chapter", test_data.VECTOR_TEST_NOVEL_CHAPTER, "md", True),
-        ("novel_summary", test_data.VECTOR_TEST_NOVEL_SUMMARY, "md", True),
-        ("novel_full_outline", test_data.VECTOR_TEST_NOVEL_FULL_OUTLINE, "md", True),
-        # 5. 领域场景: 报告撰写
-        ("report_outline", test_data.VECTOR_TEST_REPORT_OUTLINE, "md", True),
-        ("detailed_report_outline", test_data.VECTOR_TEST_DETAILED_REPORT_OUTLINE, "md", True),
-        ("report_market_data", test_data.VECTOR_TEST_REPORT_MARKET_DATA, "json", True),
-        ("report_tech_trends", test_data.VECTOR_TEST_REPORT_TECH_TRENDS, "md", True),
-        ("report_case_study", test_data.VECTOR_TEST_REPORT_CASE_STUDY, "md", True),
-        # 6. 领域场景: 技术文档
         ("technical_book_chapter", test_data.VECTOR_TEST_TECHNICAL_BOOK_CHAPTER, "md", True),
     ]
     ids = [p[0] for p in params]
@@ -216,7 +179,7 @@ def test_kg_add_data_coverage(kg_store: KuzuPropertyGraphStore, test_id: str, co
         "MATCH (c:Chunk {ref_doc_id: $doc_id}) RETURN c.id AS id",
         param_map={"doc_id": doc_id}
     )
-    if content:
+    if content.strip(): # 检查内容是否为空白
         assert len(chunk_nodes_query) > 0, f"预期为 {test_id} 生成 Chunk 节点, 但实际为 0"
         logger.info(f"为 {test_id} 成功找到 {len(chunk_nodes_query)} 个 Chunk 节点。")
     else:

@@ -93,6 +93,10 @@ def kg_add(
     chunk_overlap: int = 400,
 ) -> None:
     logger.info(f"开始向知识图谱添加内容, doc_id='{doc_id}', format='{content_format}'...")
+
+    if not content or not content.strip():
+        logger.warning(f"内容 (doc_id: {doc_id}) 为空或仅包含空白字符, 跳过处理。")
+        return
     
     doc_cache = getattr(kg_store, "cache", None)
     new_content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()

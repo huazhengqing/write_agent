@@ -28,6 +28,7 @@ from prefect import flow, task
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/atom.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_atom",
 )
 async def task_atom(task: Task) -> Task:
@@ -43,6 +44,7 @@ async def task_atom(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_plan",
 )
 async def task_plan(task: Task) -> Task:
@@ -58,6 +60,7 @@ async def task_plan(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_reflection.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_plan_reflection",
 )
 async def task_plan_reflection(task: Task) -> Task:
@@ -73,6 +76,7 @@ async def task_plan_reflection(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/route.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_route",
 )
 async def task_route(task: Task) -> str:
@@ -88,6 +92,7 @@ async def task_route(task: Task) -> str:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_{parameters[category]}.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_design_{category}",
 )
 async def task_design(task: Task, category: str) -> Task:
@@ -102,6 +107,7 @@ async def task_design(task: Task, category: str) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_reflection.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_design_reflection",
 )
 async def task_design_reflection(task: Task) -> Task:
@@ -117,6 +123,7 @@ async def task_design_reflection(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/hierarchy.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_hierarchy",
 )
 async def task_hierarchy(task: Task) -> Task:
@@ -132,6 +139,7 @@ async def task_hierarchy(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/hierarchy_reflection.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_hierarchy_reflection",
 )
 async def task_hierarchy_reflection(task: Task) -> Task:
@@ -147,6 +155,7 @@ async def task_hierarchy_reflection(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/search.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_search",
 )
 async def task_search(task: Task) -> Task:
@@ -162,6 +171,7 @@ async def task_search(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write_before_reflection.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_write_before_reflection",
 )
 async def task_write_before_reflection(task: Task) -> Task:
@@ -177,6 +187,7 @@ async def task_write_before_reflection(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_write",
 )
 async def task_write(task: Task) -> Task:
@@ -193,6 +204,7 @@ async def task_write(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write_reflection.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_write_reflection",
 )
 async def task_write_reflection(task: Task) -> Task:
@@ -209,6 +221,7 @@ async def task_write_reflection(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/summary.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_summary",
 )
 async def task_summary(task: Task) -> Task:
@@ -225,6 +238,7 @@ async def task_summary(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_design.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_aggregate_design",
 )
 async def task_aggregate_design(task: Task) -> Task:
@@ -240,6 +254,7 @@ async def task_aggregate_design(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_search.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_aggregate_search",
 )
 async def task_aggregate_search(task: Task) -> Task:
@@ -255,6 +270,7 @@ async def task_aggregate_search(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/aggregate_summary.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_aggregate_summary",
 )
 async def task_aggregate_summary(task: Task) -> Task:
@@ -270,6 +286,7 @@ async def task_aggregate_summary(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/review_design.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_review_design",
 )
 async def task_review_design(task: Task) -> Task:
@@ -285,6 +302,7 @@ async def task_review_design(task: Task) -> Task:
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/review_write.json",
     result_serializer=readable_json_serializer,
     retries=1,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_review_write",
 )
 async def task_review_write(task: Task) -> Task:
@@ -299,7 +317,8 @@ async def task_review_write(task: Task) -> Task:
     cache_key_fn=get_cache_key, 
     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/store_{parameters[operation_name]}.json",
     result_serializer=readable_json_serializer,
-    retries=1,
+    retries=10,
+    retry_delay_seconds=5,
     task_run_name="{task.run_id}_{task.id}_store_{operation_name}",
 )
 def task_save_data(task: Task, operation_name: str) -> bool:
