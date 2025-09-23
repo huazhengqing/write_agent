@@ -24,8 +24,6 @@ async def hybrid_query(
         return ""
 
     logger.info(f"开始对问题 '{question}' 执行混合查询...")
-
-    logger.debug("正在并行执行向量查询和知识图谱查询...")
     vector_task = index_query(vector_query_engine, question)
     kg_task = index_query(kg_query_engine, question)
     vector_content, kg_content = await asyncio.gather(vector_task, kg_task)
@@ -36,10 +34,6 @@ async def hybrid_query(
 
     formatted_vector_str = vector_content or ""
     formatted_kg_str = kg_content or ""
-
-    logger.debug(f"向量查询结果 (片段数: {1 if vector_content else 0}):\n{formatted_vector_str[:500]}...")
-    logger.debug(f"知识图谱查询结果 (片段数: {1 if kg_content else 0}):\n{formatted_kg_str[:500]}...")
-
     context_dict_user = {
         "vector_str": formatted_vector_str, 
         "kg_str": formatted_kg_str, 
@@ -48,11 +42,7 @@ async def hybrid_query(
     messages = get_llm_messages(synthesis_system_prompt, synthesis_user_prompt, None, context_dict_user)
     final_llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=llm_temperatures["synthesis"])
     final_message = await llm_completion(final_llm_params)
-
     final_answer = final_message.content.strip()
-    logger.success(f"混合查询完成, 生成回答长度: {len(final_message.content)}")
-    logger.debug(f"最终回答:\n{final_message.content}")
-
     return final_answer
 
 

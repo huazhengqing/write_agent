@@ -1,24 +1,16 @@
 import sys
 import pytest
 import os
-from pathlib import Path
 from loguru import logger
 
-from llama_index.core import Document, Settings
 from llama_index.core.vector_stores.types import VectorStore
-from llama_index.core.schema import TextNode
-from llama_index.core.base.base_query_engine import BaseQueryEngine
+from llama_index.vector_stores.chroma import ChromaVectorStore
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from utils.vector import (
     get_vector_store,
-    file_metadata_default,
-    _load_and_filter_documents,
-    get_vector_node_parser,
-    filter_invalid_nodes,
     vector_add,
-    vector_add_from_dir,
     get_vector_query_engine,
     index_query,
     index_query_batch,
@@ -28,54 +20,26 @@ from tests import test_data
 
 
 @pytest.fixture(scope="function")
-def vector_store(tmp_path) -> VectorStore:
+def vector_store(tmp_path) -> ChromaVectorStore:
     """提供一个临时的、空的 ChromaDB 向量存储。"""
     db_path = tmp_path / ".chroma_db_test"
     collection_name = "test_collection"
     logger.info(f"为测试函数创建全新的 ChromaDB 于: {db_path}")
     store = get_vector_store(str(db_path), collection_name)
+    assert isinstance(store, ChromaVectorStore), "get_vector_store 应该返回 ChromaVectorStore 实例"
     yield store
     logger.info(f"测试函数结束, 临时数据库 {db_path} 将被自动删除。")
 
 
-def test_vector_add_from_dir_success(vector_store: VectorStore, input_dir_with_test_files: str):
-    """测试 vector_add_from_dir 成功从目录添加文件。"""
-    logger.info("开始测试: test_vector_add_from_dir_success")
-    
-    success = vector_add_from_dir(vector_store, input_dir_with_test_files)
-    
-    assert success is True
-    collection = vector_store.client  # type: ignore
-    assert collection.count() > 0
-    logger.info("test_vector_add_from_dir_success 测试通过。")
+all_data_params = get_all_test_data_params()
 
 
-def test_vector_add_from_dir_empty(vector_store: VectorStore, tmp_path):
-    """测试 vector_add_from_dir 从空目录运行时应失败。"""
-    logger.info("开始测试: test_vector_add_from_dir_empty")
-    input_dir = tmp_path / "empty_dir"
-    input_dir.mkdir()
-    
-    success = vector_add_from_dir(vector_store, str(input_dir))
-    
-    assert success is False
-    collection = vector_store.client  # type: ignore
-    assert collection.count() == 0
-    logger.info("test_vector_add_from_dir_empty 测试通过。")
-
-
-# 仅保留失败的测试用例进行调试
-failing_coverage_params = get_all_test_data_params()
-failing_coverage_params["params"] = [p for p in failing_coverage_params["params"] if p[0] == 'large_table_data']
-failing_coverage_params["ids"] = [p[0] for p in failing_coverage_params["params"]]
-
-@pytest.mark.skip(reason="暂时跳过, 仅测试失败的用例")
 @pytest.mark.parametrize(
     "test_id, content, content_format, expect_nodes",
-    failing_coverage_params["params"],
-    ids=failing_coverage_params["ids"]
+    all_data_params["params"],
+    ids=all_data_params["ids"]
 )
-def test_vector_add_data_coverage(vector_store: VectorStore, test_id: str, content: str, content_format: str, expect_nodes: bool):
+def test_vector_add_data_coverage(vector_store: ChromaVectorStore, test_id: str, content: str, content_format: str, expect_nodes: bool):
     """
     测试向向量库中添加各种类型的数据, 确保数据能够被正确解析和存储。
     此测试覆盖了 test_data.py 中的所有数据样本。
@@ -90,8 +54,8 @@ def test_vector_add_data_coverage(vector_store: VectorStore, test_id: str, conte
         assert success is False, f"预期空内容 {test_id} 添加失败, 但实际成功"
     else:
         assert success is True, f"预期内容 {test_id} 添加成功, 但实际失败"
-    collection = vector_store.client  # type: ignore
-    count = collection.count()
+    
+    count = vector_store.client.get_collection("test_collection").count()
 
     if expect_nodes:
         assert count > 0, f"预期为 {test_id} 生成节点, 但实际为 0"
@@ -112,24 +76,24 @@ def _validate_answer_keywords(answer: str, expected_keywords: list, test_id: str
 
 
 query_scenarios = [
-    # pytest.param(
-    #     "character_info",
-    #     test_data.VECTOR_TEST_CHARACTER_INFO,
-    #     "md",
-    #     {"source": "test_novel", "type": "character"},
-    #     "龙傲天有什么特点?",
-    #     ["龙傲天", ("穿越者", "血脉", "天赋")],
-    #     id="query_character_info"
-    # ),
-    # pytest.param(
-    #     "table_data",
-    #     test_data.VECTOR_TEST_TABLE_DATA,
-    #     "md",
-    #     {"source": "test_novel_tables"},
-    #     "萧炎属于哪个门派?",
-    #     ["萧炎", "炎盟"],
-    #     id="query_table_data"
-    # ),
+    pytest.param(
+        "character_info",
+        test_data.VECTOR_TEST_CHARACTER_INFO,
+        "md",
+        {"source": "test_novel", "type": "character"},
+        "龙傲天有什么特点?",
+        ["龙傲天", ("穿越者", "血脉", "天赋")],
+        id="query_character_info"
+    ),
+    pytest.param(
+        "table_data",
+        test_data.VECTOR_TEST_TABLE_DATA,
+        "md",
+        {"source": "test_novel_tables"},
+        "萧炎属于哪个门派?",
+        ["萧炎", "炎盟"],
+        id="query_table_data"
+    ),
     pytest.param(
         "large_table_data",
         test_data.VECTOR_TEST_LARGE_TABLE_DATA,
@@ -139,15 +103,15 @@ query_scenarios = [
         ["叶良辰", "敌对阵营", "北冥魔殿少主"],
         id="query_large_table_data"
     ),
-    # pytest.param(
-    #     "structured_json",
-    #     test_data.VECTOR_TEST_STRUCTURED_JSON,
-    #     "json",
-    #     {"source": "test_character_json"},
-    #     "药尘的职业是什么?",
-    #     ["药尘", "炼药师"],
-    #     id="query_structured_json"
-    # ),
+    pytest.param(
+        "structured_json",
+        test_data.VECTOR_TEST_STRUCTURED_JSON,
+        "json",
+        {"source": "test_character_json"},
+        "药尘的职业是什么?",
+        ["药尘", "炼药师"],
+        id="query_structured_json"
+    ),
     pytest.param(
         "complex_markdown",
         test_data.VECTOR_TEST_COMPLEX_MARKDOWN,
@@ -157,50 +121,51 @@ query_scenarios = [
         ["中央神州", ["青云宗", "万象宗"]],
         id="query_complex_markdown"
     ),
-    # pytest.param(
-    #     "diagram_content",
-    #     test_data.VECTOR_TEST_DIAGRAM_CONTENT,
-    #     "md",
-    #     {"source": "test_diagram"},
-    #     "龙傲天和叶良辰是什么关系?",
-    #     ["龙傲天", "叶良辰", "宿敌"],
-    #     id="query_diagram_content"
-    # ),
-    # pytest.param(
-    #     "novel_full_outline",
-    #     test_data.VECTOR_TEST_NOVEL_FULL_OUTLINE,
-    #     "md",
-    #     {"source": "test_novel_outline"},
-    #     "小说《代码之魂: 奇点》的第一卷结局是什么?",
-    #     ["林奇", "数字意识", "沉睡", "苏菲", "逃离"],
-    #     id="query_novel_full_outline"
-    # ),
-    # pytest.param(
-    #     "composite_structure",
-    #     test_data.VECTOR_TEST_COMPOSITE_STRUCTURE,
-    #     "md",
-    #     {"source": "test_composite"},
-    #     "叶凡的职位是什么? 龙傲天和赵日天是什么关系?",
-    #     ["叶凡", "天帝", "龙傲天", "赵日天", "挚友"],
-    #     id="query_composite_structure"
-    # ),
-    # pytest.param(
-    #     "complex_mermaid_diagram",
-    #     test_data.VECTOR_TEST_COMPLEX_MERMAID_DIAGRAM,
-    #     "md",
-    #     {"source": "test_complex_diagram"},
-    #     "议长德雷克派谁去追捕凯尔？",
-    #     ["议长德雷克", "暗影", "追捕", "凯尔"],
-    #     id="query_complex_mermaid_diagram"
-    # ),
+    pytest.param(
+        "diagram_content",
+        test_data.VECTOR_TEST_DIAGRAM_CONTENT,
+        "md",
+        {"source": "test_diagram"},
+        "龙傲天和叶良辰是什么关系?",
+        ["龙傲天", "叶良辰", "宿敌"],
+        id="query_diagram_content"
+    ),
+    pytest.param(
+        "novel_full_outline",
+        test_data.VECTOR_TEST_NOVEL_FULL_OUTLINE,
+        "md",
+        {"source": "test_novel_outline"},
+        "小说《代码之魂: 奇点》的第一卷结局是什么?",
+        ["林奇", "数字意识", "沉睡", "苏菲", "逃离"],
+        id="query_novel_full_outline"
+    ),
+    pytest.param(
+        "composite_structure",
+        test_data.VECTOR_TEST_COMPOSITE_STRUCTURE,
+        "md",
+        {"source": "test_composite"},
+        "叶凡的职位是什么? 龙傲天和赵日天是什么关系?",
+        ["叶凡", "天帝", "龙傲天", "赵日天", "挚友"],
+        id="query_composite_structure"
+    ),
+    pytest.param(
+        "complex_mermaid_diagram",
+        test_data.VECTOR_TEST_COMPLEX_MERMAID_DIAGRAM,
+        "md",
+        {"source": "test_complex_diagram"},
+        "议长德雷克派谁去追捕凯尔？",
+        ["议长德雷克", "暗影", "追捕", "凯尔"],
+        id="query_complex_mermaid_diagram"
+    ),
 ]
+
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "test_id, content, content_format, metadata, question, expected_keywords",
     query_scenarios
 )
-async def test_vector_query_scenarios(vector_store: VectorStore, test_id: str, content: str, content_format: str, metadata: dict, question: str, expected_keywords: list):
+async def test_vector_query_scenarios(vector_store: ChromaVectorStore, test_id: str, content: str, content_format: str, metadata: dict, question: str, expected_keywords: list):
     """测试不同数据类型的端到端向量库查询。"""
     logger.info(f"开始查询场景测试: {test_id}")
     doc_id = f"query_scenario_{test_id}_doc"

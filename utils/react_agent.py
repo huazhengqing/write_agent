@@ -8,7 +8,6 @@ from diskcache import Cache
 
 from llama_index.core.agent.workflow import ReActAgent
 from llama_index.llms.litellm import LiteLLM
-from llama_index.core import PromptTemplate
 from llama_index.core.workflow import Context
 
 from utils.config import llm_temperatures
