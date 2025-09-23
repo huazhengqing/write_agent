@@ -313,6 +313,47 @@ class TaskDB:
         return "\n\n".join(content_list)
 
 
+    def has_preceding_sibling_design_tasks(self, task: Task) -> bool:
+        """
+        检查任务是否有同级的前置设计任务。
+        """
+        if not task.parent_id:
+            return False
+        id_parts = task.id.split('.')
+        if len(id_parts) < 2:
+            return False
+        try:
+            current_seq = int(id_parts[-1])
+        except ValueError:
+            return False
+
+        # 如果是第一个子任务, 就没有前置兄弟任务
+        if current_seq <= 1:
+            return False
+
+        # 生成需要查询的前置兄弟任务ID列表
+        # 例如, 当前是 1.5, 则查询 1.1, 1.2, 1.3, 1.4
+        preceding_sibling_ids = [f"{task.parent_id}.{i}" for i in range(1, current_seq)]
+
+        logger.debug(f"正在为任务 {task.id} 检查是否存在前置的 design 任务...")
+        with self._lock:
+            placeholders = ','.join(['?'] * len(preceding_sibling_ids))
+            # 使用 SELECT 1 ... LIMIT 1 来高效地检查存在性
+            self.cursor.execute(
+                f"SELECT 1 FROM t_tasks WHERE id IN ({placeholders}) AND task_type = 'design' LIMIT 1",
+                tuple(preceding_sibling_ids)
+            )
+            row = self.cursor.fetchone()
+        
+        exists = row is not None
+        if exists:
+            logger.info(f"为任务 {task.id} 找到了前置的 design 任务。")
+        else:
+            logger.debug(f"为任务 {task.id} 未找到前置的 design 任务。")
+            
+        return exists
+
+
     def get_dependent_search(self, task: Task) -> str:
         if not task.parent_id:
             return ""

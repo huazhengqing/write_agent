@@ -23,8 +23,50 @@ async def plan(task: Task) -> Task:
     else:
         context = await get_story_rag().get_context(task)
     context.update({
-        "atom_reasoning": task.results.get("atom_reasoning", "无"),
-        "complex_reasons": task.results.get("complex_reasons") or "原因未知"
+        "atom_reasoning": task.results.get("atom_reasoning", ""),
+        "complex_reasons": task.results.get("complex_reasons") or ""
+    })
+    messages = get_llm_messages(system_prompt, user_prompt, None, context)
+    llm_params = get_llm_params(messages=messages, temperature=llm_temperatures["reasoning"])
+    message = await llm_completion(llm_params, response_model=PlanOutput)
+    data = message.validated_data
+    reasoning = message.get("reasoning_content") or message.get("reasoning", "")
+    updated_task = task.model_copy(deep=True)
+    updated_task.sub_tasks = convert_plan_to_tasks(data.sub_tasks, updated_task)
+    updated_task.results["plan"] = data.model_dump(exclude_none=True, exclude={'reasoning'})
+    updated_task.results["plan_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
+    return updated_task
+
+
+async def plan_write_to_design(task: Task) -> Task:
+    if task.task_type != "write":
+        raise ValueError("参数错误")
+    system_prompt, user_prompt = load_prompts(task.category, f"plan_write_to_design", "system_prompt", "user_prompt")
+    context = await get_story_rag().get_context(task)
+    context.update({
+        "atom_reasoning": task.results.get("atom_reasoning", ""),
+        "complex_reasons": task.results.get("complex_reasons") or ""
+    })
+    messages = get_llm_messages(system_prompt, user_prompt, None, context)
+    llm_params = get_llm_params(messages=messages, temperature=llm_temperatures["reasoning"])
+    message = await llm_completion(llm_params, response_model=PlanOutput)
+    data = message.validated_data
+    reasoning = message.get("reasoning_content") or message.get("reasoning", "")
+    updated_task = task.model_copy(deep=True)
+    updated_task.sub_tasks = convert_plan_to_tasks(data.sub_tasks, updated_task)
+    updated_task.results["plan"] = data.model_dump(exclude_none=True, exclude={'reasoning'})
+    updated_task.results["plan_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
+    return updated_task
+
+
+async def plan_write_to_write(task: Task) -> Task:
+    if task.task_type != "write":
+        raise ValueError("参数错误")
+    system_prompt, user_prompt = load_prompts(task.category, f"plan_write_to_write", "system_prompt", "user_prompt")
+    context = await get_story_rag().get_context(task)
+    context.update({
+        "atom_reasoning": task.results.get("atom_reasoning", ""),
+        "complex_reasons": task.results.get("complex_reasons") or ""
     })
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=llm_temperatures["reasoning"])

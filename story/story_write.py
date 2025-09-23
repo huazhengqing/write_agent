@@ -8,7 +8,7 @@ from utils.models import Task
 from utils.sqlite_task import get_task_db
 
 from agents.atom import atom
-from agents.plan import plan, plan_reflection
+from agents.plan import plan, plan_reflection, plan_write_to_design, plan_write_to_write
 from agents.design import design, design_aggregate, design_reflection
 from agents.search import search, search_aggregate
 from agents.write import write, write_before_reflection, write_reflection
@@ -51,6 +51,38 @@ async def task_plan(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await plan(task)
+
+
+@task(
+    persist_result=True, 
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key, 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_write_to_design.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_plan_write_to_design",
+)
+async def task_plan_write_to_design(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await plan_write_to_design(task)
+
+
+@task(
+    persist_result=True, 
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key, 
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_write_to_write.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_plan_write_to_write",
+)
+async def task_plan_write_to_write(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await plan_write_to_write(task)
 
 
 @task(
@@ -356,8 +388,19 @@ async def flow_story_write(current_task: Task):
                 return
 
         logger.info(f"判断原子任务='{current_task.id}' ")
-        task_result = await task_atom(current_task)
-        task_save_data(task_result, "task_atom")
+
+        task_result = current_task
+        task_result.results["atom_result"] = ""
+        if current_task.task_type == "write":
+            db = get_task_db(run_id=current_task.run_id)
+            if not db.has_preceding_sibling_design_tasks(current_task):
+                task_result.results["atom_result"] = "complex"
+                task_result.results["complex_reasons"] = ["design_insufficient"]
+
+        if task_result.results["atom_result"] != "complex":
+            task_result = await task_atom(current_task)
+            task_save_data(task_result, "task_atom")
+
         if task_result.results.get("atom_result") == "atom": 
             if task_result.task_type == "design":
                 logger.info(f"执行: design 任务='{current_task.id}'")
@@ -386,7 +429,7 @@ async def flow_story_write(current_task: Task):
                 task_result = await task_summary(task_result)
                 task_save_data(task_result, "task_summary")
                 
-                keywords_to_skip_review = ["全书", "卷", "幕", "段落", "场景"]
+                keywords_to_skip_review = ["场景", "节拍", "段落"]
                 position = task_result.hierarchical_position
                 if position and "章" in position and not any(keyword in position for keyword in keywords_to_skip_review):
                     logger.info(f"执行: 审查正文: write 任务='{task_result.id}' ")
@@ -396,31 +439,57 @@ async def flow_story_write(current_task: Task):
                 raise ValueError(f"未知的原子任务类型: {task_result.task_type}")
         else:
             logger.info(f"任务 '{current_task.id}' 不是原子任务, 进行分解。")
-            complex_reasons = task_result.results.get("complex_reasons", [])
-            if (task_result.task_type == "write" and 'design_insufficient' not in complex_reasons):
-                logger.info(f"审查设计方案: write 任务='{task_result.id}' ")
-                task_result = await task_review_design(task_result)
-                task_save_data(task_result, "task_review_design")
+            if task_result.task_type == "write":
 
-                logger.info(f"划分结构: write 任务='{task_result.id}' ")
-                task_result = await task_hierarchy(task_result)
-                task_save_data(task_result, "task_hierarchy")
+                complex_reasons = task_result.results.get("complex_reasons", [])
+                if 'design_insufficient' in complex_reasons:
+                    logger.info(f"分解: write to disign 任务='{task_result.id}' ")
+                    task_result = await task_plan_write_to_design(task_result)
+                    task_save_data(task_result, "task_plan")
+                else:
+                    logger.info(f"审查设计方案: write 任务='{task_result.id}' ")
+                    task_result = await task_review_design(task_result)
+                    task_save_data(task_result, "task_review_design")
 
-                logger.info(f"反思划分结构结果: write 任务='{task_result.id}' ")
-                task_result = await task_hierarchy_reflection(task_result)
-                task_save_data(task_result, "task_hierarchy_reflection")
-            
-            logger.info(f"分解: write 任务='{task_result.id}' ")
-            task_result = await task_plan(task_result)
-            task_save_data(task_result, "task_plan")
+                    logger.info(f"划分结构: write 任务='{task_result.id}' ")
+                    task_result = await task_hierarchy(task_result)
+                    task_save_data(task_result, "task_hierarchy")
 
-            if task_result.task_type in ["write", "design"]:
+                    logger.info(f"反思划分结构结果: write 任务='{task_result.id}' ")
+                    task_result = await task_hierarchy_reflection(task_result)
+                    task_save_data(task_result, "task_hierarchy_reflection")
+
+                    logger.info(f"分解: write to write 任务='{task_result.id}' ")
+                    task_result = await task_plan_write_to_write(task_result)
+                    task_save_data(task_result, "task_plan")
+                    
                 logger.info(f"反思分解结果: write 任务='{task_result.id}' ")
                 task_result = await task_plan_reflection(task_result)
                 task_save_data(task_result, "task_plan_reflection")
 
+            elif task_result.task_type == "design":
+
+                logger.info(f"分解: design 任务='{task_result.id}' ")
+                task_result = await task_plan(task_result)
+                task_save_data(task_result, "task_plan")
+
+                logger.info(f"反思分解结果: design 任务='{task_result.id}' ")
+                task_result = await task_plan_reflection(task_result)
+                task_save_data(task_result, "task_plan_reflection")
+
+            elif task_result.task_type == "search":
+
+                logger.info(f"分解: search 任务='{task_result.id}' ")
+                task_result = await task_plan(task_result)
+                task_save_data(task_result, "task_plan")
+
+            else:
+                raise ValueError(f"未知的任务类型: {task_result.task_type}")
+
+
             if task_result.sub_tasks:
                 logger.info(f"任务 '{current_task.id}' 分解为 {len(task_result.sub_tasks)} 个子任务, 开始递归处理。")
+
                 for sub_task in task_result.sub_tasks:
 
                     if day_wordcount_goal > 0:
@@ -431,14 +500,6 @@ async def flow_story_write(current_task: Task):
                             return
 
                     await flow_story_write(sub_task)
-                
-                if task_result.task_type == "write":
-                    keywords_to_skip_review = ["全书", "卷", "幕", "段落", "场景"]
-                    position = task_result.hierarchical_position
-                    if position and "章" in position and not any(keyword in position for keyword in keywords_to_skip_review):
-                        logger.info(f"审查正文: write 任务='{task_result.id}' ")
-                        task_result = await task_review_write(task_result)
-                        task_save_data(task_result, "task_review_write")
 
                 if task_result.task_type == "design":
                     logger.info(f"聚合: design 任务='{task_result.id}' ")
@@ -452,6 +513,14 @@ async def flow_story_write(current_task: Task):
                     logger.info(f"聚合摘要: write 任务='{task_result.id}' ")
                     task_result = await task_aggregate_summary(task_result)
                     task_save_data(task_result, "task_aggregate_summary")
+
+                    keywords_to_skip_review = ["场景", "节拍", "段落"]
+                    position = task_result.hierarchical_position
+                    if position and "章" in position and not any(keyword in position for keyword in keywords_to_skip_review):
+                        logger.info(f"审查正文: write 任务='{task_result.id}' ")
+                        task_result = await task_review_write(task_result)
+                        task_save_data(task_result, "task_review_write")
+
                 else:
                     raise ValueError(f"未知的聚合任务类型: {task_result.task_type}")
             else:
