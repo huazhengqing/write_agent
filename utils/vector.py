@@ -125,7 +125,12 @@ def _load_and_filter_documents(
         recursive=True,
         exclude_hidden=False
     )
-    documents = reader.load_data()
+    try:
+        documents = reader.load_data()
+    except ValueError as e:
+        logger.warning(f"🤷 在 '{input_dir}' 目录中加载文档时出错 (可能是空目录): {e}")
+        return []
+
     if not documents:
         logger.warning(f"🤷 在 '{input_dir}' 目录中未找到任何符合要求的文件。")
         return []
@@ -154,7 +159,7 @@ class MermaidExtractor:
 
         logger.debug("正在为 Mermaid 图表生成摘要...")
         summary_response = self._llm.predict(self._summary_prompt, mermaid_code=mermaid_code)
-        logger.debug(f"Mermaid 图表摘要生成完毕, 长度: {len(summary_response)}")
+        logger.debug(f"Mermaid 图表摘要生成完毕 \n{summary_response}")
 
         summary_node = TextNode(
             text=f"Mermaid图表摘要:\n{summary_response}",
@@ -346,7 +351,6 @@ def vector_add(
     new_content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
     doc_cache = getattr(vector_store, "cache", None)
     if doc_cache and doc_cache.get(new_content_hash):
-        logger.info(f"内容 (hash: {new_content_hash[:8]}...) 已存在, 跳过重复添加。")
         return True
 
     effective_doc_id = doc_id or new_content_hash
@@ -439,17 +443,12 @@ def get_vector_query_engine(
     vector_store_info: VectorStoreInfo = get_vector_store_info_default(),
 ) -> BaseQueryEngine:
     logger.info("开始构建向量查询引擎...")
-    logger.debug(
-        f"参数: similarity_top_k={similarity_top_k}, top_n={top_n}, "
-        f"use_auto_retriever={use_auto_retriever}, filters={filters}, "
-    )
 
     index = VectorStoreIndex.from_vector_store(vector_store)
     logger.debug("从 VectorStore 创建 VectorStoreIndex 完成。")
 
     reranker = None
     if top_n and top_n > 0:
-        logger.debug(f"正在创建 Reranker, top_n={top_n}")
         reranker = SiliconFlowRerank(
             api_key=os.getenv("SILICONFLOW_API_KEY"),
             top_n=top_n,

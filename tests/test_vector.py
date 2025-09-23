@@ -1,12 +1,12 @@
 import sys
 import pytest
 import os
+from pathlib import Path
 from loguru import logger
 
 from llama_index.core import Document, Settings
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.core.schema import TextNode
-from llama_index.core.vector_stores import MetadataFilter, MetadataFilters
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -24,8 +24,7 @@ from utils.vector import (
     index_query_batch,
 )
 from tests.conftest import get_all_test_data_params
-from tests import test_data 
-from tests.conftest import data_map_for_test_files
+from tests import test_data
 
 
 @pytest.fixture(scope="function")
@@ -39,146 +38,6 @@ def vector_store(tmp_path) -> VectorStore:
     logger.info(f"测试函数结束, 临时数据库 {db_path} 将被自动删除。")
 
 
-# def test_get_vector_store(tmp_path):
-#     """测试 get_vector_store 能否成功创建并返回一个 ChromaVectorStore 实例。"""
-#     logger.info("开始测试: test_get_vector_store")
-#     db_path = tmp_path / "test_db"
-#     collection_name = "my_test_collection"
-    
-#     store = get_vector_store(str(db_path), collection_name)
-    
-#     assert store is not None
-#     assert db_path.exists()
-    
-#     # The `client` property of our ChromaVectorStore instance is the collection itself.
-#     # The collection object has a `_client` attribute which is the chromadb client.
-#     chroma_client = store.client._client # type: ignore
-#     collections = chroma_client.list_collections()
-#     assert any(c.name == collection_name for c in collections)
-#     logger.info("test_get_vector_store 测试通过。")
-
-
-# def test_file_metadata_default(tmp_path):
-#     """测试 file_metadata_default 能否为文件生成正确的元数据。"""
-#     logger.info("开始测试: test_file_metadata_default")
-#     test_file = tmp_path / "test.txt"
-#     test_file.write_text("hello")
-    
-#     metadata = file_metadata_default(str(test_file))
-    
-#     assert metadata["file_name"] == "test.txt"
-#     assert metadata["file_path"] == str(test_file)
-#     assert "creation_date" in metadata
-#     assert "modification_date" in metadata
-#     logger.info("test_file_metadata_default 测试通过。")
-
-
-# def test_load_and_filter_documents(input_dir_with_test_files):
-#     """测试 _load_and_filter_documents 能否正确加载、过滤文件。"""
-#     from pathlib import Path
-#     logger.info("开始测试: test_load_and_filter_documents")    
-#     input_dir = Path(input_dir_with_test_files)
-#     (input_dir / "empty.md").write_text("")
-#     (input_dir / "whitespace.txt").write_text("   \n\t ")
-#     (input_dir / "ignored.log").write_text("Log content.")
-    
-#     docs = _load_and_filter_documents(str(input_dir), file_metadata_default)
-    
-#     # 根据 conftest._write_test_data_to_files 中写入的非空文件数量进行断言
-#     expected_file_count = len([c for c in data_map_for_test_files.values() if c and c.strip()])
-#     assert len(docs) == expected_file_count, f"预期加载 {expected_file_count} 个文档, 实际加载了 {len(docs)} 个"
-    
-#     filenames = {doc.metadata["file_name"] for doc in docs}
-#     assert "simple.md" in filenames
-#     assert "empty.md" not in filenames
-#     assert "whitespace.txt" not in filenames
-#     assert "ignored.log" not in filenames
-#     logger.info("test_load_and_filter_documents 测试通过。")
-
-
-# @pytest.mark.parametrize(
-#     "content_format, expected_parser_type",
-#     [("md", "CustomMarkdownNodeParser"), ("txt", "SentenceSplitter"), ("json", "JSONNodeParser")],
-#     ids=["markdown", "text", "json"]
-# )
-# def test_get_node_parser(content_format, expected_parser_type):
-#     """测试 _get_node_parser 能否根据格式返回正确的解析器类型。"""
-#     logger.info(f"开始测试: test_get_node_parser (format: {content_format})")
-#     parser = _get_node_parser(content_format, 1000)
-#     assert parser.__class__.__name__ == expected_parser_type
-
-#     # 增加对 SentenceSplitter chunk_size 的测试
-#     if content_format == "txt":
-#         # 短文本
-#         parser_small = _get_node_parser(content_format, 1000)
-#         assert parser_small.chunk_size == 256
-#         # 中等文本
-#         parser_medium = _get_node_parser(content_format, 6000)
-#         assert parser_medium.chunk_size == 512
-#         # 长文本
-#         parser_large = _get_node_parser(content_format, 30000)
-#         assert parser_large.chunk_size == 1024
-#         logger.info("SentenceSplitter 的动态 chunk_size 测试通过。")
-
-
-#     logger.info(f"test_get_node_parser (format: {content_format}) 测试通过。")
-
-
-# def test_filter_invalid_nodes():
-#     """测试 filter_invalid_nodes 能否过滤掉无效节点。"""
-#     logger.info("开始测试: test_filter_invalid_nodes")
-#     nodes = [
-#         TextNode(text="Valid node."),
-#         TextNode(text=""),
-#         TextNode(text="   "),
-#         TextNode(text="\n\t"),
-#         TextNode(text="---\n"), # 仅包含分隔符的节点也应被视为空
-#         TextNode(text="Another valid node."),
-#     ]
-    
-#     valid_nodes = filter_invalid_nodes(nodes)
-    
-#     assert len(valid_nodes) == 2
-#     assert valid_nodes[0].text == "Valid node."
-#     assert valid_nodes[1].text == "Another valid node."
-#     logger.info("test_filter_invalid_nodes 测试通过。")
-
-
-# def test_vector_add_success(vector_store: VectorStore):
-#     """测试 vector_add 成功添加内容。"""
-#     logger.info("开始测试: test_vector_add_success")
-#     content = test_data.VECTOR_TEST_SIMPLE_MD
-#     metadata = {"source": "test_doc", "type": "simple_md"}
-    
-#     success = vector_add(vector_store, content, metadata, doc_id="test_doc_1")
-    
-#     assert success is True
-#     # The `client` property of our ChromaVectorStore instance is the collection object.
-#     collection = vector_store.client
-#     assert collection.count() > 0
-#     logger.info("test_vector_add_success 测试通过。")
-    
-#     # 测试重复添加
-#     success_again = vector_add(vector_store, content, metadata, doc_id="test_doc_1", content_format="md")
-#     assert success_again is True, "重复添加已存在内容应该返回 True"
-#     assert collection.count() > 0, "重复添加不应改变节点数量"
-#     logger.info("重复添加内容的测试通过。")
-
-
-# def test_vector_add_empty_content(vector_store: VectorStore):
-#     """测试 vector_add 传入空内容时应失败。"""
-#     logger.info("开始测试: test_vector_add_empty_content")
-#     success = vector_add(vector_store, "", {"source": "empty"})
-#     assert success is False
-    
-#     success = vector_add(vector_store, "   \n\t ", {"source": "whitespace"})
-#     assert success is False
-    
-#     collection = vector_store.client # type: ignore
-#     assert collection.count() == 0
-#     logger.info("test_vector_add_empty_content 测试通过。")
-
-
 def test_vector_add_from_dir_success(vector_store: VectorStore, input_dir_with_test_files: str):
     """测试 vector_add_from_dir 成功从目录添加文件。"""
     logger.info("开始测试: test_vector_add_from_dir_success")
@@ -186,7 +45,7 @@ def test_vector_add_from_dir_success(vector_store: VectorStore, input_dir_with_t
     success = vector_add_from_dir(vector_store, input_dir_with_test_files)
     
     assert success is True
-    collection = vector_store.client # type: ignore
+    collection = vector_store.client  # type: ignore
     assert collection.count() > 0
     logger.info("test_vector_add_from_dir_success 测试通过。")
 
@@ -200,7 +59,7 @@ def test_vector_add_from_dir_empty(vector_store: VectorStore, tmp_path):
     success = vector_add_from_dir(vector_store, str(input_dir))
     
     assert success is False
-    collection = vector_store.client # type: ignore
+    collection = vector_store.client  # type: ignore
     assert collection.count() == 0
     logger.info("test_vector_add_from_dir_empty 测试通过。")
 
@@ -228,7 +87,7 @@ def test_vector_add_data_coverage(vector_store: VectorStore, test_id: str, conte
         assert success is False, f"预期空内容 {test_id} 添加失败, 但实际成功"
     else:
         assert success is True, f"预期内容 {test_id} 添加成功, 但实际失败"
-    collection = vector_store.client # type: ignore
+    collection = vector_store.client  # type: ignore
     count = collection.count()
 
     if expect_nodes:
@@ -393,42 +252,3 @@ async def test_vector_query_batch_scenarios(populated_vector_store_for_query: Ve
     assert answers[-1] == "", "不相关问题的回答应该为空"
 
     logger.info("批量查询场景测试验证成功。")
-
-
-# @pytest.mark.asyncio
-# async def test_vector_query_with_filters(vector_store: VectorStore):
-#     """测试 get_vector_query_engine 的元数据过滤功能。"""
-#     logger.info("开始测试: test_vector_query_with_filters")
-
-#     # 1. 添加带有不同元数据的文档
-#     content_a = "龙傲天是主角, 他来自地球。"
-#     metadata_a = {"source": "test_novel", "task_id": "1.1", "type": "character"}
-#     vector_add(vector_store, content_a, metadata_a, doc_id="doc_a", content_format="txt")
-
-#     content_b = "叶良辰是反派, 他来自本地。"
-#     metadata_b = {"source": "test_novel", "task_id": "1.2", "type": "character"}
-#     vector_add(vector_store, content_b, metadata_b, doc_id="doc_b", content_format="txt")
-
-#     # 2. 测试 '==' 过滤器, 只应匹配到 '龙傲天'
-#     logger.info("开始测试 '==' 过滤器...")
-#     filters_eq = MetadataFilters(
-#         filters=[MetadataFilter(key="task_id", value="1.1", operator="==")]
-#     )
-#     query_engine_eq = get_vector_query_engine(vector_store, filters=filters_eq)
-#     answer_eq = await index_query(query_engine_eq, "介绍一下书中的角色")
-    
-#     assert "龙傲天" in answer_eq
-#     assert "叶良辰" not in answer_eq
-#     logger.info("使用 '==' 过滤器的测试通过。")
-
-#     # 3. 测试 'nin' (not in) 过滤器, 只应匹配到 '叶良辰'
-#     logger.info("开始测试 'nin' 过滤器...")
-#     filters_nin = MetadataFilters(
-#         filters=[MetadataFilter(key="task_id", value=["1.1"], operator="nin")]
-#     )
-#     query_engine_nin = get_vector_query_engine(vector_store, filters=filters_nin)
-#     answer_nin = await index_query(query_engine_nin, "介绍一下书中的角色")
-
-#     assert "叶良辰" in answer_nin
-#     assert "龙傲天" not in answer_nin
-#     logger.info("使用 'nin' 过滤器的测试通过。")
