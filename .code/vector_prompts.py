@@ -34,6 +34,16 @@ DEFAULT_REFINE_PROMPT_TMPL = (
     "Refined Answer: "
 )
 
+DEFAULT_TREE_SUMMARIZE_TMPL = (
+    "Context information from multiple sources is below.\n"
+    "---------------------\n"
+    "{context_str}\n"
+    "---------------------\n"
+    "Given the information from multiple sources and not prior knowledge, "
+    "answer the query.\n"
+    "Query: {query_str}\n"
+    "Answer: "
+)
 
 PREFIX = """\
 Your goal is to structure the user's query to match the request schema provided below.

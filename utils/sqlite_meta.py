@@ -75,7 +75,7 @@ class BookMetaDB:
 
     def add_or_update_book_meta(self, task: Task):
         """
-        根据根任务信息，添加或更新书的元数据。
+        根据根任务信息, 添加或更新书的元数据。
         """
         meta_data = {
             "run_id": task.run_id,
@@ -127,7 +127,7 @@ class BookMetaDB:
 
     def get_all_book_meta(self) -> List[Dict[str, Any]]:
         """
-        获取所有书的元数据列表，按最后更新时间降序排列。
+        获取所有书的元数据列表, 按最后更新时间降序排列。
         """
         with self._lock:
             logger.debug("正在查询所有书籍的元数据...")

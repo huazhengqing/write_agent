@@ -47,7 +47,7 @@ system_prompt = """
     "update_goal": "根据[设计方案]中的[关键细节], 将目标具体化为描写[角色A]在[场景X]中与[角色B]的对峙。",
     "update_instructions": ["重点刻画[角色A]的心理活动。", "通过对话展现[角色B]的虚伪。"],
     "update_input_brief": ["参考`最新章节`结尾处[角色A]的情绪状态。", "参考`设计方案`中关于[关键道具]的设定。"],
-    "update_acceptance_criteria": ["成功塑造出对峙的紧张氛围。", "通过情节推动，使[角色A]和[角色B]的关系进一步恶化。"], 
+    "update_acceptance_criteria": ["成功塑造出对峙的紧张氛围。", "通过情节推动, 使[角色A]和[角色B]的关系进一步恶化。"], 
     "atom_result": "atom"
 }
 ### complex 示例

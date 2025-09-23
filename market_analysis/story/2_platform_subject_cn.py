@@ -21,15 +21,15 @@ from prefect import flow, task
 
 
 class MarketOpportunity(BaseModel):
-    rank: int = Field(description="机会排名，1为最佳。")
+    rank: int = Field(description="机会排名, 1为最佳。")
     platform: str = Field(description="平台名称。")
     genre: str = Field(description="题材大类。")
-    reasoning: str = Field(description="对该机会的综合评估理由，解释其排名，说明如何平衡动态机会、静态匹配和外部趋势。")
-    actionable_advice: str = Field(description="具体的、可操作的创作建议，例如可以结合的热门元素、切入角度或目标读者画像。")
-    risk_assessment: str = Field(description="分析该机会的潜在风险，例如市场饱和度、创作难度、政策风险等。")
+    reasoning: str = Field(description="对该机会的综合评估理由, 解释其排名, 说明如何平衡动态机会、静态匹配和外部趋势。")
+    actionable_advice: str = Field(description="具体的、可操作的创作建议, 例如可以结合的热门元素、切入角度或目标读者画像。")
+    risk_assessment: str = Field(description="分析该机会的潜在风险, 例如市场饱和度、创作难度、政策风险等。")
 
 class MarketAnalysisResult(BaseModel):
-    summary: str = Field(description="对整个市场机会列表的一句话总结，点明整体市场趋势或核心发现。")
+    summary: str = Field(description="对整个市场机会列表的一句话总结, 点明整体市场趋势或核心发现。")
     opportunities: List[MarketOpportunity] = Field(description="按综合潜力从高到低排序的市场机会列表。")
 
 class ParsedGenres(BaseModel):
@@ -38,16 +38,16 @@ class ParsedGenres(BaseModel):
 
 ANALYZE_EXTERNAL_TRENDS_system_prompt = """
 # 角色
-你是一名敏锐的流行文化分析师，擅长捕捉跨界趋势。
+你是一名敏锐的流行文化分析师, 擅长捕捉跨界趋势。
 
 # 任务
-为【{platform}】平台的【{genre}】题材，生成一份外部热点趋势分析报告。你需要利用工具进行网络搜索，并以简洁的Markdown格式输出。
+为【{platform}】平台的【{genre}】题材, 生成一份外部热点趋势分析报告。你需要利用工具进行网络搜索, 并以简洁的Markdown格式输出。
 
 # 工作流程
-1.  研究: 使用 `social_media_trends_search` 等工具，主动搜索与【{genre}】题材相关的外部趋势。
-    - 跨界热点: 在B站、微博、抖音、小红书等社交媒体上，搜索与该题材相关的“热门话题”、“流行文化”、“影视游戏IP”、“出圈meme”。(示例: `targeted_search(platforms=['B站', '抖音'], query='{genre} 热门话题')`)
-    - 增长潜力: 搜索该题材关键词的近期热度指数（如百度指数、微信指数），评估其大众化潜力。
-    - 核心讨论: 浏览相关话题下的高赞评论和讨论，了解大众对该题材的核心看法和期待。
+1.  研究: 使用 `social_media_trends_search` 等工具, 主动搜索与【{genre}】题材相关的外部趋势。
+    - 跨界热点: 在B站、微博、抖音、小红书等社交媒体上, 搜索与该题材相关的“热门话题”、“流行文化”、“影视游戏IP”、“出圈meme”。(示例: `targeted_search(platforms=['B站', '抖音'], query='{genre} 热门话题')`)
+    - 增长潜力: 搜索该题材关键词的近期热度指数(如百度指数、微信指数), 评估其大众化潜力。
+    - 核心讨论: 浏览相关话题下的高赞评论和讨论, 了解大众对该题材的核心看法和期待。
 2.  总结: 将你的发现综合成一份简明的Markdown报告。
 
 # 输出要求
@@ -55,7 +55,7 @@ ANALYZE_EXTERNAL_TRENDS_system_prompt = """
 
 - 核心趋势: [总结1-2个最显著的外部流行趋势]
 - 跨界潜力: [评估该题材与影视、游戏、短视频等领域结合的可能性和切入点]
-- 增长预期: [基于搜索热度，给出“高增长”、“稳定”、“热度下降”等判断]
+- 增长预期: [基于搜索热度, 给出“高增长”、“稳定”、“热度下降”等判断]
 - 关键洞察: [从大众讨论中提炼出的一个独特见解或创作建议]
 """
 
@@ -65,7 +65,7 @@ PARSE_GENRES_system_prompt = """
 你是一个精准的信息提取助手。
 
 # 任务
-从给定的市场动态简报中，只提取“热门题材”部分列出的所有题材大类名称。
+从给定的市场动态简报中, 只提取“热门题材”部分列出的所有题材大类名称。
 
 # 工作流程
 1. 定位: 找到文本中的“### 1. 热门题材”部分。
@@ -73,9 +73,9 @@ PARSE_GENRES_system_prompt = """
 3. 输出: 将提取的题材名称列表以指定的JSON格式输出。
 
 # 输出要求
-- 严格按照 Pydantic 模型的格式，仅输出一个完整的、有效的 JSON 对象。
+- 严格按照 Pydantic 模型的格式, 仅输出一个完整的、有效的 JSON 对象。
 - 禁止在 JSON 前后添加任何额外解释、注释或 markdown 代码块。
-- 如果报告中没有“热门题材”部分或该部分为空，则输出一个空的 `genres` 列表。
+- 如果报告中没有“热门题材”部分或该部分为空, 则输出一个空的 `genres` 列表。
 """
 
 
@@ -84,43 +84,43 @@ CHOOSE_BEST_OPPORTUNITY_system_prompt = """
 你是一位经验丰富的网文市场战略家。
 
 # 任务
-综合分析所有输入信息，识别出多个具有商业潜力的“平台-题材”组合。对它们进行排序，并以一个纯粹的、结构化的JSON对象格式输出你的完整分析报告。
+综合分析所有输入信息, 识别出多个具有商业潜力的“平台-题材”组合。对它们进行排序, 并以一个纯粹的、结构化的JSON对象格式输出你的完整分析报告。
 
 # 决策维度
 1.  动态机会 (广域扫描报告): 
-    - 题材热度: `热门题材` 是否流行？
-    - 官方动向: `官方动向` 是否与特定题材相关？
+    - 题材热度: `热门题材` 是否流行?
+    - 官方动向: `官方动向` 是否与特定题材相关?
 2.  新人机会 (新人机会评估报告):
-    - 平台机会: `综合评级` 是高还是低？
+    - 平台机会: `综合评级` 是高还是低?
 3.  静态匹配 (平台基础信息报告):
-    - 平台调性: 目标题材与平台的主流风格是否契合？
-    - 商业模式: 平台的付费模式是否适合该题材的写作策略？
-    - 读者画像: 目标题材的读者与平台的核心读者是否一致？
-    - 内容限制: 题材是否触碰平台的内容红线？
-    - 签约门槛: 平台对新人是否友好？
+    - 平台调性: 目标题材与平台的主流风格是否契合?
+    - 商业模式: 平台的付费模式是否适合该题材的写作策略?
+    - 读者画像: 目标题材的读者与平台的核心读者是否一致?
+    - 内容限制: 题材是否触碰平台的内容红线?
+    - 签约门槛: 平台对新人是否友好?
 4.  外部趋势 (外部趋势分析报告):
-    - 核心趋势: `核心趋势`是否与题材有结合点？
-    - 跨界潜力: `跨界潜力`评级高吗？
-    - 增长预期: `增长预期`是“高增长”吗？
+    - 核心趋势: `核心趋势`是否与题材有结合点?
+    - 跨界潜力: `跨界潜力`评级高吗?
+    - 增长预期: `增长预期`是“高增长”吗?
 
 # 工作流程
-1.  分析: 仔细阅读所有输入材料，包括市场动态、新人机会、平台信息和外部趋势报告。
-2.  评估与排序: 对所有有潜力的“平台-题材”组合进行综合评估，并按潜力从高到低进行排序。
-3.  总结: 对所有机会进行整体评估，给出一句总结性的陈述。
-4.  输出: 将你的分析结果（一个包含总结和多个机会的有序列表）严格按照指定的JSON格式进行组织和输出。
+1.  分析: 仔细阅读所有输入材料, 包括市场动态、新人机会、平台信息和外部趋势报告。
+2.  评估与排序: 对所有有潜力的“平台-题材”组合进行综合评估, 并按潜力从高到低进行排序。
+3.  总结: 对所有机会进行整体评估, 给出一句总结性的陈述。
+4.  输出: 将你的分析结果(一个包含总结和多个机会的有序列表)严格按照指定的JSON格式进行组织和输出。
 
 # 输出要求
-- 严格按照 Pydantic 模型的格式，仅输出一个完整的、有效的 JSON 对象。
+- 严格按照 Pydantic 模型的格式, 仅输出一个完整的、有效的 JSON 对象。
 - 禁止在 JSON 前后添加任何额外解释、注释或 markdown 代码块。
 - JSON 结构必须符合以下定义:
-  - `summary` (string): 对整个市场机会列表的一句话总结，点明整体市场趋势或核心发现。
-  - `opportunities` (array of objects): 一个按综合潜力从高到低排序的机会列表。列表中的每个对象都应包含以下字段：
-    - `rank` (integer): 机会排名，1为最佳。
+  - `summary` (string): 对整个市场机会列表的一句话总结, 点明整体市场趋势或核心发现。
+  - `opportunities` (array of objects): 一个按综合潜力从高到低排序的机会列表。列表中的每个对象都应包含以下字段: 
+    - `rank` (integer): 机会排名, 1为最佳。
     - `platform` (string): 平台名称。
     - `genre` (string): 题材大类。
-    - `reasoning` (string): 对该机会的综合评估理由，解释其排名，说明如何平衡动态机会、静态匹配和外部趋势。
-    - `actionable_advice` (string): 具体的、可操作的创作建议，例如可以结合的热门元素、切入角度或目标读者画像。
-    - `risk_assessment` (string): 分析该机会的潜在风险，例如市场饱和度、创作难度、政策风险等。
+    - `reasoning` (string): 对该机会的综合评估理由, 解释其排名, 说明如何平衡动态机会、静态匹配和外部趋势。
+    - `actionable_advice` (string): 具体的、可操作的创作建议, 例如可以结合的热门元素、切入角度或目标读者画像。
+    - `risk_assessment` (string): 分析该机会的潜在风险, 例如市场饱和度、创作难度、政策风险等。
 """
 
 
@@ -212,9 +212,9 @@ async def task_choose_best_opportunity(
     decision = response_message.validated_data
     if decision and decision.opportunities:
         top_choice = decision.opportunities[0]
-        logger.success(f"决策完成，并成功验证了输出格式。排名第一的机会: {top_choice.platform} - {top_choice.genre}")
+        logger.success(f"决策完成, 并成功验证了输出格式。排名第一的机会: {top_choice.platform} - {top_choice.genre}")
     elif decision:
-        logger.warning("决策完成，但未返回任何市场机会。")
+        logger.warning("决策完成, 但未返回任何市场机会。")
     return decision
 
 
@@ -268,7 +268,7 @@ async def platform_subject(platforms_to_scan: list[str]):
 
     logger.info("从市场动态简报中解析热门题材...")
     if not platform_reports:
-        logger.error("没有可用的市场动态简报，无法解析题材。")
+        logger.error("没有可用的市场动态简报, 无法解析题材。")
         parse_genre_futures = []
     else:
         parse_genre_futures = task_parse_genres_from_report.map(
@@ -284,7 +284,7 @@ async def platform_subject(platforms_to_scan: list[str]):
 
     logger.info("分析各题材外部趋势...")
     if not platform_genre_pairs:
-        logger.error("未能从任何平台报告中解析出热门题材，无法进行外部趋势分析。将跳过此步骤。")
+        logger.error("未能从任何平台报告中解析出热门题材, 无法进行外部趋势分析。将跳过此步骤。")
         external_trend_reports = {}
     else:
         trend_futures = task_analyze_external_trends.map(
@@ -306,7 +306,7 @@ async def platform_subject(platforms_to_scan: list[str]):
     logger.info("决策初步机会...")
     initial_decision = await task_choose_best_opportunity(platform_reports, platform_profiles, new_author_reports, external_trend_reports)
     if not initial_decision or not initial_decision.opportunities:
-        logger.warning("未能从决策任务中获得有效结果，工作流终止。")
+        logger.warning("未能从决策任务中获得有效结果, 工作流终止。")
         return
 
     task_save_vector(

@@ -75,6 +75,15 @@ def test_dirs(tmp_path_factory) -> dict:
     logger.info(f"统一测试临时目录 {base_dir} 将被 pytest 自动清理。")
 
 
+@pytest.fixture(scope="module")
+def input_dir_with_test_files(test_dirs) -> str:
+    """在模块级别的临时目录中创建并填充测试文件。"""
+    input_path = test_dirs["input_path"]
+    logger.info(f"为测试模块填充测试文件于: {input_path}")
+    _write_test_data_to_files(input_path)
+    return input_path
+
+
 def _write_test_data_to_files(input_dir: str):
     data_map = {
         "simple.md": test_data.VECTOR_TEST_SIMPLE_MD,

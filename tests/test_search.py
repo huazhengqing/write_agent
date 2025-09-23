@@ -290,7 +290,7 @@ async def test_scrape_dynamic_short_content(monkeypatch):
 
     result = await scrape_dynamic("http://dynamic.com")
 
-    # 当内容太短时，应该返回原始HTML
+    # 当内容太短时, 应该返回原始HTML
     assert result == html_content
     mock_trafilatura.assert_called_once()
     mock_page.goto.assert_called_once()
@@ -386,7 +386,7 @@ async def test_web_search_cache_miss(monkeypatch):
 
 
 async def test_web_search_failure_raises_error(monkeypatch):
-    """【单元测试】测试当所有搜索策略失败时，web_search 是否引发 RuntimeError。"""
+    """【单元测试】测试当所有搜索策略失败时, web_search 是否引发 RuntimeError。"""
     logger.info("--- 测试 web_search (全部失败) ---")
     # 模拟两种搜索策略都引发异常
     mock_searxng = AsyncMock(side_effect=Exception("SearXNG failed"))
@@ -437,7 +437,7 @@ async def test_targeted_search_query_construction(monkeypatch, platforms, expect
         for site in expected_sites:
             assert site in final_query, f"预期站点 '{site}' 未在查询中找到"
     else:
-        # 如果没有提供有效平台，不应有 site: 限制
+        # 如果没有提供有效平台, 不应有 site: 限制
         assert "site:" not in final_query
 
     if "未知平台" in platforms:
@@ -447,7 +447,7 @@ async def test_targeted_search_query_construction(monkeypatch, platforms, expect
 
 
 async def test_targeted_search_no_platforms(monkeypatch):
-    """【单元测试】测试当未提供平台时，targeted_search 是否回退到通用搜索。"""
+    """【单元测试】测试当未提供平台时, targeted_search 是否回退到通用搜索。"""
     logger.info("--- 测试 targeted_search (无平台) ---")
     mock_web_search = AsyncMock(return_value="Mocked search result")
     monkeypatch.setattr("utils.search.web_search", mock_web_search)
@@ -455,7 +455,7 @@ async def test_targeted_search_no_platforms(monkeypatch):
     query = "some query"
     await targeted_search(query=query, platforms=None, sites=None)
 
-    # 验证它是否像通用搜索一样被调用，没有 site: 限制
+    # 验证它是否像通用搜索一样被调用, 没有 site: 限制
     mock_web_search.assert_called_once_with(query=query, max_results=5)
     logger.success("--- targeted_search (无平台) 测试通过 ---")
 
@@ -472,7 +472,7 @@ async def test_targeted_search_live():
     assert isinstance(results, str), "搜索结果应为字符串"
     assert "搜索结果 1" in results, "应包含'搜索结果 1'标识"
     assert "链接:" in results, "应包含'链接:'"
-    # 检查结果是否确实来自指定网站（或至少其中之一）
+    # 检查结果是否确实来自指定网站(或至少其中之一)
     assert "zhihu.com" in results or "36kr.com" in results, "结果中应包含指定网站的链接"
     logger.success("--- targeted_search (实时) 测试通过 ---")
 
@@ -481,7 +481,7 @@ async def test_targeted_search_live():
 async def test_scrape_and_extract_live():
     """【集成测试】测试 scrape_and_extract 函数在已知URL上的实时抓取和提取功能。"""
     logger.info("--- 测试 scrape_and_extract (实时) ---")
-    # 知乎专栏是一个很好的候选者，因为它可能需要动态抓取
+    # 知乎专栏是一个很好的候选者, 因为它可能需要动态抓取
     url = "https://zhuanlan.zhihu.com/p/616386443"
     content = await scrape_and_extract(url)
 
@@ -497,7 +497,7 @@ async def test_scrape_content_truncation(monkeypatch):
     logger.info("--- 测试 scrape_and_extract (内容截断) ---")
     max_length = 500 # Use a smaller length for easier testing
     # 创建一个带有多种句子结束符的长模拟文本
-    long_text = "第一句。第二句！第三句？第四句。" * (max_length // 10)
+    long_text = "第一句。第二句！第三句?第四句。" * (max_length // 10)
     assert len(long_text) > max_length
 
     # 模拟抓取策略以返回我们的长文本
@@ -515,7 +515,7 @@ async def test_scrape_content_truncation(monkeypatch):
 
     assert len(truncated_content) <= max_length + 1  # 允许结尾字符
     # 最后一个字符应该是原始文本中的标点符号
-    assert truncated_content.endswith(("。", "！", "？", ".", "!", "?"))
+    assert truncated_content.endswith(("。", "！", "?", ".", "!", "?"))
 
     # 验证截断逻辑
     end_pos = long_text.rfind('。', 0, max_length)
@@ -525,7 +525,7 @@ async def test_scrape_content_truncation(monkeypatch):
 
 
 async def test_scrape_failure_returns_empty_string(monkeypatch, caplog):
-    """【单元测试】测试当所有抓取策略失败时，scrape_and_extract 是否返回空字符串并记录错误。"""
+    """【单元测试】测试当所有抓取策略失败时, scrape_and_extract 是否返回空字符串并记录错误。"""
     logger.info("--- 测试 scrape_and_extract (全部失败) ---")
     url = "http://non-existent-url.com"
     mockscrape_static = AsyncMock(side_effect=Exception("Static scrape failed"))
@@ -540,7 +540,7 @@ async def test_scrape_failure_returns_empty_string(monkeypatch, caplog):
 
     result = await scrape_and_extract(url)
 
-    assert result == "", "当所有抓取策略失败时，应返回空字符串"
+    assert result == "", "当所有抓取策略失败时, 应返回空字符串"
     mockscrape_static.assert_called_once_with(url)
     mockscrape_dynamic.assert_called_once_with(url)
 
@@ -550,12 +550,12 @@ async def test_scrape_failure_returns_empty_string(monkeypatch, caplog):
 
 
 async def test_scrape_fallback_strategy(monkeypatch, caplog):
-    """【单元测试】测试抓取策略的降级：静态失败后，动态成功。"""
+    """【单元测试】测试抓取策略的降级: 静态失败后, 动态成功。"""
     logger.info("--- 测试 scrape_and_extract (降级策略) ---")
     url = "http://requires-js.com"
     expected_content = "这是由JavaScript动态加载的内容。"
 
-    # 模拟静态抓取失败（例如，返回空内容或抛出异常）
+    # 模拟静态抓取失败(例如, 返回空内容或抛出异常)
     mockscrape_static = AsyncMock(return_value="")
     monkeypatch.setattr("utils.search.scrape_static", mockscrape_static)
 

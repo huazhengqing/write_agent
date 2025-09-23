@@ -24,8 +24,8 @@ from llama_index.core.query_engine import RetrieverQueryEngine
 from llama_index.core.node_parser import JSONNodeParser, SentenceSplitter
 from llama_index.core.node_parser import MarkdownElementNodeParser
 from llama_index.core.node_parser.interface import NodeParser
-from llama_index.core.retrievers import VectorIndexAutoRetriever
-from llama_index.core.response_synthesizers import CompactAndRefine
+from llama_index.core.retrievers import VectorIndexAutoRetriever, VectorIndexRetriever
+from llama_index.core.response_synthesizers import TreeSummarize
 from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo, MetadataInfo
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.core.schema import BaseNode, TextNode, NodeRelationship, RelatedNodeInfo
@@ -38,9 +38,11 @@ from utils.config import llm_temperatures, get_llm_params, get_embedding_params
 from utils.file import cache_dir
 from utils.vector_prompts import (
     summary_query_str,
-    text_qa_prompt,
-    refine_prompt,
+    # text_qa_prompt,
+    # refine_prompt,
+    tree_summary_prompt,
     mermaid_summary_prompt,
+    vector_store_query_prompt
 )
 
 
@@ -77,15 +79,15 @@ def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
 
 synthesis_llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["synthesis"])
 
-synthesizer = CompactAndRefine(
+synthesizer = TreeSummarize(
     llm=LiteLLM(**synthesis_llm_params),
-    text_qa_template=PromptTemplate(text_qa_prompt),
-    refine_template=PromptTemplate(refine_prompt),
+    summary_template=PromptTemplate(tree_summary_prompt),
     prompt_helper = PromptHelper(
         context_window=synthesis_llm_params.get('context_window', 8192),
         num_output=synthesis_llm_params.get('max_tokens', 2048),
         chunk_overlap_ratio=0.2,
-    )
+    ),
+    use_async=True,
 )
 
 
@@ -127,11 +129,11 @@ def _load_and_filter_documents(
     for doc in documents:
         file_path = Path(doc.metadata.get("file_path", doc.id_))
         if not doc.text or not doc.text.strip():
-            logger.warning(f"⚠️ 文件 '{file_path.name}' 内容为空，已跳过。")
+            logger.warning(f"⚠️ 文件 '{file_path.name}' 内容为空, 已跳过。")
             continue
         valid_docs.append(doc)
     
-    logger.success(f"完成文档加载和过滤，共获得 {len(valid_docs)} 个有效文档。")
+    logger.success(f"完成文档加载和过滤, 共获得 {len(valid_docs)} 个有效文档。")
     return valid_docs
 
 
@@ -146,7 +148,7 @@ class MermaidExtractor:
 
         logger.debug("正在为 Mermaid 图表生成摘要...")
         summary_response = self._llm.predict(self._summary_prompt, mermaid_code=mermaid_code)
-        logger.debug(f"Mermaid 图表摘要生成完毕，长度: {len(summary_response)}")
+        logger.debug(f"Mermaid 图表摘要生成完毕, 长度: {len(summary_response)}")
 
         summary_node = TextNode(
             text=f"Mermaid图表摘要:\n{summary_response}",
@@ -179,19 +181,19 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
                 continue
             
             if part.startswith("```mermaid"):
-                logger.debug("在 Markdown 中检测到 Mermaid 图表，正在提取...")
+                logger.debug("在 Markdown 中检测到 Mermaid 图表, 正在提取...")
                 mermaid_code = part.removeprefix("```mermaid\n").removesuffix("\n```")
                 mermaid_nodes = self.mermaid_extractor.get_nodes(mermaid_code, node.metadata)
                 logger.debug(f"  - Mermaid 图表部分提取了 {len(mermaid_nodes)} 个节点。")
                 final_nodes.extend(mermaid_nodes)
             else:
-                logger.debug("在 Markdown 中检测到常规文本部分，正在使用父解析器处理...")
+                logger.debug("在 Markdown 中检测到常规文本部分, 正在使用父解析器处理...")
                 temp_node = Document(text=part, metadata=node.metadata)
                 regular_nodes = super().get_nodes_from_node(temp_node)
                 logger.debug(f"  - 常规文本部分解析出 {len(regular_nodes)} 个节点。")
                 final_nodes.extend(regular_nodes)
                 
-        logger.debug(f"CustomMarkdownNodeParser 完成处理，共生成 {len(final_nodes)} 个子节点。")
+        logger.debug(f"CustomMarkdownNodeParser 完成处理, 共生成 {len(final_nodes)} 个子节点。")
         return final_nodes
 
 
@@ -255,7 +257,7 @@ def _parse_docs_to_nodes_by_format(documents: List[Document]) -> List[BaseNode]:
         if file_extension in docs_by_format:
             docs_by_format[file_extension].append(doc)
         else:
-            logger.warning(f"检测到未支持的文件扩展名 '{file_extension}'，将忽略。")
+            logger.warning(f"检测到未支持的文件扩展名 '{file_extension}', 将忽略。")
 
     all_nodes = []
     for content_format, format_docs in docs_by_format.items():
@@ -271,7 +273,7 @@ def _parse_docs_to_nodes_by_format(documents: List[Document]) -> List[BaseNode]:
         logger.info(f"  - 从 '{content_format}' 文件中成功解析出 {len(nodes_for_format)} 个节点。")
         all_nodes.extend(nodes_for_format)
     
-    logger.success(f"文档解析完成，总共生成 {len(all_nodes)} 个节点。")
+    logger.success(f"文档解析完成, 总共生成 {len(all_nodes)} 个节点。")
     return all_nodes
 
 
@@ -314,10 +316,7 @@ def _parse_content_to_nodes(
     doc_id: Optional[str] = None,
 ) -> List[BaseNode]:
     logger.info(f"开始为 doc_id '{doc_id}' 解析内容为节点 (格式: {content_format})...")
-    final_metadata = metadata.copy()
-    if "date" not in final_metadata:
-        final_metadata["date"] = datetime.now().strftime("%Y-%m-%d")
-    doc = Document(text=content, metadata=final_metadata, id_=doc_id)
+    doc = Document(text=content, metadata=metadata, id_=doc_id)
     node_parser = _get_node_parser(content_format, content_length=len(content))
     nodes = filter_invalid_nodes(node_parser.get_nodes_from_documents([doc], show_progress=False))
     logger.info(f"为 doc_id '{doc_id}' 解析出 {len(nodes)} 个节点。")
@@ -333,20 +332,20 @@ def vector_add(
 ) -> bool:
     logger.info(f"开始向向量库添加内容, doc_id='{doc_id}', format='{content_format}'...")
     if not content or not content.strip() or "生成报告时出错" in content:
-        logger.warning(f"🤷 内容为空或包含错误，跳过存入向量库。元数据: {metadata}")
+        logger.warning(f"🤷 内容为空或包含错误, 跳过存入向量库。元数据: {metadata}")
         return False
 
     new_content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
     doc_cache = getattr(vector_store, "cache", None)
     if doc_cache and doc_cache.get(new_content_hash):
-        logger.info(f"内容 (hash: {new_content_hash[:8]}...) 已存在，跳过重复添加。")
+        logger.info(f"内容 (hash: {new_content_hash[:8]}...) 已存在, 跳过重复添加。")
         return True
 
     effective_doc_id = doc_id or new_content_hash
 
     nodes_to_insert = _parse_content_to_nodes(content, metadata, content_format, effective_doc_id)
     if not nodes_to_insert:
-        logger.warning(f"内容 (id: {effective_doc_id}) 未解析出任何有效节点，跳过添加。")
+        logger.warning(f"内容 (id: {effective_doc_id}) 未解析出任何有效节点, 跳过添加。")
         return False
 
     logger.info(f"准备将 {len(nodes_to_insert)} 个节点 (id: {effective_doc_id}) 注入 IngestionPipeline...")
@@ -383,7 +382,7 @@ def get_vector_store_info_default() -> VectorStoreInfo:
         MetadataInfo(
             name="date",
             type="str",
-            description="内容的创建或关联日期，格式为 'YYYY-MM-DD'。",
+            description="内容的创建或关联日期, 格式为 'YYYY-MM-DD'。",
         ),
         MetadataInfo(
             name="word_count",
@@ -398,39 +397,26 @@ def get_vector_store_info_default() -> VectorStoreInfo:
     )
 
 
-def _create_reranker(rerank_top_n: int) -> Optional[SiliconFlowRerank]:
-    if rerank_top_n and rerank_top_n > 0:
-        logger.debug(f"正在创建 Reranker, top_n={rerank_top_n}")
-        return SiliconFlowRerank(
-            api_key=os.getenv("SILICONFLOW_API_KEY"),
-            top_n=rerank_top_n,
-        )
-    logger.debug("rerank_top_n 为 0 或未设置, 不创建 Reranker。")
-    return None
-
-
 def _create_auto_retriever_engine(
     index: VectorStoreIndex,
     vector_store_info: VectorStoreInfo,
     similarity_top_k: int,
-    similarity_cutoff: float,
-    postprocessors: List,
+    node_postprocessors: List,
 ) -> BaseQueryEngine:
     logger.info("正在创建 Auto-Retriever 查询引擎...")
     reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
     reasoning_llm = LiteLLM(**reasoning_llm_params)
     retriever = VectorIndexAutoRetriever(
-        index,
+        index=index,
         vector_store_info=vector_store_info,
-        similarity_top_k=similarity_top_k,
         llm=reasoning_llm,
-        verbose=True,
-        similarity_cutoff=similarity_cutoff,
+        prompt_template_str=vector_store_query_prompt, 
+        similarity_top_k=similarity_top_k,
     )
     query_engine = RetrieverQueryEngine(
         retriever=retriever,
         response_synthesizer=synthesizer,
-        node_postprocessors=postprocessors,
+        node_postprocessors=node_postprocessors,
     )
     logger.success("Auto-Retriever 查询引擎创建成功。")
     return query_engine
@@ -440,32 +426,34 @@ def get_vector_query_engine(
     vector_store: VectorStore,
     filters: Optional[MetadataFilters] = None,
     similarity_top_k: int = 25,
-    rerank_top_n: int = 5,
-    similarity_cutoff: float = 0,
+    top_n: int = 5,
     use_auto_retriever: bool = False,
     vector_store_info: VectorStoreInfo = get_vector_store_info_default(),
 ) -> BaseQueryEngine:
     logger.info("开始构建向量查询引擎...")
     logger.debug(
-        f"参数: similarity_top_k={similarity_top_k}, rerank_top_n={rerank_top_n}, "
+        f"参数: similarity_top_k={similarity_top_k}, top_n={top_n}, "
         f"use_auto_retriever={use_auto_retriever}, filters={filters}, "
-        f"similarity_cutoff={similarity_cutoff}"
     )
 
     index = VectorStoreIndex.from_vector_store(vector_store)
     logger.debug("从 VectorStore 创建 VectorStoreIndex 完成。")
 
-    reranker = _create_reranker(rerank_top_n)
-    postprocessors = [reranker] if reranker else []
-    logger.debug(f"已配置 {len(postprocessors)} 个后处理器。")
+    reranker = None
+    if top_n and top_n > 0:
+        logger.debug(f"正在创建 Reranker, top_n={top_n}")
+        reranker = SiliconFlowRerank(
+            api_key=os.getenv("SILICONFLOW_API_KEY"),
+            top_n=top_n,
+        )
+    node_postprocessors = [reranker] if reranker else []
 
     if use_auto_retriever:
         query_engine = _create_auto_retriever_engine(
             index=index,
             vector_store_info=vector_store_info,
             similarity_top_k=similarity_top_k,
-            similarity_cutoff=similarity_cutoff,
-            postprocessors=postprocessors,
+            node_postprocessors=node_postprocessors,
         )
     else:
         logger.info("正在创建标准查询引擎...")
@@ -473,8 +461,7 @@ def get_vector_query_engine(
             response_synthesizer=synthesizer, 
             filters=filters, 
             similarity_top_k=similarity_top_k,
-            node_postprocessors=postprocessors, 
-            similarity_cutoff=similarity_cutoff
+            node_postprocessors=node_postprocessors, 
         )
         logger.success("标准查询引擎创建成功。")
     
@@ -496,7 +483,7 @@ async def index_query(query_engine: BaseQueryEngine, question: str) -> str:
     source_nodes = getattr(result, "source_nodes", [])
 
     if not source_nodes or not answer or answer == "Empty Response":
-        logger.warning(f"查询 '{question}' 未检索到任何源节点或有效响应，返回空回答。")
+        logger.warning(f"查询 '{question}' 未检索到任何源节点或有效响应, 返回空回答。")
         answer = ""
     else:
         logger.info(f"查询 '{question}' 检索到 {len(source_nodes)} 个源节点。")
@@ -524,11 +511,11 @@ async def index_query_batch(query_engine: BaseQueryEngine, questions: List[str])
             try:
                 return await index_query(query_engine, question)
             except Exception as e:
-                logger.error("批量查询中，问题 '{}' 失败: {}", question, e, exc_info=True)
+                logger.error("批量查询中, 问题 '{}' 失败: {}", question, e, exc_info=True)
                 return ""
 
     tasks = [safe_query(q) for q in questions]
     results = await asyncio.gather(*tasks)
 
-    logger.success(f"批量向量查询完成，成功处理 {len(results)} 个问题。")
+    logger.success(f"批量向量查询完成, 成功处理 {len(results)} 个问题。")
     return results

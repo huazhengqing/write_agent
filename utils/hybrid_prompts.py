@@ -31,7 +31,6 @@ synthesis_user_prompt = """
 {question}
 
 # 从数据库中检索到的信息源
-
 ## 向量数据库检索结果 (语义与上下文)
 {vector_str}
 

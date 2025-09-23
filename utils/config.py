@@ -183,8 +183,8 @@ def get_llm_params(
         llm_params["messages"] = copy.deepcopy(messages)
 
     # `max_retries` 用于 llama-index LiteLLM 包装器的重试机制。
-    # 我们将其设置为 1 (即尝试1次，不重试)，以便让 litellm 自身更复杂的回退和重试逻辑优先执行。
-    # llm_params 中的 `num_retries` 参数会被传递给 litellm，用于控制其内部重试。
+    # 我们将其设置为 1 (即尝试1次, 不重试), 以便让 litellm 自身更复杂的回退和重试逻辑优先执行。
+    # llm_params 中的 `num_retries` 参数会被传递给 litellm, 用于控制其内部重试。
     llm_params["max_retries"] = 1
 
     return llm_params

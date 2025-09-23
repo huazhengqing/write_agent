@@ -62,11 +62,11 @@ def _get_kg_node_parser(
 ) -> NodeParser:
     logger.debug(f"为 '{content_format}' (长度: {content_length}) 选择知识图谱节点解析器。")
     if content_length < chunk_size:
-        logger.debug("内容较短，使用 SimpleNodeParser。")
+        logger.debug("内容较短, 使用 SimpleNodeParser。")
         return SimpleNodeParser.from_defaults(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
     if content_format == "json":
-        logger.debug("内容格式为 JSON，使用 SimpleNodeParser。")
+        logger.debug("内容格式为 JSON, 使用 SimpleNodeParser。")
         parser = SimpleNodeParser.from_defaults(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     elif content_format == "md":
         parser = MarkdownElementNodeParser(
@@ -76,7 +76,7 @@ def _get_kg_node_parser(
             include_metadata=True,
         )
     else:
-        logger.debug("内容格式为 TXT，使用 SentenceSplitter。")
+        logger.debug("内容格式为 TXT, 使用 SentenceSplitter。")
         parser = SentenceSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
     return parser
 
@@ -97,7 +97,7 @@ def kg_add(
     doc_cache = getattr(kg_store, "cache", None)
     new_content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
     if doc_cache and doc_cache.get(new_content_hash):
-        logger.info(f"内容 (hash: {new_content_hash[:8]}...) 已存在，跳过知识图谱更新。")
+        logger.info(f"内容 (hash: {new_content_hash[:8]}...) 已存在, 跳过知识图谱更新。")
         return
 
     doc = Document(id_=doc_id, text=content, metadata=metadata)
@@ -106,7 +106,7 @@ def kg_add(
     )
 
     max_triplets_per_chunk = max(1, round(chunk_size / chars_per_triplet))
-    logger.info(f"根据 chars_per_triplet={chars_per_triplet} 和 chunk_size={chunk_size}，动态设置 max_triplets_per_chunk={max_triplets_per_chunk}")
+    logger.info(f"根据 chars_per_triplet={chars_per_triplet} 和 chunk_size={chunk_size}, 动态设置 max_triplets_per_chunk={max_triplets_per_chunk}")
     
     path_extractor = SimpleLLMPathExtractor(
         llm=llm_for_extraction,
@@ -128,7 +128,7 @@ def kg_add(
         embed_model=Settings.embed_model,
         show_progress=False,
     )
-    logger.info(f"PropertyGraphIndex 核心处理完成，耗时: {time.time() - step_start_time:.2f}s")
+    logger.info(f"PropertyGraphIndex 核心处理完成, 耗时: {time.time() - step_start_time:.2f}s")
 
     if doc_cache:
         doc_cache.set(new_content_hash, True)
@@ -142,11 +142,11 @@ def kg_add(
 def get_kg_query_engine(
     kg_store: KuzuPropertyGraphStore,
     kg_similarity_top_k: int = 300,
-    kg_rerank_top_n: int = 100,
+    top_n: int = 100,
 ) -> BaseQueryEngine:
     logger.info("开始构建知识图谱查询引擎...")
     logger.debug(
-        f"参数: kg_similarity_top_k={kg_similarity_top_k}, kg_rerank_top_n={kg_rerank_top_n}"
+        f"参数: kg_similarity_top_k={kg_similarity_top_k}, top_n={top_n}"
     )
 
     step_time = time.time()
@@ -156,19 +156,17 @@ def get_kg_query_engine(
         embed_kg_nodes=True,
         embed_model=Settings.embed_model,
     )
-    logger.debug(f"从现有存储加载PropertyGraphIndex完成，耗时: {time.time() - step_time:.2f}s")
+    logger.debug(f"从现有存储加载PropertyGraphIndex完成, 耗时: {time.time() - step_time:.2f}s")
 
     step_time = time.time()
     postprocessors = []
-    if kg_rerank_top_n > 0:
+    if top_n > 0:
         reranker = SiliconFlowRerank(
             api_key=os.getenv("SILICONFLOW_API_KEY"),
-            top_n=kg_rerank_top_n,
+            top_n=top_n,
         )
         postprocessors.append(reranker)
-        logger.debug(f"Reranker创建完成，耗时: {time.time() - step_time:.2f}s")
-    else:
-        logger.debug("kg_rerank_top_n <= 0, 不使用 Reranker。")
+        logger.debug(f"Reranker创建完成, 耗时: {time.time() - step_time:.2f}s")
 
     step_time = time.time()
     from llama_index.core.indices.knowledge_graph.retrievers import (
@@ -183,7 +181,7 @@ def get_kg_query_engine(
         llm=llm_for_reasoning,
         include_text=True,
     )
-    logger.debug(f"as_query_engine调用完成，耗时: {time.time() - step_time:.2f}s")
+    logger.debug(f"as_query_engine调用完成, 耗时: {time.time() - step_time:.2f}s")
 
     logger.success("知识图谱查询引擎构建成功。")
     return query_engine

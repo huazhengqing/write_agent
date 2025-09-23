@@ -120,9 +120,9 @@ def get_web_search_tool() -> FunctionTool:
         fn=web_search,
         name="web_search",
         description=(
-            "功能: 执行通用网络搜索，返回搜索结果列表（标题、链接、摘要）。\n"
-            "使用时机: 当你需要对一个主题进行初步研究，或寻找信息来源时使用。\n"
-            "注意: 本工具只返回搜索摘要，不抓取网页全文。如需阅读页面详细内容，请在获得URL后使用 `web_scraper` 工具。\n"
+            "功能: 执行通用网络搜索, 返回搜索结果列表(标题、链接、摘要)。\n"
+            "使用时机: 当你需要对一个主题进行初步研究, 或寻找信息来源时使用。\n"
+            "注意: 本工具只返回搜索摘要, 不抓取网页全文。如需阅读页面详细内容, 请在获得URL后使用 `web_scraper` 工具。\n"
             "参数: `query` (str, 必需) - 搜索关键词或问题。"
         )
     )
@@ -160,7 +160,7 @@ platform_categories = {
     "作家社区": ["龙空", "橙瓜", "优书网"],
 }
 
-# 平台别名映射，用于将用户的模糊输入（如拼音、英文、简称）标准化为规范名称
+# 平台别名映射, 用于将用户的模糊输入(如拼音、英文、简称)标准化为规范名称
 # 格式: "别名": "规范名" (规范名应存在于 platform_site_map 或 platform_categories 中)
 platform_aliases = {
     # 别名: 规范名
@@ -359,7 +359,7 @@ async def targeted_search(query: str, platforms: Optional[List[str]] = None, sit
     all_sites = set(sites or [])
     if platforms:
         for p_user in platforms:
-            # 1. 标准化用户输入：转小写并通过别名映射
+            # 1. 标准化用户输入: 转小写并通过别名映射
             normalized_p = platform_aliases.get(p_user.lower(), p_user)
             
             matched_sites_for_p = set()
@@ -376,7 +376,7 @@ async def targeted_search(query: str, platforms: Optional[List[str]] = None, sit
             if normalized_p in platform_site_map:
                 matched_sites_for_p.add(platform_site_map[normalized_p])
 
-            # 3. 如果没有精确匹配结果，则尝试模糊匹配（子字符串）
+            # 3. 如果没有精确匹配结果, 则尝试模糊匹配(子字符串)
             if not matched_sites_for_p:
                 for p_key, site in platform_site_map.items():
                     if normalized_p in p_key:
@@ -385,11 +385,11 @@ async def targeted_search(query: str, platforms: Optional[List[str]] = None, sit
             if matched_sites_for_p:
                 all_sites.update(matched_sites_for_p)
             else:
-                logger.warning(f"未找到与 '{p_user}' (normalized to '{normalized_p}') 匹配的平台或分类，将被忽略。")
+                logger.warning(f"未找到与 '{p_user}' (normalized to '{normalized_p}') 匹配的平台或分类, 将被忽略。")
 
     if not all_sites:
         search_query = query
-        logger.info(f"未指定平台或网站，执行通用搜索: '{search_query}'")
+        logger.info(f"未指定平台或网站, 执行通用搜索: '{search_query}'")
     else:
         site_query_part = " OR ".join([f"site:{s}" for s in all_sites])
         search_query = f"({site_query_part}) {query}"
@@ -407,16 +407,16 @@ def get_targeted_search_tool() -> FunctionTool:
         name="targeted_search",
         description=(
             "功能: 在一个或多个特定网站、平台或网站类别上进行定向搜索。\n"
-            "使用时机: 当你需要从特定来源（如'知乎'）、特定领域（如'小说'、'学术'）获取信息时，此工具比通用 `web_search` 更精确。\n"
-            "核心参数: `platforms` 是此工具的关键，用于指定搜索范围。\n"
+            "使用时机: 当你需要从特定来源(如'知乎')、特定领域(如'小说'、'学术')获取信息时, 此工具比通用 `web_search` 更精确。\n"
+            "核心参数: `platforms` 是此工具的关键, 用于指定搜索范围。\n"
             "可用分类: '社交', '国内社交', '国际社交', '小说', '国内小说', '港台小说', '国际小说', '技术', '学术', '趋势', '资讯', '作家社区' 等。\n"
             "参数:\n"
             "- `query` (str, 必需): 核心搜索查询。\n"
-            "- `platforms` (Optional[List[str]]): 平台或分类名称的列表。可使用分类名（如 '小说'）或平台名（如 '知乎', 'B站'）。\n"
-            "- `sites` (Optional[List[str]]): 网站域名列表，用于补充 `platforms` 未覆盖的网站。例如: ['some-forum.com']。\n"
+            "- `platforms` (Optional[List[str]]): 平台或分类名称的列表。可使用分类名(如 '小说')或平台名(如 '知乎', 'B站')。\n"
+            "- `sites` (Optional[List[str]]): 网站域名列表, 用于补充 `platforms` 未覆盖的网站。例如: ['some-forum.com']。\n"
             "使用指南:\n"
             "1. 优先使用 `platforms` 参数进行范围限定。\n"
-            "2. 如果 `platforms` 和 `sites` 均未提供，则退化为通用搜索。\n"
+            "2. 如果 `platforms` 和 `sites` 均未提供, 则退化为通用搜索。\n"
             "示例:\n"
             "- 查B站热点: `targeted_search(query='科幻小说流行元素', platforms=['B站'])`\n"
             "- 查小说网站和社区的差评套路: `targeted_search(query='近期网文差评套路', platforms=['小说', '龙空'])`\n"
@@ -474,7 +474,7 @@ async def scrape_dynamic(url: str) -> Optional[str]:
     if page_text and len(page_text.strip()) > 50:
         return page_text
 
-    logger.warning(f"动态渲染抓取后，Trafilatura 仍未能提取到有效内容，将返回原始HTML作为后备。 URL: {url}")
+    logger.warning(f"动态渲染抓取后, Trafilatura 仍未能提取到有效内容, 将返回原始HTML作为后备。 URL: {url}")
     return html_content
 
 
@@ -530,9 +530,9 @@ def get_web_scraper_tool() -> FunctionTool:
         name="web_scraper",
         description=(
             "功能: 抓取并提取指定URL网页的正文内容。\n"
-            "使用时机: 通过 `web_search` 或 `targeted_search` 获得网页URL后，用此工具读取其详细内容。\n"
+            "使用时机: 通过 `web_search` 或 `targeted_search` 获得网页URL后, 用此工具读取其详细内容。\n"
             "参数: `url` (str, 必需) - 完整的网页地址。\n"
-            "失败处理: 如果工具执行失败并抛出异常，说明该URL无法访问或无有效内容。**禁止重试**，应放弃该URL，寻找其他信息源。"
+            "失败处理: 如果工具执行失败并抛出异常, 说明该URL无法访问或无有效内容。**禁止重试**, 应放弃该URL, 寻找其他信息源。"
         )
     )
 

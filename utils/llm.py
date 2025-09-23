@@ -17,7 +17,7 @@ from utils.config import get_llm_params, llm_temperatures
 
 def custom_get_cache_key(**kwargs):
     """
-    根据调用类型（completion, embedding, rerank）生成不同的缓存键。
+    根据调用类型(completion, embedding, rerank)生成不同的缓存键。
     - completion: 基于 "messages" 和 "temperature"。
     - embedding: 基于 "model" 和 "input"。
     - rerank: 基于 "query", "documents" 和 "top_n"。
@@ -54,7 +54,7 @@ def custom_get_cache_key(**kwargs):
             "documents": docs_str,
             "top_n": top_n,
         }
-    # 后备逻辑，使用所有可序列化参数
+    # 后备逻辑, 使用所有可序列化参数
     else:
         serializable_kwargs = {k: v for k, v in kwargs.items() if isinstance(v, (str, int, float, bool, list, dict, tuple, type(None)))}
         key_data = {"type": "unknown", "params": json.dumps(serializable_kwargs, sort_keys=True, default=str)}
@@ -192,7 +192,7 @@ def _handle_llm_failure(
         system_message = [m for m in llm_params["messages"] if m["role"] == "system"]
         llm_params_for_api["messages"] = system_message + [{"role": "user", "content": correction_prompt}]
     else:
-        # 如果不是可修正的错误，或者没有 response_model，则重置为原始消息
+        # 如果不是可修正的错误, 或者没有 response_model, 则重置为原始消息
         llm_params_for_api["messages"] = llm_params["messages"]
 
     logger.info("正在准备重试...")
@@ -304,7 +304,7 @@ async def llm_completion(
 
 
 extraction_system_prompt = """
-你是一个数据提取专家。你的任务是根据用户提供的文本，严格按照给定的 Pydantic JSON Schema 提取信息并生成一个 JSON 对象。
+你是一个数据提取专家。你的任务是根据用户提供的文本, 严格按照给定的 Pydantic JSON Schema 提取信息并生成一个 JSON 对象。
 你的输出必须是、且只能是一个完整的、有效的 JSON 对象。
 不要添加任何解释、注释或代码块。
 """

@@ -48,7 +48,7 @@ AI小说研究员。
     - `instructions`: (可选) 任务的【具体指令】(HOW): 明确指出需要执行的步骤、包含的关键要素或信息点。
     - `input_brief`: (可选) 任务的【输入指引】(FROM WHERE): 指导执行者应重点关注依赖项中的哪些关键信息。
     - `constraints`: (可选) 任务的【限制和禁忌】(WHAT NOT): 明确指出需要避免的内容或必须遵守的规则。
-    - `acceptance_criteria`: (可选) 任务的【验收标准】(VERIFY HOW): 定义任务完成的衡量标准，用于后续评审。
+    - `acceptance_criteria`: (可选) 任务的【验收标准】(VERIFY HOW): 定义任务完成的衡量标准, 用于后续评审。
     - `dependency`: 同层级的前置任务ID列表。
     - `sub_tasks`: 子任务列表。
 - JSON转义: `"` 和 `\\` 等特殊字符必须正确转义。

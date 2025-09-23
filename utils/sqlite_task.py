@@ -293,7 +293,7 @@ class TaskDB:
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = []
         for row in sorted_rows:
-            # 逻辑：组合多个设计相关字段
+            # 逻辑: 组合多个设计相关字段
             # 1. 设计内容: design_reflection 优先于 design
             # 2. 设计评审: review_design
             # 3. 正文评审: review_write
@@ -358,7 +358,7 @@ class TaskDB:
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = []
         for row in sorted_rows:
-            # 逻辑：组合多个设计相关字段
+            # 逻辑: 组合多个设计相关字段
             # 1. 设计内容: design_reflection 优先于 design
             # 2. 设计评审: review_design
             # 3. 正文评审: review_write
@@ -421,7 +421,7 @@ class TaskDB:
         # 此查询利用新创建的 idx_updated_at 索引, 避免了全表扫描, 显著提升性能。
         # 原有实现是基于任务ID进行自然排序, 必须加载所有数据到内存, 性能较差。
         # 此处将“最新”的定义从“任务ID最大”调整为“时间上最近更新”, 更符合直觉且高效。
-        logger.debug(f"正在获取最近的写作反思内容，目标长度: {length}...")
+        logger.debug(f"正在获取最近的写作反思内容, 目标长度: {length}...")
         with self._lock:
             self.cursor.execute(
                 """
@@ -448,7 +448,7 @@ class TaskDB:
                 if total_length >= length:
                     break
         
-        logger.info(f"获取了 {len(content_parts)} 条最近的写作反思，总长度: {total_length}。")
+        logger.info(f"获取了 {len(content_parts)} 条最近的写作反思, 总长度: {total_length}。")
         # 因为我们是按时间倒序获取的(最新在前), 所以需要反转列表以恢复正确的时序
         return "\n\n".join(reversed(content_parts))
 

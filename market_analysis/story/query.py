@@ -19,7 +19,7 @@ async def market_query(
 ) -> Optional[str]:
     filters = None
     if query_date:
-        logger.info(f"  - 配置元数据过滤器，按日期筛选: {query_date}")
+        logger.info(f"  - 配置元数据过滤器, 按日期筛选: {query_date}")
         filters = MetadataFilters(filters=[ExactMatchFilter(key="date", value=query_date)])
 
     query_engine = get_vector_query_engine(
@@ -43,12 +43,12 @@ async def market_query(
 
 if __name__ == "__main__":
     queries = [
-        "起点中文网的签约流程和要求是什么？",
-        "番茄小说对新人的扶持政策有哪些？",
+        "起点中文网的签约流程和要求是什么?",
+        "番茄小说对新人的扶持政策有哪些?",
         "分析一下都市脑洞题材在番茄小说的市场机会",
         "给我一个关于东方玄幻题材的详细小说创意",
-        "晋江文学城的读者画像是怎样的？",
-        "飞卢的最新热门题材有哪些？",
+        "晋江文学城的读者画像是怎样的?",
+        "飞卢的最新热门题材有哪些?",
     ]
     print(f"\n\n{'='*20} 批量查询 {'='*20}")
     asyncio.run(market_query(query_texts=queries))

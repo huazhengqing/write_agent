@@ -1,3 +1,4 @@
+import sys
 import pytest
 import os
 import hashlib
@@ -17,6 +18,7 @@ from llama_index.core.indices.property_graph import SimpleLLMPathExtractor
 from llama_index.postprocessor.siliconflow_rerank.base import SiliconFlowRerank
 
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from utils.kg import (
     get_kg_store,
     kg_add,
@@ -32,7 +34,7 @@ def kg_store(tmp_path) -> KuzuPropertyGraphStore:
     logger.info(f"为测试函数创建全新的 Kuzu 数据库于: {db_path}")
     store = get_kg_store(str(db_path))
     yield store
-    logger.info(f"测试函数结束，临时数据库 {db_path} 将被自动删除。")
+    logger.info(f"测试函数结束, 临时数据库 {db_path} 将被自动删除。")
 
 
 def test_kg_add_new_content(kg_store: KuzuPropertyGraphStore):
@@ -47,8 +49,8 @@ def test_kg_add_new_content(kg_store: KuzuPropertyGraphStore):
     kg_add(kg_store, content, metadata, doc_id, content_format="md")
 
     # 1. 验证三元组是否已添加到图中
-    # 由于LLM输出不确定，我们只检查是否生成了关系（三元组）。
-    # 如果关系存在，那么其关联的节点也必然存在。
+    # 由于LLM输出不确定, 我们只检查是否生成了关系(三元组)。
+    # 如果关系存在, 那么其关联的节点也必然存在。
     logger.info("验证三元组是否已添加...")
     relations = kg_store.get_triplets()
     logger.info(f"图中找到 {len(relations)} 个关系。")
@@ -75,9 +77,9 @@ async def test_kg_query(kg_store: KuzuPropertyGraphStore):
     metadata = {"source": "test_novel", "type": "character"}
 
     # 1. 添加数据到知识图谱 (kg_add 会处理重复/更新)
-    # 注意：为了确保测试的稳定性，我们在这里使用 PropertyGraphIndex 的标准方法来构建图谱，
+    # 注意: 为了确保测试的稳定性, 我们在这里使用 PropertyGraphIndex 的标准方法来构建图谱, 
     # 这能保证实体和文本块(Chunk)之间的关联被正确建立。
-    # 原始的 kg_add 函数可能存在未正确链接实体和文本块的问题，导致查询时无法检索到上下文。
+    # 原始的 kg_add 函数可能存在未正确链接实体和文本块的问题, 导致查询时无法检索到上下文。
     logger.info(f"为查询测试添加数据, doc_id: {doc_id}")
     documents = [Document(text=content, doc_id=doc_id, metadata=metadata)]
     index = PropertyGraphIndex.from_documents(
@@ -87,7 +89,7 @@ async def test_kg_query(kg_store: KuzuPropertyGraphStore):
     )
 
     # 2. 构建查询引擎
-    # 为了在测试中更精确地控制行为，我们直接使用 index.as_query_engine，
+    # 为了在测试中更精确地控制行为, 我们直接使用 index.as_query_engine, 
     # 而不是依赖可能包含复杂逻辑的 get_kg_query_engine。
     # 禁用 reranker 可以通过不向查询引擎添加 rerank后处理器(postprocessor)来实现。
     logger.info("构建知识图谱查询引擎...")
@@ -97,13 +99,13 @@ async def test_kg_query(kg_store: KuzuPropertyGraphStore):
     )
 
     # 3. 执行查询
-    question = "陆离有什么特点？"
+    question = "陆离有什么特点?"
     logger.info(f"执行查询: '{question}'")
     answer = await index_query(query_engine, question)
     logger.info(f"收到回答: '{answer}'")
 
     # 4. 验证结果
-    # 由于 LLM 输出不确定，只检查关键信息是否存在
+    # 由于 LLM 输出不确定, 只检查关键信息是否存在
     logger.info("验证查询结果...")
     assert answer is not None
     assert "陆离" in answer

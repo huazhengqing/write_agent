@@ -24,7 +24,7 @@ base_task = Task(
     results={
         "atom_result": "complex",
         "complex_reasons": ["design_insufficient"],
-        "atom_reasoning": "任务目标宏大，篇幅长，且缺乏具体设计，需要先进行规划。"
+        "atom_reasoning": "任务目标宏大, 篇幅长, 且缺乏具体设计, 需要先进行规划。"
     }
 )
 
@@ -34,7 +34,7 @@ design_phase_context = {
     "task": base_task.model_dump_json(indent=2),
     "complex_reasons": base_task.results["complex_reasons"],
     "atom_reasoning": base_task.results["atom_reasoning"],
-    "dependent_design": "", # 关键：没有设计方案
+    "dependent_design": "", # 关键: 没有设计方案
     "dependent_search": "",
     "text_latest": "",
     "text_summary": "",
@@ -51,7 +51,7 @@ mock_design_phase_llm_output = PlanOutput(
     goal="写一部关于赛博修仙的百万字长篇小说",
     length="1000000",
     hierarchical_position="全书",
-    reasoning="当前为顶层写作任务，且无具体设计方案，需要进入设计阶段。根据规划维度，将任务分解为核心概念、主角、世界观、力量体系等设计任务，并创建一个占位写作任务。",
+    reasoning="当前为顶层写作任务, 且无具体设计方案, 需要进入设计阶段。根据规划维度, 将任务分解为核心概念、主角、世界观、力量体系等设计任务, 并创建一个占位写作任务。",
     sub_tasks=[
         {
             "id": "1.1",
@@ -95,11 +95,11 @@ mock_design_phase_llm_output = PlanOutput(
 decomposition_task = base_task.model_copy(deep=True)
 decomposition_task.id = "1.5"
 decomposition_task.parent_id = "1"
-decomposition_task.goal = "撰写第一幕：主角觉醒"
+decomposition_task.goal = "撰写第一幕: 主角觉醒"
 decomposition_task.length = "15000"
 decomposition_task.hierarchical_position = "第一卷"
 decomposition_task.results["complex_reasons"] = ["length_excessive"]
-decomposition_task.results["atom_reasoning"] = "篇幅超过2000字，需要分解为更小的章节。"
+decomposition_task.results["atom_reasoning"] = "篇幅超过2000字, 需要分解为更小的章节。"
 
 
 decomposition_phase_context = {
@@ -107,24 +107,24 @@ decomposition_phase_context = {
     "complex_reasons": decomposition_task.results["complex_reasons"],
     "atom_reasoning": decomposition_task.results["atom_reasoning"],
     "dependent_design": """
-# 第一幕：主角觉醒 结构规划
-- **第一章：废柴的日常** (3000字)
-  - 核心事件：主角林风在底层数据矿场被工头欺压，展现其生活的窘迫和对力量的渴望。
-  - 结尾钩子：林风意外获得一块古老的生物芯片。
-- **第二章：神秘芯片** (4000字)
-  - 核心事件：林风研究芯片，被电击昏迷。在意识海中，他见到了芯片中的残魂“玄机子”。
-  - 关键信息：玄机子揭示“赛博修仙”的可能性。
-- **第三章：初窥门径** (4000字)
-  - 核心事件：在玄机子指导下，林风成功将一缕灵力数据化，修复了自己受损的义体。
-  - 角色动态：林风重拾信心，目标从“生存”变为“变强”。
-- **第四章：新的危机** (4000字)
-  - 核心事件：工头发现林风的异常，试图抢夺芯片，冲突爆发。
-  - 结尾钩子：林风利用初学的能力击倒工头，但引来了矿场背后更大的势力“黑石集团”的注意。
+# 第一幕: 主角觉醒 结构规划
+- **第一章: 废柴的日常** (3000字)
+  - 核心事件: 主角林风在底层数据矿场被工头欺压, 展现其生活的窘迫和对力量的渴望。
+  - 结尾钩子: 林风意外获得一块古老的生物芯片。
+- **第二章: 神秘芯片** (4000字)
+  - 核心事件: 林风研究芯片, 被电击昏迷。在意识海中, 他见到了芯片中的残魂“玄机子”。
+  - 关键信息: 玄机子揭示“赛博修仙”的可能性。
+- **第三章: 初窥门径** (4000字)
+  - 核心事件: 在玄机子指导下, 林风成功将一缕灵力数据化, 修复了自己受损的义体。
+  - 角色动态: 林风重拾信心, 目标从“生存”变为“变强”。
+- **第四章: 新的危机** (4000字)
+  - 核心事件: 工头发现林风的异常, 试图抢夺芯片, 冲突爆发。
+  - 结尾钩子: 林风利用初学的能力击倒工头, 但引来了矿场背后更大的势力“黑石集团”的注意。
 """,
     "dependent_search": "",
-    "text_latest": "林风拖着疲惫的义体回到狭窄的住处，空气中弥漫着机油和铁锈的味道。",
+    "text_latest": "林风拖着疲惫的义体回到狭窄的住处, 空气中弥漫着机油和铁锈的味道。",
     "text_summary": "主角林风是一个生活在社会底层的义体改造者。",
-    "task_list": "1.5 第一卷 write 撰写第一幕：主角觉醒 15000",
+    "task_list": "1.5 第一卷 write 撰写第一幕: 主角觉醒 15000",
     "upper_design": "主角林风将通过一块神秘芯片走上赛博修仙之路。",
     "upper_search": ""
 }
@@ -133,15 +133,15 @@ decomposition_phase_context = {
 mock_decomposition_phase_llm_output = PlanOutput(
     id="1.5",
     task_type="write",
-    goal="撰写第一幕：主角觉醒",
+    goal="撰写第一幕: 主角觉醒",
     length="15000",
     hierarchical_position="第一卷",
-    reasoning="检测到设计方案中包含结构化规划，进入分解阶段。将第一幕的四个章节分别映射为四个独立的write子任务。",
+    reasoning="检测到设计方案中包含结构化规划, 进入分解阶段。将第一幕的四个章节分别映射为四个独立的write子任务。",
     sub_tasks=[
         {
             "id": "1.5.1",
             "task_type": "write",
-            "goal": "第一章：废柴的日常: 续写主角林风在数据矿场被欺压，并意外获得生物芯片的情节。",
+            "goal": "第一章: 废柴的日常: 续写主角林风在数据矿场被欺压, 并意外获得生物芯片的情节。",
             "hierarchical_position": "第一章",
             "length": "3000",
             "instructions": ["重点描写底层生活的窘迫感。", "刻画工头的蛮横与主角对力量的渴望。", "设计获得芯片的意外性和神秘感。"],
@@ -154,7 +154,7 @@ mock_decomposition_phase_llm_output = PlanOutput(
         {
             "id": "1.5.2",
             "task_type": "write",
-            "goal": "第二章：神秘芯片: 续写林风研究芯片并遇见残魂“玄机子”的情节。",
+            "goal": "第二章: 神秘芯片: 续写林风研究芯片并遇见残魂“玄机子”的情节。",
             "hierarchical_position": "第二章",
             "length": "4000",
             "dependency": [],
@@ -163,7 +163,7 @@ mock_decomposition_phase_llm_output = PlanOutput(
         {
             "id": "1.5.3",
             "task_type": "write",
-            "goal": "第三章：初窥门径: 续写林风在指导下将灵力数据化，并修复义体的情节。",
+            "goal": "第三章: 初窥门径: 续写林风在指导下将灵力数据化, 并修复义体的情节。",
             "hierarchical_position": "第三章",
             "length": "4000",
             "dependency": [],
@@ -172,7 +172,7 @@ mock_decomposition_phase_llm_output = PlanOutput(
         {
             "id": "1.5.4",
             "task_type": "write",
-            "goal": "第四章：新的危机: 续写林风与工头冲突，并引来更大势力注意的情节。",
+            "goal": "第四章: 新的危机: 续写林风与工头冲突, 并引来更大势力注意的情节。",
             "hierarchical_position": "第四章",
             "length": "4000", # 15000 - 3000 - 4000 - 4000 = 4000
             "dependency": [],
@@ -187,7 +187,7 @@ mock_decomposition_phase_llm_output = PlanOutput(
 async def test_plan_write_design_phase(mock_llm_completion):
     """
     测试 plan_write 在“设计阶段”的分解能力。
-    - 输入: 任务复杂，但 `dependent_design` 为空。
+    - 输入: 任务复杂, 但 `dependent_design` 为空。
     - 预期: 分解出多个 `design`/`search` 子任务和一个占位的 `write` 子任务。
     """
     # 模拟 llm_completion 返回预设的 PlanOutput
@@ -238,8 +238,8 @@ async def test_plan_write_design_phase(mock_llm_completion):
 async def test_plan_write_decomposition_phase(mock_llm_completion):
     """
     测试 plan_write 在“分解阶段”的分解能力。
-    - 输入: 任务复杂，且 `dependent_design` 包含结构化规划。
-    - 预期: 分解出多个 `write` 子任务，且每个子任务都包含详细的指令。
+    - 输入: 任务复杂, 且 `dependent_design` 包含结构化规划。
+    - 预期: 分解出多个 `write` 子任务, 且每个子任务都包含详细的指令。
     """
     # 模拟 llm_completion
     mock_message = AsyncMock()

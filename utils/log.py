@@ -19,7 +19,7 @@ def init_logger(file_name):
             logger.remove()
         except ValueError:
             pass
-        # 在测试期间，注释此行可将所有日志输出重定向到文件
+        # 在测试期间, 注释此行可将所有日志输出重定向到文件
         # logger.add(PropagateHandler(), format="{message}", level="DEBUG")
         _pytest_logger_initialized = True
 
@@ -28,7 +28,7 @@ def init_logger(file_name):
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         rotation="10 MB",
         level="DEBUG",
-        enqueue=False,  # 改为False，使用同步日志记录，在Prefect中更可靠
+        enqueue=False,  # 改为False, 使用同步日志记录, 在Prefect中更可靠
         backtrace=True,
         diagnose=True,
     )

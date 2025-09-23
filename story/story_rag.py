@@ -187,7 +187,7 @@ class StoryRAG:
             metadata=doc_metadata,
             doc_id=task.id,
             content_format="md",
-            chars_per_triplet=50, # 设计文档信息密度较高，每100个字符提取一个三元组
+            chars_per_triplet=50, # 设计文档信息密度较高, 每100个字符提取一个三元组
             kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_design")[0]
         )
         logger.info(f"[{task.id}] design 内容存储完成。")
@@ -227,7 +227,7 @@ class StoryRAG:
             metadata=doc_metadata,
             doc_id=task.id,
             content_format="txt",
-            chars_per_triplet=100, # 正文叙述信息密度较低，每200个字符提取一个三元组
+            chars_per_triplet=100, # 正文叙述信息密度较低, 每200个字符提取一个三元组
             kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_write")[0]
         )
         logger.info(f"[{task.id}] write 内容存储完成。")
@@ -479,7 +479,7 @@ class StoryRAG:
             vector_store=vector_store,
             filters=filters,
             similarity_top_k=150,
-            rerank_top_n=50,
+            top_n=50,
         )
 
         results = await index_query_batch(query_engine, all_questions)
@@ -522,14 +522,14 @@ class StoryRAG:
             vector_store=vector_store,
             filters=vector_filters,
             similarity_top_k=150,
-            rerank_top_n=30,
+            top_n=30,
         )
 
         # 创建知识图谱查询引擎
         kg_query_engine = get_kg_query_engine(
             kg_store=kg_store,
             kg_similarity_top_k=600,
-            kg_rerank_top_n=100,
+            top_n=100,
         )
 
         results = await hybrid_query_batch(
@@ -572,14 +572,14 @@ class StoryRAG:
             vector_store=summary_vector_store,
             filters=vector_filters,
             similarity_top_k=300,
-            rerank_top_n=50,
+            top_n=50,
         )
 
         # 创建正文的知识图谱查询引擎
         kg_query_engine = get_kg_query_engine(
             kg_store=kg_store,
             kg_similarity_top_k=600,
-            kg_rerank_top_n=100,
+            top_n=100,
         )
 
         results = await hybrid_query_batch(

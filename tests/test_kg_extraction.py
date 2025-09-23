@@ -22,7 +22,7 @@ from tests.test_data import (
 
 def _validate_triplets(result_str: str) -> List[Tuple[str, str, str]]:
     """
-    验证并解析LLM返回的三元组结果，增加更健壮的错误处理
+    验证并解析LLM返回的三元组结果, 增加更健壮的错误处理
     """
     if not result_str:
         logger.warning("LLM返回内容为空")
@@ -40,7 +40,7 @@ def _validate_triplets(result_str: str) -> List[Tuple[str, str, str]]:
     # 检查是否为列表格式
     if not (cleaned_str.startswith('[') and cleaned_str.endswith(']')):
         logger.error(f"返回内容不是一个有效的列表字符串: {cleaned_str}")
-        # 尝试修复格式，添加方括号
+        # 尝试修复格式, 添加方括号
         try:
             cleaned_str = f"[{cleaned_str}]"
             logger.warning("已尝试自动修复格式")
@@ -57,7 +57,7 @@ def _validate_triplets(result_str: str) -> List[Tuple[str, str, str]]:
         pytest.fail("解析结果不是一个列表")
         
     if not triplets:
-        logger.warning("LLM返回了一个空列表，这可能是有效的，但请检查原文是否真的不含三元组。")
+        logger.warning("LLM返回了一个空列表, 这可能是有效的, 但请检查原文是否真的不含三元组。")
         return []
     
     # 验证每个三元组
@@ -81,7 +81,7 @@ async def _extract_triplets_from_chunks(
     prompt_template: str,
 ) -> List[Tuple[str, str, str]]:
     """
-    模拟真实的提取过程：先将文本分割成块，然后从每个块中提取三元组。
+    模拟真实的提取过程: 先将文本分割成块, 然后从每个块中提取三元组。
     """
     # 1. 将文本分割成节点 (块)
     doc = Document(text=text)
@@ -89,7 +89,7 @@ async def _extract_triplets_from_chunks(
     nodes = parser.get_nodes_from_documents([doc])
 
     if not nodes:
-        logger.warning(f"文本未能解析出任何节点 (chunks)，无法提取。")
+        logger.warning(f"文本未能解析出任何节点 (chunks), 无法提取。")
         return []
 
     logger.info(f"文本被分割为 {len(nodes)} 个节点 (chunks) 进行处理。")
@@ -134,7 +134,7 @@ async def _extract_triplets_from_chunks(
 )
 async def test_kg_extraction_design_from_chunks(llm_group, test_id, text_content, expected_entities):
     """
-    测试在模拟真实分块流程下，使用 design 提示词提取三元组。
+    测试在模拟真实分块流程下, 使用 design 提示词提取三元组。
     """
     logger.info(f"--- 测试三元组提取 (Design) | 模型组: {llm_group} | 用例: {test_id} ---")
 
@@ -151,7 +151,7 @@ async def test_kg_extraction_design_from_chunks(llm_group, test_id, text_content
 
     all_entities = {item for t in triplets for item in (t[0], t[2])}
     for entity in expected_entities:
-        assert entity in all_entities, f"应从 '{test_id}' 提取出实体 '{entity}'，但在提取出的实体中未找到: {all_entities}"
+        assert entity in all_entities, f"应从 '{test_id}' 提取出实体 '{entity}', 但在提取出的实体中未找到: {all_entities}"
 
     logger.success(f"--- 三元组提取 (Design) 测试通过 | 模型组: {llm_group}, 用例: {test_id} ---")
 
@@ -159,7 +159,7 @@ async def test_kg_extraction_design_from_chunks(llm_group, test_id, text_content
 @pytest.mark.asyncio
 async def test_kg_extraction_write_from_chunks(llm_group):
     """
-    测试在模拟真实分块流程下，使用 write 提示词从小说正文中提取三元组。
+    测试在模拟真实分块流程下, 使用 write 提示词从小说正文中提取三元组。
     """
     logger.info(f"--- 测试三元组提取 (Write) | 模型组: {llm_group} ---")
 
@@ -196,7 +196,7 @@ async def test_kg_extraction_empty_input(llm_group):
         prompt_template=kg_extraction_prompt_write
     )
 
-    assert len(triplets) == 0, f"空输入应返回空列表，实际返回 {len(triplets)} 个三元组"
+    assert len(triplets) == 0, f"空输入应返回空列表, 实际返回 {len(triplets)} 个三元组"
 
     logger.success(f"--- 空输入三元组提取测试通过 (模型组: {llm_group}) ---")
 
@@ -213,7 +213,7 @@ async def test_kg_extraction_consistency(llm_group):
     # 执行多次提取
     results_sets = []
     for i in range(3):
-        logger.info(f"一致性测试，第 {i+1}/3 次运行...")
+        logger.info(f"一致性测试, 第 {i+1}/3 次运行...")
         triplets = await _extract_triplets_from_chunks(
             text=text_content,
             content_format="md",
@@ -222,17 +222,17 @@ async def test_kg_extraction_consistency(llm_group):
         )
         results_sets.append(set(triplets))
 
-    # 计算结果的交集大小，评估一致性
+    # 计算结果的交集大小, 评估一致性
     if not results_sets:
         pytest.fail("所有提取运行均未返回任何结果。")
 
     common_triplets = set.intersection(*results_sets)
     avg_triplets = sum(len(r) for r in results_sets) / len(results_sets)
 
-    logger.info(f"一致性测试结果: 平均提取 {avg_triplets:.1f} 个三元组，共同三元组 {len(common_triplets)} 个")
+    logger.info(f"一致性测试结果: 平均提取 {avg_triplets:.1f} 个三元组, 共同三元组 {len(common_triplets)} 个")
 
     if avg_triplets == 0:
-        logger.warning("平均提取的三元组数量为0，无法评估一致性，但测试通过。")
+        logger.warning("平均提取的三元组数量为0, 无法评估一致性, 但测试通过。")
         return
 
     # 确保至少有一定数量的共同三元组

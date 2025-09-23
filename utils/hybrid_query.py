@@ -50,7 +50,7 @@ async def hybrid_query(
     final_message = await llm_completion(final_llm_params)
 
     final_answer = final_message.content.strip()
-    logger.success(f"混合查询完成，生成回答长度: {len(final_message.content)}")
+    logger.success(f"混合查询完成, 生成回答长度: {len(final_message.content)}")
     logger.debug(f"最终回答:\n{final_message.content}")
 
     return final_answer
@@ -81,7 +81,7 @@ async def hybrid_query_batch(
                     synthesis_user_prompt,
                 )
             except Exception as e:
-                logger.error("批量混合查询中，问题 '{}' 失败: {}", question, e, exc_info=True)
+                logger.error("批量混合查询中, 问题 '{}' 失败: {}", question, e, exc_info=True)
                 return ""
 
     tasks = [safe_hybrid_query(q) for q in questions]

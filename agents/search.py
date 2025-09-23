@@ -20,7 +20,7 @@ async def search(task: Task) -> Task:
         temperature=llm_temperatures["reasoning"]
     )
     if search_result is None:
-        raise ValueError(f"Agent在为任务 '{task.id}' 执行搜索时，经过多次重试后仍然失败。")
+        raise ValueError(f"Agent在为任务 '{task.id}' 执行搜索时, 经过多次重试后仍然失败。")
     updated_task = task.model_copy(deep=True)
     updated_task.results["search"] = search_result
     logger.info(f"搜索任务 '{task.id}' 完成。\n{search_result}")

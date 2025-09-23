@@ -29,7 +29,6 @@ async def call_react_agent(
     tools: List[Any] = web_search_tools,
     response_model: Optional[Type[BaseModel]] = None
 ) -> Optional[Union[BaseModel, str]]:
-
     tool_names_sorted = sorted([tool.metadata.name for tool in tools])
     response_model_name = response_model.__name__ if response_model else "None"
 

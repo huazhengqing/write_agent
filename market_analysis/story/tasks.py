@@ -39,7 +39,7 @@ async def task_load_platform_profile(platform: str) -> Tuple[str, str]:
         vector_store=get_market_vector_store(),
         filters=filters,
         similarity_top_k=1,
-        rerank_top_n=None, # 无需重排
+        top_n=None, # 无需重排
     )
     contents = await index_query(
         query_engine=query_engine,
@@ -74,7 +74,7 @@ async def task_platform_briefing(platform: str) -> str:
         agent_system_prompt=system_prompt, query_str=user_prompt
     )
     if report:
-        logger.success(f"Agent为 '{platform}' 完成了简报生成，报告长度: {len(report)}。")
+        logger.success(f"Agent为 '{platform}' 完成了简报生成, 报告长度: {len(report)}。")
         return report
     else:
         error_msg = f"为平台 '{platform}' 生成市场动态简报时Agent调用失败或返回空。"
@@ -103,7 +103,7 @@ async def task_new_author_opportunity(platform: str) -> str:
     )
 
     if report:
-        logger.success(f"Agent为 '{platform}' 完成了新人机会评估报告生成，报告长度: {len(report)}。")
+        logger.success(f"Agent为 '{platform}' 完成了新人机会评估报告生成, 报告长度: {len(report)}。")
         return report
     else:
         error_msg = f"为平台 '{platform}' 生成新人机会评估报告时Agent调用失败或返回空。"
@@ -122,7 +122,7 @@ async def task_new_author_opportunity(platform: str) -> str:
 )
 def task_save_vector(content: Optional[str], doc_type: str, content_format: str = "text", **metadata: Any) -> bool:
     if not content:
-        logger.warning(f"内容为空，跳过保存向量。元数据: doc_type={doc_type}, metadata={metadata}")
+        logger.warning(f"内容为空, 跳过保存向量。元数据: doc_type={doc_type}, metadata={metadata}")
         return False
 
     final_metadata = metadata.copy()
