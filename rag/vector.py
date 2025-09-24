@@ -4,7 +4,12 @@ from functools import lru_cache
 from llama_index.core import Settings
 from llama_index.llms.litellm import LiteLLM
 from llama_index.core.prompts import PromptTemplate
+from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.core.indices.prompt_helper import PromptHelper
+from llama_index.core.response_synthesizers import TreeSummarize
+from utils.llm_api import llm_temperatures, get_llm_params, get_embedding_params
+from utils.llm_api import llm_temperatures, get_llm_params
+from rag.vector_prompts import tree_summary_prompt
 
 
 
@@ -17,7 +22,6 @@ if hasattr(ChromaVectorStore, 'model_rebuild'):
 
 @lru_cache(maxsize=None)
 def init_llama_settings():
-    from utils.llm_api import llm_temperatures, get_llm_params, get_embedding_params
     llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["summarization"])
     Settings.llm = LiteLLM(**llm_params)
 
@@ -28,7 +32,6 @@ def init_llama_settings():
     )
     embedding_params = get_embedding_params()
     embed_model_name = embedding_params.pop('model')
-    from llama_index.embeddings.litellm import LiteLLMEmbedding
     Settings.embed_model = LiteLLMEmbedding(model_name=embed_model_name, **embedding_params)
 
 
@@ -57,10 +60,7 @@ def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
 
 @lru_cache(maxsize=None)
 def get_synthesizer():
-    from utils.llm_api import llm_temperatures, get_llm_params
     synthesis_llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["synthesis"])
-    from llama_index.core.response_synthesizers import TreeSummarize
-    from rag.vector_prompts import tree_summary_prompt
     synthesizer = TreeSummarize(
         llm=LiteLLM(**synthesis_llm_params),
         summary_template=PromptTemplate(tree_summary_prompt),

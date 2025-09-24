@@ -2,22 +2,21 @@ import os
 from loguru import logger
 from functools import lru_cache
 from typing import List, Optional
+from llama_index.llms.litellm import LiteLLM
 from llama_index.core import VectorStoreIndex
-from llama_index.core.base.base_query_engine import BaseQueryEngine
+from llama_index.core.vector_stores import MetadataInfo
 from llama_index.core.vector_stores import VectorStoreInfo
 from llama_index.core.vector_stores.types import VectorStore
+from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo
-
-
-
-from rag.vector import init_llama_settings
-init_llama_settings()
+from utils.llm_api import llm_temperatures, get_llm_params
+from rag.vector_prompts import vector_store_query_prompt
+from rag.vector import get_synthesizer
 
 
 
 @lru_cache(maxsize=None)
 def get_vector_store_info_default() -> VectorStoreInfo:
-    from llama_index.core.vector_stores import MetadataInfo
     metadata_field_info = [
         MetadataInfo(
             name="source",
@@ -61,10 +60,7 @@ def _create_auto_retriever_engine(
     node_postprocessors: List,
 ) -> BaseQueryEngine:
     logger.info("正在创建 Auto-Retriever 查询引擎...")
-    from utils.llm_api import llm_temperatures, get_llm_params
-    from rag.vector_prompts import vector_store_query_prompt
     reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
-    from llama_index.llms.litellm import LiteLLM
     reasoning_llm = LiteLLM(**reasoning_llm_params)
     from llama_index.core.retrievers import VectorIndexAutoRetriever
     retriever = VectorIndexAutoRetriever(
@@ -75,7 +71,6 @@ def _create_auto_retriever_engine(
         similarity_top_k=similarity_top_k,
     )
     from llama_index.core.query_engine import RetrieverQueryEngine
-    from rag.vector import get_synthesizer
     query_engine = RetrieverQueryEngine(
         retriever=retriever,
         response_synthesizer=get_synthesizer(),
@@ -119,7 +114,6 @@ def get_vector_query_engine(
         )
     else:
         logger.info("正在创建标准查询引擎...")
-        from rag.vector import get_synthesizer
         query_engine = index.as_query_engine(
             response_synthesizer=get_synthesizer(), 
             filters=filters, 
@@ -140,7 +134,7 @@ async def index_query(query_engine: BaseQueryEngine, question: str) -> str:
     result = await query_engine.aquery(question)
     answer = str(getattr(result, "response", "")).strip()
     source_nodes = getattr(result, "source_nodes", [])
-    if not source_nodes or not answer or answer == "Empty Response" or "无法回答" in answer:
+    if not source_nodes or not answer or answer == "Empty Response" or "无法回答" in answer or "无法回答该问题" in answer:
         logger.warning(f"未检索到任何源节点或有效响应, 返回空回答。")
         answer = ""
     else:
