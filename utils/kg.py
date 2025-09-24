@@ -60,7 +60,7 @@ def kg_add(
     from llama_index.core import Document
     doc = Document(id_=doc_id, text=content, metadata=metadata)
     
-    from utils.vector_extractor import get_vector_node_parser
+    from utils.vector_splitter import get_vector_node_parser
     kg_node_parser = get_vector_node_parser(content_format, len(content))
 
     from llama_index.core.indices.property_graph import SimpleLLMPathExtractor
@@ -73,25 +73,18 @@ def kg_add(
     logger.info(f"开始为 doc_id '{doc_id}' 构建知识图谱索引...")
     from llama_index.core.indices.property_graph.base import PropertyGraphIndex
     from llama_index.core import Settings
-    try:
-        index = PropertyGraphIndex(
-            nodes=[],
-            index_struct=None,
-            llm=llm_for_extraction,
-            property_graph_store=kg_store,
-            transformations=[kg_node_parser],
-            kg_extractors=[path_extractor],
-            embed_kg_nodes=True,
-            embed_model=Settings.embed_model,
-            show_progress=False,
-        )
-        index.insert(doc)
-    except RuntimeError as e:
-        if "Cannot set property vec in table embeddings because it is used in one or more indexes" in str(e):
-            logger.warning(f"尝试更新已索引的 'vec' 属性失败，可能文档 '{doc_id}' 或其内部实体已存在且已处理。跳过。错误: {e}")
-            # 如果此异常发生，我们假设数据已经成功存入，因此可以跳过。
-        else:
-            raise # 重新抛出其他运行时错误
+    index = PropertyGraphIndex(
+        nodes=[],
+        index_struct=None,
+        llm=llm_for_extraction,
+        property_graph_store=kg_store,
+        transformations=[kg_node_parser],
+        kg_extractors=[path_extractor],
+        embed_kg_nodes=True,
+        embed_model=Settings.embed_model,
+        show_progress=False,
+    )
+    index.insert(doc)
 
     if doc_cache:
         doc_cache.set(new_content_hash, True)
@@ -134,7 +127,8 @@ def get_kg_query_engine(
         response_synthesizer=get_synthesizer(),
         node_postprocessors=postprocessors,
         llm=llm_for_reasoning,
-        include_text=True,
+        include_text=True, 
+        use_llm=False,
     )
 
     logger.success("知识图谱查询引擎构建成功。")

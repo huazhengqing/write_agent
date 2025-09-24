@@ -1,5 +1,7 @@
 import nest_asyncio
 nest_asyncio.apply()
+
+
 import os
 import sys
 from typing import Optional, Dict, List
@@ -8,16 +10,21 @@ import json
 from pydantic import BaseModel, Field
 from loguru import logger
 from datetime import datetime
-from llama_index.core import Document
-from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
+
+
+from utils.llm_api import get_llm_params
+from utils.llm import llm_completion, get_llm_messages
+
+
 from market_analysis.story.base import query_react
 from market_analysis.story.tasks import task_load_platform_profile, task_platform_briefing, task_new_author_opportunity, task_save_vector
-from utils.llm import llm_completion, get_llm_params, get_llm_messages
+
+
 from utils.prefect import local_storage, readable_json_serializer
 from prefect import flow, task
 

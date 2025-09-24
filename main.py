@@ -1,14 +1,12 @@
 import nest_asyncio
 nest_asyncio.apply()
-from loguru import logger
-from utils.file import sanitize_filename
+
+
 from utils.log import init_logger_by_runid
-from utils.sqlite_meta import get_meta_db
-from utils.models import Task
-from story.story_write import flow_story_write
-
-
 init_logger_by_runid("write")
+
+
+from loguru import logger
 
 
 ###############################################################################
@@ -42,6 +40,7 @@ async def write_all(tasks_data: list):
         acceptance_criteria_str = task_info.get("acceptance_criteria", "")
 
         # 生成唯一的运行ID
+        from utils.file import sanitize_filename
         sanitized_category = sanitize_filename(category)
         sanitized_name = sanitize_filename(root_name)
         sanitized_language = sanitize_filename(language)
@@ -67,9 +66,12 @@ async def write_all(tasks_data: list):
             "run_id": run_id,
             "day_wordcount_goal": task_info.get("day_wordcount_goal", 0)
         }
+        
+        from utils.models import Task
         root_task = Task(**{k: v for k, v in task_params.items() if v is not None})
 
         # 将书籍元信息写入数据库
+        from utils.sqlite_meta import get_meta_db
         book_meta_db = get_meta_db()
         book_meta_db.add_or_update_book_meta(task=root_task)
         logger.info(f"已为任务 {root_task.run_id} 添加/更新书籍元信息。")
@@ -82,6 +84,7 @@ async def write_all(tasks_data: list):
     # 为 'story' (小说) 类别准备任务
     if story_tasks := tasks_by_category["story"]:
         logger.info(f"准备为 {len(story_tasks)} 个 'story' 任务启动 'flow_story_write' 流程...")
+        from story.story_write import flow_story_write
         tasks_to_run.extend([flow_story_write(task) for task in story_tasks])
         launched_tasks.extend(story_tasks)
 

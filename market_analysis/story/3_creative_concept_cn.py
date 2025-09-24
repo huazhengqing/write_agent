@@ -1,6 +1,7 @@
-import asyncio
 import nest_asyncio
 nest_asyncio.apply()
+
+
 import json
 import os
 import sys
@@ -8,19 +9,22 @@ from typing import Optional, Dict, List
 from pydantic import BaseModel, Field
 from loguru import logger
 from datetime import datetime
-from llama_index.core import Document
 from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
-from utils.file import data_market_dir
-from utils.llm import get_llm_messages, get_llm_params, llm_completion
-from utils.react_agent import call_react_agent
-from utils.vector import get_vector_query_engine, index_query, get_vector_store
-from market_analysis.story.base import get_market_vector_store, get_market_tools, query_react, data_market_dir
-from market_analysis.story.tasks import task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, task_save_vector, task_save_markdown
+
+
+from utils.llm_api import get_llm_params
+from utils.llm import get_llm_messages, llm_completion
+from utils.vector import get_vector_query_engine, index_query
+
+
+from market_analysis.story.base import get_market_vector_store
+
+
 from utils.prefect import local_storage, readable_json_serializer
 from prefect import flow, task
 
@@ -187,8 +191,10 @@ async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: s
         opportunity_report=opportunity_report
     )
     user_prompt = f"请开始为[{platform}]平台的[{genre}]题材生成深度分析报告。"
+    from market_analysis.story.base import query_react
     report = await query_react(
-        agent_system_prompt=system_prompt, query_str=user_prompt
+        agent_system_prompt=system_prompt, 
+        query_str=user_prompt
     )
     if not report:
         logger.error(f"为[{platform} - {genre}]生成深度分析报告失败。")
@@ -424,10 +430,10 @@ async def task_generate_novel_concept(opportunities_report: str, platform: str, 
             selected_opportunity=opportunities_report,
             historical_success_cases=historical_success_cases_str,
     )
-    concept = await call_react_agent( # type: ignore
-        system_prompt=novel_concept_system_prompt,
-        user_prompt=user_prompt,
-        tools=get_market_tools() # type: ignore
+    from market_analysis.story.base import query_react
+    concept = await query_react(
+        agent_system_prompt=novel_concept_system_prompt, 
+        query_str=user_prompt
     )
     if not concept:
         logger.error("生成详细小说创意失败。")
@@ -451,14 +457,10 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
 
     logger.info(f"收到手动指定的 {len(candidates_to_explore)} 个方案, 开始第二部分流程: {candidates_to_explore}")
     
-    # 注意: 下面的任务(task_load_platform_profile, task_platform_briefing, task_new_author_opportunity)
-    # 与第一阶段(platform_subject.py)中的任务相同。
-    # Prefect的缓存机制(基于result_storage_key)将确保这些任务不会重复执行, 而是直接从缓存加载结果, 
-    # 从而高效地为本流程提供必要的上下文信息。
     platforms_to_process = list(set([c.platform for c in candidates_to_explore]))
+    
+    from market_analysis.story.tasks import task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, task_save_vector, task_save_markdown
 
-    # 重新获取上下文信息 (平台档案、广域扫描报告、新人机会报告)
-    # 由于已统一缓存键(result_storage_key), Prefect的缓存机制将避免重复执行已在第一阶段完成的任务
     profile_futures = task_load_platform_profile.map(platforms_to_process)
     platform_profiles: Dict[str, str] = {}
     for future in profile_futures:
@@ -659,4 +661,6 @@ if __name__ == "__main__":
 
     flow_run_name = f"creative_concept-{datetime.now().strftime('%Y%m%d')}"
     # analysis_flow = creative_concept.with_options(name=flow_run_name)
+    
+    import asyncio
     asyncio.run(creative_concept(candidates_to_explore=candidates_to_run))

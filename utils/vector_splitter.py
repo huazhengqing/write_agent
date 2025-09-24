@@ -9,33 +9,56 @@ from llama_index.core.schema import BaseNode, TextNode, NodeRelationship
 from llama_index.llms.litellm import LiteLLM
 
 
-summary_query_str = """
-这个表格是关于什么的?请给出一个非常简洁的摘要(想象你正在为这个表格添加一个新的标题和摘要)。
-如果上下文中提供了表格的真实/现有标题, 请输出它。
-如果上下文中提供了表格的真实/现有ID, 请输出它。
-并输出是否应该保留该表格。
+table_summary_prompt = """
+# 角色
+你是一位顶尖的数据分析师和信息架构师。
+
+# 任务
+为下方的表格内容, 生成一个结构化的、信息密集的摘要。
+
+# 核心原则
+1. 直接输出: 直接生成标题和摘要内容, 禁止使用任何引导性或对话性语句。
+2. 信息提炼: 摘要必须精准地概括表格的核心主题、关键洞察和数据趋势。
+3. 忠于原文: 所有信息必须来源于表格本身, 禁止外部知识。
+4. 考虑元数据: 如果上下文中提供了表格的来源信息(如文件名), 请在分析时考虑。
+
+# 输出格式
+必须严格遵循以下格式, 使用 Markdown:
+
+## [表格标题]
+[对表格内容的详细、精炼的摘要]
+
+# 表格内容
+---
+{table_code}
+---
 """
 
 
 mermaid_summary_prompt = """
 # 角色
-你是一位精通图表解读的分析师。
+你是一位顶尖的信息架构师和图表分析专家。
 
 # 任务
-阅读下方的 Mermaid 图表代码, 并生成一段简洁、流畅、易于理解的自然语言摘要。
+为下方的 Mermaid 图表代码, 生成一个结构化的、信息密集的摘要。
 
 # 核心原则
-1. 识别核心: 找出图表中的关键实体(节点)和它们之间的核心关系(连接)。
-2. 概括整体: 不要逐条罗列连接关系, 而是从整体上描述图表所表达的结构、流程或层级。例如, "此图表展示了一个三层架构, ... " 或 "该流程图描述了用户从登录到完成购买的完整步骤, ..."。
-3. 解释意图: 如果可能, 推断并解释图表的设计意图或它所解决的问题。
-4. 忠于图表: 摘要必须完全基于图表内容, 禁止引入外部信息。
+1. 直接输出: 直接生成标题和摘要内容, 禁止使用任何引导性或对话性语句。
+2. 信息提炼: 摘要必须精准地概括图表的核心主题、关键实体、关系和结构。
+3. 忠于原文: 所有信息必须来源于图表本身, 禁止外部知识。
+4. 概括整体: 不要逐条罗列连接关系, 而是从整体上描述图表所表达的结构、流程或层级。
+5. 解释意图: 如果可能, 推断并解释图表的设计意图或它所解决的问题。
+
+# 输出格式
+必须严格遵循以下格式, 使用 Markdown:
+
+## [图表标题]
+[对图表内容的详细、精炼的摘要]
 
 # Mermaid 图表代码
----------------------
+---
 {mermaid_code}
----------------------
-
-# 内容摘要
+---
 """
 
 
@@ -44,8 +67,8 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
 
     _mermaid_summary_prompt: PromptTemplate = PrivateAttr()
 
-    def __init__(self, llm: LiteLLM, summary_query_str: str, mermaid_summary_prompt: str, **kwargs: Any):
-        super().__init__(llm=llm, summary_query_str=summary_query_str, **kwargs)
+    def __init__(self, llm: LiteLLM, table_summary_prompt: str, mermaid_summary_prompt: str, **kwargs: Any):
+        super().__init__(llm=llm, summary_query_str=table_summary_prompt, **kwargs)
         self._mermaid_summary_prompt = PromptTemplate(mermaid_summary_prompt)
 
 
@@ -57,11 +80,9 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
         table_md = element.element
         
         try:
-            # markdown-it-py 的表格解析插件应提供 to_pandas 方法
             table_df = element.table
             table_text_for_summary = "\n\n".join(["Table:", table_df.to_string()])
         except Exception:
-            # 如果由于某种原因它不是可转换为 pandas 的对象, 则回退
             logger.warning("无法将表格转换为 pandas DataFrame 进行摘要, 使用原始 markdown。")
             table_text_for_summary = table_md
 
@@ -71,7 +92,7 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
         logger.debug("正在为 Markdown 表格生成摘要...")
         summary_response = self.llm.predict(
             PromptTemplate(self.summary_query_str),
-            context_str=table_text_for_summary,
+            table_code = f"{table_text_for_summary}\n\n来源文件: {node.metadata.get('file_name', '')}"
         )
         logger.debug(f"Markdown 表格摘要生成完毕:\n{summary_response}")
 
@@ -92,7 +113,8 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
 
         logger.debug("正在为 Mermaid 图表生成摘要...")
         summary_response = self.llm.predict(
-            self._mermaid_summary_prompt, mermaid_code=mermaid_code
+            self._mermaid_summary_prompt, 
+            mermaid_code=mermaid_code
         )
         logger.debug(f"Mermaid 图表摘要生成完毕:\n{summary_response}")
 
@@ -173,7 +195,7 @@ def get_vector_node_parser(content_format: Literal["md", "txt", "json"], content
         from llama_index.core import Settings
         return CustomMarkdownNodeParser(
             llm=Settings.llm,
-            summary_query_str=summary_query_str,
+            table_summary_prompt=table_summary_prompt,
             mermaid_summary_prompt=mermaid_summary_prompt,
             chunk_size=2048,
             chunk_overlap=400,
@@ -183,4 +205,3 @@ def get_vector_node_parser(content_format: Literal["md", "txt", "json"], content
         chunk_size=512, 
         chunk_overlap=100,
     )
-

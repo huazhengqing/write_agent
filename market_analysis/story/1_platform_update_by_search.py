@@ -1,21 +1,21 @@
 import nest_asyncio
 nest_asyncio.apply()
+
+
 import os
 import sys
-import asyncio
 from typing import List, Optional
 from loguru import logger
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
+
 from utils.log import init_logger
 init_logger(os.path.splitext(os.path.basename(__file__))[0])
-from utils.file import data_market_dir
-from utils.react_agent import call_react_agent
+
+
 from utils.prefect import local_storage, readable_json_serializer
 from prefect import task, flow
-
-from market_analysis.story.tasks import task_save_markdown, task_save_vector
 
 
 ###############################################################################
@@ -103,6 +103,7 @@ platform_research_prompt = """
     cache_expiration=604800,
 )
 async def search_platform(platform: str) -> Optional[str]:
+    from utils.react_agent import call_react_agent
     md_content = await call_react_agent(
         system_prompt=platform_research_prompt.format(platform=platform),
         user_prompt=f"请开始为平台 '{platform}' 生成平台基础信息报告。" ,
@@ -120,10 +121,12 @@ async def search_platform(platform: str) -> Optional[str]:
 def search_platform_all(platforms: List[str]):
     logger.info(f"开始更新 {len(platforms)} 个平台的的基础信息...")
     report_futures = search_platform.map(platforms)
+    from market_analysis.story.tasks import task_save_markdown
     filepath_futures = task_save_markdown.map(
         filename=platforms,
         content=report_futures
     )
+    from market_analysis.story.tasks import task_save_vector
     store_futures = task_save_vector.map(
         content=report_futures,
         doc_type="platform_profile",
