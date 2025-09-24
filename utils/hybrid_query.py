@@ -101,8 +101,8 @@ async def hybrid_query_react(
         description="用于探索实体及其关系 (例如: 角色A和角色B是什么关系? 事件C导致了什么后果?)。当问题比较复杂时, 你可以多次调用此工具来回答问题的不同部分, 然后综合答案。"
     )
     result = await call_react_agent(
-        user_prompt=query_str,
         system_prompt=react_system_prompt,
+        user_prompt=query_str,
         tools=[vector_tool, kg_tool]
     )
     if not isinstance(result, str):

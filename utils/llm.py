@@ -72,6 +72,7 @@ litellm.drop_params = True
 litellm.telemetry = False
 litellm.REPEATED_STREAMING_CHUNK_LIMIT = 20
 # litellm._turn_on_debug()
+# litellm.disable_logging = True
 
 
 ###############################################################################

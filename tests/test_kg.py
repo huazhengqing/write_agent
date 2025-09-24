@@ -3,6 +3,7 @@ import pytest
 import os
 import re
 from loguru import logger
+import shutil
 import litellm
 from llama_index.graph_stores.kuzu.kuzu_property_graph import KuzuPropertyGraphStore
 
@@ -17,14 +18,14 @@ from utils.vector import index_query, index_query_batch
 from tests import test_data
 
 
-# 禁用 litellm 的异步日志记录器, 以避免在 pytest 环境中发生事件循环冲突。
-# 这是导致三元组提取失败和查询无结果的根本原因。
 litellm.disable_logging = True
 
 
 @pytest.fixture(scope="function")
 def kg_store(tmp_path) -> KuzuPropertyGraphStore:
     db_path = tmp_path / ".kuzu_db"
+    if db_path.exists():
+        shutil.rmtree(db_path)
     store = get_kg_store(str(db_path))
     yield store
 

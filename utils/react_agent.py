@@ -23,8 +23,8 @@ cache_query = Cache(str(cache_agent_dir), size_limit=int(32 * (1024**2)))
 
 
 async def call_react_agent(
-    user_prompt: str,
     system_prompt: str = react_system_prompt,
+    user_prompt: str = "",
     tools: List[Any] = web_search_tools,
     response_model: Optional[Type[BaseModel]] = None
 ) -> Optional[Union[BaseModel, str]]:
@@ -38,25 +38,20 @@ async def call_react_agent(
     if cached_result is not None:
         return cached_result
 
+    logger.info(f"system_prompt=\n{system_prompt}")
+    logger.info(f"user_prompt=\n{user_prompt}")
+    logger.info(f"tools=\n{','.join(tool_names_sorted)}")
+    logger.info(f"response_model=\n{response_model_name}")
+
     llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
-    llm = LiteLLM(**llm_params)
-
-    logger.info(f"为 ReAct Agent 配置 {len(tool_names_sorted)} 个工具: {tool_names_sorted}")
-
     agent = ReActAgent(
         tools=tools,
-        llm=llm,
+        llm=LiteLLM(**llm_params),
         system_prompt=system_prompt,
         state_prompt=state_prompt,
         verbose=True
     )
     agent.update_prompts({"react_header": react_system_header})
-
-    logger.info(f"提示词:\n{agent.get_prompts()}")
-    logger.info(f"系统提示词:\n{system_prompt}")
-    logger.info(f"用户提示词:\n{user_prompt}")
-
-    logger.info("开始执行 ReAct Agent...")
     ctx = Context(agent)
     handler = agent.run(
         user_prompt, 
@@ -72,8 +67,7 @@ async def call_react_agent(
     #             response_text += str(delta)
     #             print(f"{delta}", end="", flush=True)
     final_response = await handler
-
-    logger.success("ReAct Agent 执行完成。")
+    logger.info("执行完成。")
 
     # if response_text:
     #     return response_text
@@ -84,21 +78,16 @@ async def call_react_agent(
         raw_output = str(final_response.content)
     else:
         raw_output = str(final_response)
-    
-    logger.debug(f"Agent 原始输出:\n{raw_output}")
 
     cleaned_output = clean_markdown_fences(raw_output)
-    logger.info(f"Agent 清理后输出:\n{cleaned_output}")
+    logger.info(f"输出:\n{cleaned_output}")
 
     final_result = None
     if response_model:
-        logger.info(f"检测到 response_model, 尝试将输出解析为 {response_model.__name__} 模型...")
         final_result = await txt_to_json(cleaned_output, response_model)
-        logger.success(f"成功将输出解析为 {response_model.__name__} 模型。")
-        logger.debug(f"解析后的 JSON 对象: {final_result}")
+        logger.info(f"解析后的 JSON 对象: \n{final_result}")
     else:
         text_validator_default(cleaned_output)
-        logger.success("文本结果校验通过。")
         final_result = cleaned_output
 
     if final_result is not None:

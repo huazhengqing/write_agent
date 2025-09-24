@@ -10,7 +10,7 @@ class ResponseMode(str, Enum):
     We first use the context in the first node, along with the query, to generate an \
     initial answer.
     We then pass this answer, the query, and the context of the second node as input \
-    into a “refine prompt” to generate a refined answer. We refine through N-1 nodes, \
+    into a "refine prompt" to generate a refined answer. We refine through N-1 nodes, \
     where N is the total number of nodes.
     """
 

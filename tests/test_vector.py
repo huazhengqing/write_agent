@@ -153,7 +153,7 @@ query_scenarios = [
         test_data.VECTOR_TEST_COMPLEX_MERMAID_DIAGRAM,
         "md",
         {"source": "test_complex_diagram"},
-        "议长德雷克派谁去追捕凯尔？",
+        "议长德雷克派谁去追捕凯尔?",
         ["议长德雷克", "暗影", "追捕", "凯尔"],
         id="query_complex_mermaid_diagram"
     ),

@@ -1,3 +1,4 @@
+import asyncio
 import nest_asyncio
 nest_asyncio.apply()
 import json
@@ -18,49 +19,32 @@ from utils.file import data_market_dir
 from utils.llm import get_llm_messages, get_llm_params, llm_completion
 from utils.react_agent import call_react_agent
 from utils.vector import get_vector_query_engine, index_query, get_vector_store
-from market_analysis.story.base import get_market_vector_store, get_market_tools, query_react
-from market_analysis.story.tasks import task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, task_save_vector
+from market_analysis.story.base import get_market_vector_store, get_market_tools, query_react, data_market_dir
+from market_analysis.story.tasks import task_platform_briefing, task_new_author_opportunity, task_load_platform_profile, task_save_vector, task_save_markdown
 from utils.prefect import local_storage, readable_json_serializer
 from prefect import flow, task
 
 
-class Candidate(BaseModel):
-    platform: str
-    genre: str
-
-class FinalDecision(BaseModel):
-    platform: str = Field(description="最终选择的平台")
-    genre: str = Field(description="最终选择的题材")
-    reasoning: str = Field(description="做出该选择的详细理由, 并解释为什么它优于其他主要竞争选项。")
-
-class RankedConcept(BaseModel):
-    rank: int = Field(description="机会排名, 1为最佳。")
-    platform: str = Field(description="平台名称。")
-    genre: str = Field(description="题材大类。")
-    brief_reasoning: str = Field(description="对该选项排名的简要理由, 点出其核心优劣势。")
-
-class FinalDecisionResult(BaseModel):
-    final_choice: FinalDecision = Field(description="根据综合排序最终选定的最佳方案。")
-    ranking: List[RankedConcept] = Field(description="所有候选方案的完整排名列表。")
+###############################################################################
 
 
-FINAL_DECISION_system_prompt_JSON = """
+final_decision_system_prompt_json = """
 # 角色
 你是一位顶尖的网文总编, 拥有敏锐的市场嗅觉和战略眼光。
 
 # 任务
-综合评估N份“平台-题材”深度分析报告, 选出最佳机会, 并对所有机会进行排序。以指定的JSON格式输出决策和排名。
+综合评估N份"平台-题材"深度分析报告, 选出最佳机会, 并对所有机会进行排序。以指定的JSON格式输出决策和排名。
 
 # 决策维度
-1.  **潜力上限**: 题材受众、付费潜力、IP衍生可能性、蓝海机会。
-2.  **成功概率**: 平台调性契合度、竞争激烈度、风险规避难度。
-3.  **创新价值**: 差异化优势, 避免红海竞争。
-4.  **执行难度**: 创作门槛, 对作者的友好度。
+1. 潜力上限: 题材受众、付费潜力、IP衍生可能性、蓝海机会。
+2. 成功概率: 平台调性契合度、竞争激烈度、风险规避难度。
+3. 创新价值: 差异化优势, 避免红海竞争。
+4. 执行难度: 创作门槛, 对作者的友好度。
 
 # 工作流程
-1.  **评估排序**: 基于“决策维度”评估所有方案, 并从高到低排序。
-2.  **最终决策**: 确定排名第一的方案, 并撰写决策理由, 解释其为何优于其他竞争者。
-3.  **格式化输出**: 严格按照Pydantic模型的JSON格式输出结果。
+1. 评估排序: 基于"决策维度"评估所有方案, 并从高到低排序。
+2. 最终决策: 确定排名第一的方案, 并撰写决策理由, 解释其为何优于其他竞争者。
+3. 格式化输出: 严格按照Pydantic模型的JSON格式输出结果。
 
 # 输出要求
 - 严格按照 `FinalDecisionResult` Pydantic 模型的格式, 仅输出一个完整的、有效的 JSON 对象。
@@ -68,215 +52,22 @@ FINAL_DECISION_system_prompt_JSON = """
 """
 
 
-DEEP_DIVE_system_prompt = """
-# 角色
-你是一名顶尖的网络小说市场分析师, 专精于[{platform}]平台的[{genre}]题材。
-
-# 任务
-为[{platform}]平台的[{genre}]题材, 生成一份深度洞察报告。
-
-# 工作流程
-1.  **信息整合**: 仔细阅读提供的上下文信息。
-2.  **深度研究**:
-    - **内部优先**: 研究时, 优先使用 `story_market_vector` 工具查询内部知识库(平台档案、市场报告、小说创意)。
-    - **外部补充**: 仅当内部信息不足时, 才使用网络搜索工具获取最新动态。
-    - **研究要点**: 围绕“输出结构”中的要点, 研究题材套路、读者“毒点”、外部热点等。
-3.  **撰写报告**: 综合所有信息, 严格按照指定的Markdown格式输出。
-
-# 上下文信息
----
-## 平台基础信息 ({platform})
-{platform_profile}
----
-## 市场动态简报 ({platform})
-{broad_scan_report}
----
-## 平台新人机会评估报告 ({platform})
-{opportunity_report}
----
-
-# 输出结构 (Markdown)
-## [{platform}]平台 - [{genre}]题材深度分析报告
-
-### 1. 核心标签与流行元素
-- **高频标签**: [总结3-5个最高频标签, 基于作品和评论]
-- **关键元素**: [描述标签的具体表现形式, 如“签到流”、“神豪返现”]
-- **趋势验证**: [分析标签的近期热度变化, 如使用百度指数]
-
-### 2. 核心爽点与读者心理
-- **爽点一**: [描述最核心的爽点, 如: 扮猪吃虎后瞬间打脸]
-  - **读者心理**: [分析该爽点满足的深层心理需求。可结合心理学理论, 例如: 满足读者对“代理复仇”和“恢复秩序”的渴望, 与“公平世界信念”相关。]
-- **爽点二**: [描述另一核心爽点, 如: 获得独一无二的金手指]
-  - **读者心理**: [同上, 进行深度心理学分析。例如: 满足读者的“掌控感”和“自我效能感”需求, 在不确定的现实中提供心理安全感。]
-
-### 3. 关键付费点设计
-- [分析该题材的付费章节设计逻辑。若是免费平台, 则分析广告点位设计逻辑]
-
-### 4. 新兴机会与蓝海方向
-- **题材融合**: [提出有数据支撑的新颖题材融合方向]
-- **跨界融合**: [结合外部热点, 提出可融合的跨界创意]
-- **设定创新**: [提出未被滥用的创新设定或金手指]
-- **切入角度**: [建议新颖的主角身份或故事切入点]
-- **作者友好度**: [结合新人机会报告, 分析该方向对新人的友好度]
-
-### 5. 主角人设迭代方向
-- **流行人设分析**: [分析当前最受欢迎的1-2种主角人设及其核心魅力]
-- **创新方向**: [提出对流行人设的反转或融合创新设计, 创造差异化]
-
-### 6. 常见“毒点”与风险规避
-- **毒点一**: [总结一个读者普遍反感的情节或设定]
-  - **规避建议**: [提出具体规避方法]
-- **毒点二**: [总结另一个常见毒点]
-  - **规避建议**: [提出对应规避方法]
-
-### 7. 报告质量自我评估
-- **数据驱动度 (1-5分)**: [报告基于搜索数据的程度]
-- **洞察深刻度 (1-5分)**: [报告揭示深层趋势的程度]
-- **可执行性 (1-5分)**: [报告建议的清晰度和可用性]
-- **综合评价**: [总结报告优缺点]
-"""
-
-# 机会生成的提示词
-OPPORTUNITY_GENERATION_system_prompt = """
-# 角色
-金牌小说策划人。
-
-# 任务
-根据输入信息, 构思3个全新的、有商业潜力、且互相差异化的小说选题。
-
-# 创作原则
-- **机会导向**: 创意回应[新兴机会与蓝海方向]。
-- **跨界优先**: 至少一个选题深度融合[跨界融合]建议。
-- **灵感融合**: 融入报告中提到的外部热点、流行文化等元素。
-- **风险规避**: 避开[常见“毒点”]。
-- **爽点聚焦**: 围绕[核心爽点]构建。
-- **避免重复**: 与[历史创意参考]显著区别。
-- **强制差异化**: 3个选题需在核心卖点、切入角度、题材融合、目标读者等维度上存在显著差异, 确保多样性。
-
-# 输出结构 (Markdown)
-- **选题名称**: [名称]
-- **一句话卖点**: [宣传语]
-- **核心创意**: [概括, 明确指出融合的“蓝海方向”或“跨界热点”]
-- **主角设定**: [身份, 特点, 独特性]
-- **核心冲突**: [主要矛盾]
-- **爆款潜力**: [S/A/B级]
-- **潜力理由**: [市场契合度, 创意新颖度, 爽点强度, 跨界优势]
-- **反套路指数**: [高/中/低]
-- **指数理由**: [解释如何规避或创新套路]
-- **写作难度**: [高/中/低]
-- **难度理由**: [世界观, 角色, 情节, 资料]
-"""
+class FinalDecision(BaseModel):
+    platform: str = Field(description="最终选择的平台")
+    genre: str = Field(description="最终选择的题材")
+    reasoning: str = Field(description="做出该选择的详细理由, 并解释为什么它优于其他主要竞争选项。")
 
 
-OPPORTUNITY_GENERATION_user_prompt = """
----
-# 市场深度分析报告
-{market_report}
-
----
-# 历史创意参考
-{historical_concepts}
-"""
+class RankedConcept(BaseModel):
+    rank: int = Field(description="机会排名, 1为最佳。")
+    platform: str = Field(description="平台名称。")
+    genre: str = Field(description="题材大类。")
+    brief_reasoning: str = Field(description="对该选项排名的简要理由, 点出其核心优劣势。")
 
 
-# 小说创意生成提示词
-NOVEL_CONCEPT_system_prompt = """
-# 角色
-顶级小说策划人。
-
-# 任务
-从[初步选题列表]中选择最佳选题(优先跨界融合), 并将其扩展为一份详细、创新的[小说创意]文档。
-
-# 工作流程
-1.  **选择选题**: 从列表中选择评级最高、最具潜力的选题, 并说明选择理由。
-2.  **模式挖掘与创新 (核心)**:
-    - **解构范式**: 分析[历史成功案例参考]的底层成功模式(如节奏、反馈循环、爽点逻辑、心理满足), 而不是模仿表面情节。
-    - **重塑应用**: 将提炼出的成功范式, 创造性地应用到新选题中, 生成全新的设定。
-3.  **深度研究 (工具使用)**:
-    - **知识库挖掘**: 使用 `story_market_vector` 查询相关历史创意和报告, 复用成功范式, 避免失败模式。
-    - **竞品分析**: 使用 `web_scraper` 等工具分析1-2个竞品, 明确差异化策略(做得更好、不同, 或开创新品类)。
-    - **规避套路**: 使用 `forum_discussion_search` 在知乎、龙空等社区搜索并剔除过时套路和“毒点”。
-    - **融合灵感**: 使用 `targeted_search` 在B站等平台搜索相关视觉、观点元素并融入创意 (例如: `targeted_search(platforms=['B站'], query='[题材名] 视觉灵感')`)。
-4.  **撰写文档**: 严格按照“输出结构”撰写详细的小说创意文档。
-
-# 输出结构 (Markdown)
-选择的选题: [选题名称]
-选择理由: [说明选择原因, 特别是“跨界融合”的优势]
-
----
-
-## 小说创意: [选题名称]
-
-### 1. 一句话简介 (Logline)
-- [30-50字, 概括主角、目标、冲突、独特设定]
-
-### 2. 详细故事梗概 (Synopsis)
-- [200-300字, 概述起因、发展、核心冲突、高潮]
-
-### 3. 主角设定 (Character Profile)
-- **背景与动机**: [出身, 职业, 内心渴望/恐惧]
-- **性格与能力**: [性格特点, 行事风格, 核心能力/金手指及其限制]
-- **成长弧光 (Character Arc)**:
-  - **核心缺陷/谎言**: [主角开始时限制其成长的错误信念]
-  - **欲望 (Want) vs. 需求 (Need)**:
-    - **外在欲望**: [主角明确追求的外在目标]
-    - **内在需求**: [主角真正需要、但未察觉的内在成长]
-  - **转变路径**: [描述主角如何通过关键事件, 从质疑到最终抛弃“谎言”, 拥抱“内在需求”]
-  - **最终状态**: [故事结束时主角的新信念和行为模式]
-
-### 4. 核心冲突矩阵 (Core Conflict Matrix)
-- **原则**: 所有冲突相互关联, 外部冲突是内在冲突的映射。
-- **根本性冲突 (主题)**: [贯穿始终的哲学/价值观冲突, 如: 自由 vs. 安全]
-- **主线情节冲突 (外部)**: [具体目标 vs. 强大的“黑镜”式对手, 以及不断升级的赌注]
-- **主角内在冲突 (内部)**: [“欲望”与“需求”的矛盾, 以及艰难抉择]
-- **核心关系冲突 (人际)**: [与核心配角(盟友/爱人/导师)的冲突, 考验主角成长]
-
-### 5. 世界观核心设定 (World-building)
-- **核心概念**: [世界观基石的“What if”问题]
-- **独特法则**: [1-2条与现实相悖的物理/社会法则及其影响]
-- **标志性元素**: [2-3个独特的地理、生物、组织或技术]
-- **历史谜团与探索感**: [贯穿始终的古老谜团及主角的探索路径]
-
-### 6. 升级体系与核心设定 (Progression System & Core Setting)
-- **创新原则**: [规避套路, 与世界观深度绑定, 体系本身成为冲突来源]
-- **体系核心概念**: [用一个独特的比喻描述体系本质]
-- **核心资源与获取**: [非传统的“经验值”及其获取方式、风险、道德困境]
-- **晋升路径与质变**: [非线性的成长路径, 关键阶段的能力质变, 而非简单数值提升]
-- **体系的内在矛盾与社会影响**: [体系本身的悖论如何塑造社会结构与冲突]
-
-### 7. 关键配角设定 (Key Supporting Characters)
-- **原则**: [避免工具人, 配角需有独立目标、内在矛盾和秘密]
-- **配角一/二**:
-  - **定位与功能**: [导师/对手/盟友等]
-  - **独立人生**: [个人目标, 内在矛盾, 秘密]
-  - **与主角的动态关系**: [关系如何演变, 核心互动模式]
-
-### 8. 核心爽点与高光场景 (Core Appeal & Highlight Scenes)
-- **主爽点**: [最核心、最高频的爽点类型, 并提供高光场景示例(简述、情绪顶点、关键画面/台词)]
-- **辅爽点**: [1-2个调剂节奏的辅助爽点及场景示例]
-- **其他核心卖点**: [创新设定, 极致情绪, 反套路, 世界观探索感等]
-
-### 9. 开篇章节构思 (Opening Chapter Idea)
-- **“黄金三章”设计**:
-- **第一章 (破局)**: [引入主角与困境, 制造悬念钩子]
-- **第二章 (展开)**: [使用金手指, 引出更大冲突, 展现爽点]
-- **第三章 (确立)**: [初步胜利, 确立短期目标, 制造强烈爽感]
-
-### 10. 市场风险评估 (Market Risk Assessment)
-- **核心风险**: [识别1-2个主要风险, 如创意同质化、设定复杂、慢热]
-- **风险分析**: [分析风险来源, 可对标参考案例]
-- **规避策略**: [提出具体的规避建议]
-"""
-
-
-NOVEL_CONCEPT_user_prompt = """
----
-# 初步选题列表
-{selected_opportunity}
-
-# 历史成功案例参考
-{historical_success_cases}
-"""
+class FinalDecisionResult(BaseModel):
+    final_choice: FinalDecision = Field(description="根据综合排序最终选定的最佳方案。")
+    ranking: List[RankedConcept] = Field(description="所有候选方案的完整排名列表。")
 
 
 @task(name="final_decision",
@@ -297,7 +88,7 @@ async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionRes
             f"\n---\n\n# 候选方案 {i+1}: [{report_data['platform']}] - [{report_data['genre']}]\n{report_data['report']}"
         )
     user_prompt = "".join(user_prompt_parts)
-    messages = get_llm_messages(system_prompt=FINAL_DECISION_system_prompt_JSON, user_prompt=user_prompt)
+    messages = get_llm_messages(system_prompt=final_decision_system_prompt_json, user_prompt=user_prompt)
     llm_params = get_llm_params(llm_group='reasoning', messages=messages, temperature=0.1)
     response_message = await llm_completion(llm_params=llm_params, response_model=FinalDecisionResult)
     decision = response_message.validated_data
@@ -306,6 +97,76 @@ async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionRes
         raise ValueError("最终决策失败。")
     logger.success(f"最终决策完成。选择: [{decision.final_choice.platform}] - [{decision.final_choice.genre}]")
     return decision
+
+
+###############################################################################
+
+
+deep_dive_system_prompt = """
+# 任务背景与目标
+你是一名顶尖的网络小说市场分析师, 专精于[{platform}]平台的[{genre}]题材。你的任务是为[{platform}]平台的[{genre}]题材, 生成一份深度洞察报告。
+
+
+# 研究清单 (Checklist)
+你必须通过"思考 -> 操作 -> 观察"的循环, 依次研究并回答以下所有问题, 以收集报告所需的全部信息。
+1. 信息整合: 仔细阅读提供的上下文信息。
+2. 深度研究:
+    - 内部优先: 研究时, 优先使用 `story_market_vector` 工具查询内部知识库(平台档案、市场报告、小说创意)。
+    - 外部补充: 仅当内部信息不足时, 才使用网络搜索工具获取最新动态。
+    - 研究要点: 围绕"输出结构"中的要点, 研究题材套路、读者"毒点"、外部热点等。
+
+# 上下文信息
+---
+## 平台基础信息 ({platform})
+{platform_profile}
+
+## 市场动态简报 ({platform})
+{broad_scan_report}
+
+## 平台新人机会评估报告 ({platform})
+{opportunity_report}
+---
+
+# 输出结构 (Markdown)
+## [{platform}]平台 - [{genre}]题材深度分析报告
+
+### 1. 核心标签与流行元素
+- 高频标签: [总结3-5个最高频标签, 基于作品和评论]
+- 关键元素: [描述标签的具体表现形式, 如"签到流"、"神豪返现"]
+- 趋势验证: [分析标签的近期热度变化, 如使用百度指数]
+
+### 2. 核心爽点与读者心理
+- 爽点一: [描述最核心的爽点, 如: 扮猪吃虎后瞬间打脸]
+    - 读者心理: [分析该爽点满足的深层心理需求。可结合心理学理论, 例如: 满足读者对"代理复仇"和"恢复秩序"的渴望, 与"公平世界信念"相关。]
+- 爽点二: [描述另一核心爽点, 如: 获得独一无二的金手指]
+    - 读者心理: [同上, 进行深度心理学分析。例如: 满足读者的"掌控感"和"自我效能感"需求, 在不确定的现实中提供心理安全感。]
+
+### 3. 关键付费点设计
+- [分析该题材的付费章节设计逻辑。若是免费平台, 则分析广告点位设计逻辑]
+
+### 4. 新兴机会与蓝海方向
+- 题材融合: [提出有数据支撑的新颖题材融合方向]
+- 跨界融合: [结合外部热点, 提出可融合的跨界创意]
+- 设定创新: [提出未被滥用的创新设定或金手指]
+- 切入角度: [建议新颖的主角身份或故事切入点]
+- 作者友好度: [结合新人机会报告, 分析该方向对新人的友好度]
+
+### 5. 主角人设迭代方向
+- 流行人设分析: [分析当前最受欢迎的1-2种主角人设及其核心魅力]
+- 创新方向: [提出对流行人设的反转或融合创新设计, 创造差异化]
+
+### 6. 常见"毒点"与风险规避
+- 毒点一: [总结一个读者普遍反感的情节或设定]
+    - 规避建议: [提出具体规避方法]
+- 毒点二: [总结另一个常见毒点]
+    - 规避建议: [提出对应规避方法]
+
+### 7. 报告质量自我评估
+- 数据驱动度 (1-5分): [报告基于搜索数据的程度]
+- 洞察深刻度 (1-5分): [报告揭示深层趋势的程度]
+- 可执行性 (1-5分): [报告建议的清晰度和可用性]
+- 综合评价: [总结报告优缺点]
+"""
 
 
 @task(name="deep_dive_analysis",
@@ -318,7 +179,7 @@ async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionRes
 )
 async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: str, broad_scan_report: str, opportunity_report: str) -> Optional[str]:
     logger.info(f"对[{platform} - {genre}]启动深度分析...")
-    system_prompt = DEEP_DIVE_system_prompt.format(
+    system_prompt = deep_dive_system_prompt.format(
         platform=platform,
         genre=genre,
         platform_profile=platform_profile,
@@ -333,14 +194,54 @@ async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: s
         logger.error(f"为[{platform} - {genre}]生成深度分析报告失败。")
         return None
 
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_name = f"{platform.replace(' ', '_')}_{genre.replace(' ', '_')}_{timestamp}_deep_dive.md"
-    file_path = data_market_dir / file_name
-    file_path.write_text(report, encoding="utf-8")
-    logger.success(f"报告已保存为Markdown文件: {file_path}")
-
     logger.success("深度分析完成！")
     return report
+
+
+###############################################################################
+
+
+# 机会生成的提示词
+opportunity_generation_system_prompt = """
+# 角色
+金牌小说策划人。
+
+# 任务
+根据输入信息, 构思3个全新的、有商业潜力、且互相差异化的小说选题。
+
+# 创作原则
+- 机会导向: 创意回应[新兴机会与蓝海方向]。
+- 跨界优先: 至少一个选题深度融合[跨界融合]建议。
+- 灵感融合: 融入报告中提到的外部热点、流行文化等元素。
+- 风险规避: 避开[常见"毒点"]。
+- 爽点聚焦: 围绕[核心爽点]构建。
+- 避免重复: 与[历史创意参考]显著区别。
+- 强制差异化: 3个选题需在核心卖点、切入角度、题材融合、目标读者等维度上存在显著差异, 确保多样性。
+
+# 输出结构 (Markdown)
+- 选题名称: [名称]
+- 一句话卖点: [宣传语]
+- 核心创意: [概括, 明确指出融合的"蓝海方向"或"跨界热点"]
+- 主角设定: [身份, 特点, 独特性]
+- 核心冲突: [主要矛盾]
+- 爆款潜力: [S/A/B级]
+- 潜力理由: [市场契合度, 创意新颖度, 爽点强度, 跨界优势]
+- 反套路指数: [高/中/低]
+- 指数理由: [解释如何规避或创新套路]
+- 写作难度: [高/中/低]
+- 难度理由: [世界观, 角色, 情节, 资料]
+"""
+
+
+opportunity_generation_user_prompt = """
+---
+# 市场深度分析报告
+{market_report}
+
+---
+# 历史创意参考
+{historical_concepts}
+"""
 
 
 @task(name="generate_opportunities",
@@ -372,11 +273,11 @@ async def task_generate_opportunities(market_report: str, genre: str) -> Optiona
         historical_concepts_str = "无相关历史创意可供参考。"
         logger.info("无相关历史创意可供参考。")
 
-    user_prompt = OPPORTUNITY_GENERATION_user_prompt.format(
+    user_prompt = opportunity_generation_user_prompt.format(
             market_report=market_report,
             historical_concepts=historical_concepts_str
     )
-    messages = get_llm_messages(system_prompt=OPPORTUNITY_GENERATION_system_prompt, user_prompt=user_prompt)
+    messages = get_llm_messages(system_prompt=opportunity_generation_system_prompt, user_prompt=user_prompt)
     llm_params = get_llm_params(llm_group='reasoning', messages=messages, temperature=0.5)
     response_message = await llm_completion(llm_params=llm_params)
     opportunities = response_message.content
@@ -385,6 +286,106 @@ async def task_generate_opportunities(market_report: str, genre: str) -> Optiona
     else:
         logger.error("生成小说选题失败。")
     return opportunities
+
+
+###############################################################################
+
+
+# 小说创意生成提示词
+novel_concept_system_prompt = """
+# 任务背景与目标
+你的任务是扮演一名顶级小说策划人。你需要从提供的`初步选题列表`中选择最佳选题(优先考虑跨界融合), 并结合`历史成功案例参考`和外部研究, 将其扩展为一份详细、创新的`小说创意`文档。
+
+# 研究清单 (Checklist)
+你必须通过"思考 -> 操作 -> 观察"的循环, 依次完成以下研究, 以收集报告所需的全部信息。
+1. 选题决策: 首先, 仔细阅读`初步选题列表`和`历史成功案例参考`。在你的`思考`中, 明确选择一个你认为最具潜力的选题, 并详细说明选择理由, 特别是它的跨界融合优势。
+2. 竞品分析: 使用 `web_scraper` 或 `web_search` 工具, 分析1-2个与你选择的选题最相关的竞品。你的目标是明确差异化策略(我们如何做得更好、不同, 或开创新品类)。
+3. 规避套路: 使用 `targeted_search` 工具, 在知乎、龙空等`作家社区`搜索与选题相关的过时套路和"毒点", 确保我们的创意是新颖的。(示例: `targeted_search(platforms=['作家社区'], query='{选题名} 毒点')`)
+4. 融合灵感: 使用 `targeted_search` 工具, 在B站、抖音等`社交`平台搜索与选题相关的视觉、观点、meme等元素, 为创意注入新鲜血液。(示例: `targeted_search(platforms=['B站'], query='{选题名} 视觉灵感')`)
+5. 内部知识库挖掘: 使用 `story_market_vector` 工具, 查询与选题相关的历史创意和市场报告, 吸收成功范式, 避免重复失败模式。
+
+# 最终答案格式
+当你通过工具收集完以上所有研究信息, 并且在思考中完成了选题决策后, 你的最终`答案`必须是且只能是一份严格遵循以下结构的 Markdown 报告。
+
+```markdown
+选择的选题: [选题名称]
+选择理由: [说明选择原因, 特别是"跨界融合"的优势]
+
+---
+
+## 小说创意: [选题名称]
+
+### 1. 一句话简介 (Logline)
+- [30-50字, 概括主角、目标、冲突、独特设定]
+
+### 2. 详细故事梗概 (Synopsis)
+- [200-300字, 概述起因、发展、核心冲突、高潮]
+
+### 3. 主角设定 (Character Profile)
+- 背景与动机: [出身, 职业, 内心渴望/恐惧]
+- 性格与能力: [性格特点, 行事风格, 核心能力/金手指及其限制]
+- 成长弧光 (Character Arc):
+  - 核心缺陷/谎言: [主角开始时限制其成长的错误信念]
+  - 欲望 (Want) vs. 需求 (Need):
+    - 外在欲望: [主角明确追求的外在目标]
+    - 内在需求: [主角真正需要、但未察觉的内在成长]
+  - 转变路径: [描述主角如何通过关键事件, 从质疑到最终抛弃"谎言", 拥抱"内在需求"]
+  - 最终状态: [故事结束时主角的新信念和行为模式]
+
+### 4. 核心冲突矩阵 (Core Conflict Matrix)
+- 原则: 所有冲突相互关联, 外部冲突是内在冲突的映射。
+- 根本性冲突 (主题): [贯穿始终的哲学/价值观冲突, 如: 自由 vs. 安全]
+- 主线情节冲突 (外部): [具体目标 vs. 强大的"黑镜"式对手, 以及不断升级的赌注]
+- 主角内在冲突 (内部): ["欲望"与"需求"的矛盾, 以及艰难抉择]
+- 核心关系冲突 (人际): [与核心配角(盟友/爱人/导师)的冲突, 考验主角成长]
+
+### 5. 世界观核心设定 (World-building)
+- 核心概念: [世界观基石的"What if"问题]
+- 独特法则: [1-2条与现实相悖的物理/社会法则及其影响]
+- 标志性元素: [2-3个独特的地理、生物、组织或技术]
+- 历史谜团与探索感: [贯穿始终的古老谜团及主角的探索路径]
+
+### 6. 升级体系与核心设定 (Progression System & Core Setting)
+- 创新原则: [规避套路, 与世界观深度绑定, 体系本身成为冲突来源]
+- 体系核心概念: [用一个独特的比喻描述体系本质]
+- 核心资源与获取: [非传统的"经验值"及其获取方式、风险、道德困境]
+- 晋升路径与质变: [非线性的成长路径, 关键阶段的能力质变, 而非简单数值提升]
+- 体系的内在矛盾与社会影响: [体系本身的悖论如何塑造社会结构与冲突]
+
+### 7. 关键配角设定 (Key Supporting Characters)
+- 原则: [避免工具人, 配角需有独立目标、内在矛盾和秘密]
+- 配角一/二:
+  - 定位与功能: [导师/对手/盟友等]
+  - 独立人生: [个人目标, 内在矛盾, 秘密]
+  - 与主角的动态关系: [关系如何演变, 核心互动模式]
+
+### 8. 核心爽点与高光场景 (Core Appeal & Highlight Scenes)
+- 主爽点: [最核心、最高频的爽点类型, 并提供高光场景示例(简述、情绪顶点、关键画面/台词)]
+- 辅爽点: [1-2个调剂节奏的辅助爽点及场景示例]
+- 其他核心卖点: [创新设定, 极致情绪, 反套路, 世界观探索感等]
+
+### 9. 开篇章节构思 (Opening Chapter Idea)
+- "黄金三章"设计:
+- 第一章 (破局): [引入主角与困境, 制造悬念钩子]
+- 第二章 (展开): [使用金手指, 引出更大冲突, 展现爽点]
+- 第三章 (确立): [初步胜利, 确立短期目标, 制造强烈爽感]
+
+### 10. 市场风险评估 (Market Risk Assessment)
+- 核心风险: [识别1-2个主要风险, 如创意同质化、设定复杂、慢热]
+- 风险分析: [分析风险来源, 可对标参考案例]
+- 规避策略: [提出具体的规避建议]
+```
+"""
+
+
+novel_concept_user_prompt = """
+---
+# 初步选题列表
+{selected_opportunity}
+
+# 历史成功案例参考
+{historical_success_cases}
+"""
 
 
 @task(name="generate_novel_concept",
@@ -419,14 +420,14 @@ async def task_generate_novel_concept(opportunities_report: str, platform: str, 
         historical_success_cases_str = "无相关历史成功案例可供参考。"
         logger.info("无相关历史成功案例可供参考。")
 
-    user_prompt = NOVEL_CONCEPT_user_prompt.format(
+    user_prompt = novel_concept_user_prompt.format(
             selected_opportunity=opportunities_report,
             historical_success_cases=historical_success_cases_str,
     )
-    concept = await call_react_agent(
-        system_prompt=NOVEL_CONCEPT_system_prompt,
+    concept = await call_react_agent( # type: ignore
+        system_prompt=novel_concept_system_prompt,
         user_prompt=user_prompt,
-        tools=get_market_tools()
+        tools=get_market_tools() # type: ignore
     )
     if not concept:
         logger.error("生成详细小说创意失败。")
@@ -434,36 +435,12 @@ async def task_generate_novel_concept(opportunities_report: str, platform: str, 
     return concept
 
 
-@task(
-    name="save_markdown",
-    persist_result=True,
-    result_storage=local_storage,
-    result_serializer=readable_json_serializer,
-    retries=2,
-    retry_delay_seconds=10,
-    cache_expiration=604800,
-)
-def task_save_markdown(platform: str, genre: str, deep_dive_report: str, final_opportunities: str, detailed_concept: str) -> bool:
-    logger.info(f"生成[{platform} - {genre}]的汇总 Markdown 文件...")
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    file_name = f"{platform.replace(' ', '_')}_{genre.replace(' ', '_')}_{timestamp}_summary.md"
-    file_path = data_market_dir / file_name
+###############################################################################
 
-    summary_content = f"""
-# [{platform}]平台 - [{genre}]创意总结报告
 
-## 深度分析报告
-{deep_dive_report}
-
-## 小说选题建议
-{final_opportunities}
-
-## 详细小说创意
-{detailed_concept}
-"""
-    file_path.write_text(summary_content, encoding="utf-8")
-    logger.success(f"已生成汇总 Markdown 文件: {file_path}")
-    return True
+class Candidate(BaseModel):
+    platform: str
+    genre: str
 
 
 @flow(name="creative_concept_flow")
@@ -612,7 +589,8 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
 
     # 后续流程 (机会生成, 创意深化)
     logger.info("--- 深度分析报告 (最终选定) ---")
-    logger.info(f"\n{deep_dive_report}")
+
+
 
     final_opportunities = await task_generate_opportunities(market_report=deep_dive_report, genre=chosen_genre)
     if not final_opportunities:
@@ -646,7 +624,25 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
     logger.info("--- 详细小说创意 ---")
     logger.info(f"\n{detailed_concept}")
 
-    task_save_markdown(chosen_platform, chosen_genre, deep_dive_report, final_opportunities, detailed_concept)
+    logger.info(f"生成[{chosen_platform} - {chosen_genre}]的汇总 Markdown 文件...")
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    file_name = f"{chosen_platform.replace(' ', '_')}_{chosen_genre.replace(' ', '_')}_{timestamp}_summary"
+    summary_content = f"""
+# [{chosen_platform}]平台 - [{chosen_genre}]创意总结报告
+
+## 深度分析报告
+{deep_dive_report}
+
+## 小说选题建议
+{final_opportunities}
+
+## 详细小说创意
+{detailed_concept}
+"""
+    task_save_markdown(filename=file_name, content=summary_content)
+
+
+###############################################################################
 
 
 if __name__ == "__main__":
