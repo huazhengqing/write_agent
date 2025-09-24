@@ -164,7 +164,7 @@ example_info_2 = VectorStoreInfo(
     ],
 )
 
-example_query_2 = "简・奥斯汀(Jane Austen)在 1813 年之后出版的、探讨 "为社会地位而结婚" 这一主题的书籍有哪些?"
+example_query_2 = "简·奥斯汀(Jane Austen)在 1813 年之后出版的、探讨 \"为社会地位而结婚\" 这一主题的书籍有哪些?"
 
 example_output_2 = VectorStoreQuerySpec(
     query="与 为社会地位而结婚 主题相关的书籍(Books related to theme of marriage for social standing)",
