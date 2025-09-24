@@ -1,9 +1,13 @@
 from loguru import logger
+from functools import lru_cache
 from typing import Any, List, Literal
 from llama_index.core.bridge.pydantic import PrivateAttr
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.schema import BaseNode, TextNode, NodeRelationship
 from llama_index.llms.litellm import LiteLLM
+from llama_index.core.node_parser import MarkdownElementNodeParser
+from llama_index.core.node_parser.interface import NodeParser
+
 
 
 table_summary_prompt = """
@@ -30,6 +34,7 @@ table_summary_prompt = """
 {table_code}
 ---
 """
+
 
 
 mermaid_summary_prompt = """
@@ -59,14 +64,21 @@ mermaid_summary_prompt = """
 """
 
 
-from llama_index.core.node_parser import MarkdownElementNodeParser
+
+###############################################################################
+
+
+
 class CustomMarkdownNodeParser(MarkdownElementNodeParser):
 
+
     _mermaid_summary_prompt: PromptTemplate = PrivateAttr()
+
 
     def __init__(self, llm: LiteLLM, table_summary_prompt: str, mermaid_summary_prompt: str, **kwargs: Any):
         super().__init__(llm=llm, summary_query_str=table_summary_prompt, **kwargs)
         self._mermaid_summary_prompt = PromptTemplate(mermaid_summary_prompt)
+
 
 
     def _parse_table(self, element: Any, node: TextNode) -> List[BaseNode]:
@@ -96,6 +108,7 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
         return [TextNode(text=combined_text, metadata=node.metadata.copy())]
 
 
+
     def _parse_mermaid(self, mermaid_code: str, metadata: dict) -> List[BaseNode]:
         if not mermaid_code.strip():
             return []
@@ -113,6 +126,7 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
             f"原始Mermaid图表代码:\n```mermaid\n{mermaid_code}\n```"
         )
         return [TextNode(text=combined_text, metadata=metadata)]
+
 
 
     def get_nodes_from_node(self, node: TextNode) -> List[BaseNode]:
@@ -157,10 +171,12 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
         return final_nodes
 
 
+
 ###############################################################################
 
 
-from llama_index.core.node_parser.interface import NodeParser
+
+@lru_cache(maxsize=30)
 def get_vector_node_parser(content_format: Literal["md", "txt", "json"], content_length: int = 0) -> NodeParser:
     if content_length > 0 and content_length < 512:
         from llama_index.core.node_parser import SentenceSplitter

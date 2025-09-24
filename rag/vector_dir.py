@@ -1,13 +1,20 @@
+from functools import lru_cache
 from pathlib import Path
 from loguru import logger
 from typing import Callable, Dict, List
-
 from llama_index.core import Document
 from llama_index.core import Settings
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.core.schema import BaseNode
 
 
+
+from rag.vector import init_llama_settings
+init_llama_settings()
+
+
+
+@lru_cache(maxsize=30)
 def file_metadata_default(file_path_str: str) -> dict:
     file_path = Path(file_path_str)
     from datetime import datetime
@@ -22,6 +29,8 @@ def file_metadata_default(file_path_str: str) -> dict:
     }
 
 
+
+@lru_cache(maxsize=30)
 def _load_and_filter_documents(
     input_dir: str,
     metadata_func: Callable[[str], dict]
@@ -61,8 +70,10 @@ def _load_and_filter_documents(
     return valid_docs
 
 
+
+@lru_cache(maxsize=30)
 def _parse_docs_to_nodes_by_format(documents: List[Document]) -> List[BaseNode]:
-    from utils.vector_splitter import get_vector_node_parser
+    from rag.vector_splitter import get_vector_node_parser
     logger.info("开始按文件格式解析文档为节点...")
     docs_by_format: Dict[str, List[Document]] = {
         "md": [], 
@@ -78,7 +89,7 @@ def _parse_docs_to_nodes_by_format(documents: List[Document]) -> List[BaseNode]:
             logger.warning(f"检测到未支持的文件扩展名 '{file_extension}', 将忽略。")
 
     all_nodes = []
-    from utils.vector import filter_invalid_nodes
+    from rag.vector_add import filter_invalid_nodes
     for content_format, format_docs in docs_by_format.items():
         if not format_docs:
             continue
@@ -96,6 +107,8 @@ def _parse_docs_to_nodes_by_format(documents: List[Document]) -> List[BaseNode]:
     return all_nodes
 
 
+
+@lru_cache(maxsize=30)
 def vector_add_from_dir(
     vector_store: VectorStore,
     input_dir: str,

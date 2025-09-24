@@ -19,7 +19,7 @@ init_logger(os.path.splitext(os.path.basename(__file__))[0])
 
 from utils.llm_api import get_llm_params
 from utils.llm import get_llm_messages, llm_completion
-from utils.vector import get_vector_query_engine, index_query
+from rag.vector_query import get_vector_query_engine, index_query
 
 
 from market_analysis.story.base import get_market_vector_store

@@ -9,12 +9,12 @@ from llama_index.graph_stores.kuzu.kuzu_property_graph import KuzuPropertyGraphS
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from utils.kg import (
+from rag.kg import (
     get_kg_store,
     kg_add,
     get_kg_query_engine,
 )
-from utils.vector import index_query, index_query_batch
+from rag.vector_query import index_query, index_query_batch
 from tests import test_data
 
 

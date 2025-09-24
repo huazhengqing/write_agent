@@ -1,17 +1,21 @@
+from functools import lru_cache
 from loguru import logger
 from typing import List, Any, Optional, Type, Union
 from pydantic import BaseModel
+from diskcache import Cache
 from utils.react_agent_prompt import react_system_prompt
-
-
+from utils.search import web_search_tools
 from utils.file import cache_dir
+
+
+
 cache_agent_dir = cache_dir / "react_agent"
 cache_agent_dir.mkdir(parents=True, exist_ok=True)
-from diskcache import Cache
 cache_query = Cache(str(cache_agent_dir), size_limit=int(32 * (1024**2)))
 
 
-from utils.search import web_search_tools
+
+@lru_cache(maxsize=30)
 async def call_react_agent(
     system_prompt: str = react_system_prompt,
     user_prompt: str = "",

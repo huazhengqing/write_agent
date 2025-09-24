@@ -38,6 +38,7 @@ class BookMetaDB:
         self._create_table()
 
 
+
     def _create_table(self):
         with self._lock:
             logger.debug("正在检查并创建 t_book_meta 表...")
@@ -71,6 +72,7 @@ class BookMetaDB:
             """)
             logger.debug("t_book_meta 表及相关索引、触发器已准备就绪。")
             self.conn.commit()
+
 
 
     def add_or_update_book_meta(self, task: Task):
@@ -110,6 +112,7 @@ class BookMetaDB:
             logger.info(f"书籍元数据添加/更新成功: run_id='{task.run_id}'")
 
 
+
     def get_book_meta(self, run_id: str) -> Optional[Dict[str, Any]]:
         """
         根据 run_id 获取单本书的元数据。
@@ -123,6 +126,7 @@ class BookMetaDB:
             row = self.cursor.fetchone()
         logger.info(f"书籍元数据查询 {'成功' if row else '失败'}: run_id='{run_id}'")
         return dict(row) if row else None
+
 
 
     def get_all_book_meta(self) -> List[Dict[str, Any]]:
@@ -139,6 +143,7 @@ class BookMetaDB:
         return [dict(row) for row in rows]
 
 
+
     def close(self):
         with self._lock:
             if self.conn:
@@ -146,10 +151,12 @@ class BookMetaDB:
                 self.conn.close()
 
 
+
 ###############################################################################
 
 
-@lru_cache(maxsize=1)
+
+@lru_cache(maxsize=None)
 def get_meta_db() -> BookMetaDB:
     from utils.file import data_dir
     db_path = data_dir / "books.db"

@@ -8,9 +8,10 @@ from utils.sqlite_task import get_task_db
 from utils.file import get_text_file_path, text_file_append
 from utils.models import Task, get_sibling_ids_up_to_current
 from utils.loader import load_prompts
-from utils.kg import get_kg_query_engine, kg_add
-from utils.hybrid_query import hybrid_query_batch
-from utils.vector import index_query_batch, vector_add, get_vector_query_engine
+from rag.kg import get_kg_query_engine, kg_add
+from rag.hybrid_query import hybrid_query_batch
+from rag.vector_add import vector_add
+from rag.vector_query import get_vector_query_engine, index_query_batch
 from utils.llm import llm_temperatures, get_llm_messages, get_llm_params, llm_completion
 from story.base import get_story_kg_store, get_story_vector_store
 
@@ -32,6 +33,7 @@ class StoryRAG:
             'text_summary': Cache(os.path.join(cache_story_dir, "text_summary"), size_limit=int(128 * (1024**2))),
             'task_list': Cache(os.path.join(cache_story_dir, "task_list"), size_limit=int(32 * (1024**2))),
         }
+
 
     def save_data(self, task: Task, task_type: str):
         task_db = get_task_db(run_id=task.run_id)
@@ -588,6 +590,7 @@ class StoryRAG:
 ###############################################################################
 
 
-@lru_cache(maxsize=1)
+
+@lru_cache(maxsize=None)
 def get_story_rag():
     return StoryRAG()

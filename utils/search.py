@@ -1,23 +1,24 @@
+from functools import lru_cache
 import os
 from loguru import logger
 from typing import List, Optional, Callable, Any, Tuple
+from diskcache import Cache
 from llama_index.core.tools import FunctionTool
+from utils.file import cache_dir
 
-
-from dotenv import load_dotenv
-load_dotenv()
 
 
 SEARXNG_BASE_URL = os.getenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080/search")
 
 
-from utils.file import cache_dir
+
 cache_search_dir = cache_dir / "search"
 cache_search_dir.mkdir(parents=True, exist_ok=True)
-from diskcache import Cache
 cache_searh = Cache(str(cache_search_dir), expire=60 * 60 * 24 * 7)
 
 
+
+@lru_cache(maxsize=30)
 async def search_with_searxng(query: str, max_results: int) -> str:
     import httpx
     async with httpx.AsyncClient(follow_redirects=True) as client:
@@ -55,6 +56,8 @@ async def search_with_searxng(query: str, max_results: int) -> str:
     return "\n\n---\n\n".join(formatted_results)
 
 
+
+@lru_cache(maxsize=30)
 def search_with_ddg(query: str, max_results: int) -> str:
     params = {
         "query": query,
@@ -74,6 +77,8 @@ def search_with_ddg(query: str, max_results: int) -> str:
     return "\n\n---\n\n".join(formatted_results)
 
 
+
+@lru_cache(maxsize=30)
 async def web_search(query: str, max_results: int = 10) -> str:
     normalized_query = query.lower().strip()
     cache_key = f"web_search:{normalized_query}:{max_results}"
@@ -111,6 +116,8 @@ async def web_search(query: str, max_results: int = 10) -> str:
     raise RuntimeError(error_msg) from last_exception
 
 
+
+@lru_cache(maxsize=None)
 def get_web_search_tool() -> FunctionTool:
     return FunctionTool.from_defaults(
         fn=web_search,
@@ -341,6 +348,8 @@ platform_site_map = {
 }
 
 
+
+@lru_cache(maxsize=30)
 async def targeted_search(query: str, platforms: Optional[List[str]] = None, sites: Optional[List[str]] = None) -> str:
     # 归一化输入以提高缓存命中率
     normalized_query = query.lower().strip()
@@ -397,6 +406,8 @@ async def targeted_search(query: str, platforms: Optional[List[str]] = None, sit
     return search_result
 
 
+
+@lru_cache(maxsize=None)
 def get_targeted_search_tool() -> FunctionTool:
     return FunctionTool.from_defaults(
         fn=targeted_search,
@@ -424,6 +435,8 @@ def get_targeted_search_tool() -> FunctionTool:
 ###############################################################################
 
 
+
+@lru_cache(maxsize=30)
 async def scrape_static(url: str) -> Optional[str]:
     import httpx
     async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
@@ -451,6 +464,8 @@ async def scrape_static(url: str) -> Optional[str]:
     return None
 
 
+
+@lru_cache(maxsize=30)
 async def scrape_dynamic(url: str) -> Optional[str]:
     from playwright.async_api import async_playwright
     async with async_playwright() as p:
@@ -478,6 +493,8 @@ async def scrape_dynamic(url: str) -> Optional[str]:
     return html_content
 
 
+
+@lru_cache(maxsize=30)
 async def scrape_and_extract(url: str) -> str:
     logger.info(f"开始抓取 URL: {url}")
     cached_content = cache_searh.get(url)
@@ -524,6 +541,8 @@ async def scrape_and_extract(url: str) -> str:
     return ""
 
 
+
+@lru_cache(maxsize=None)
 def get_web_scraper_tool() -> FunctionTool:
     return FunctionTool.from_defaults(
         fn=scrape_and_extract,

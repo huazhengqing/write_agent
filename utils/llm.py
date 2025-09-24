@@ -1,10 +1,13 @@
 
+from functools import lru_cache
 import json
 from loguru import logger
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, Type, Callable
 
 
+
+@lru_cache(maxsize=30)
 def custom_get_cache_key(**kwargs):
     """
     根据调用类型(completion, embedding, rerank)生成不同的缓存键。
@@ -54,6 +57,7 @@ def custom_get_cache_key(**kwargs):
     return hashlib.sha256(key_string.encode("utf-8")).hexdigest()
 
 
+
 from litellm.caching.caching import Cache
 from utils.file import cache_dir
 cache = Cache(type="disk", disk_cache_dir=cache_dir / "litellm")
@@ -61,6 +65,7 @@ cache.get_cache_key = custom_get_cache_key
 import litellm
 litellm.cache = cache
 litellm.enable_cache()
+
 
 
 litellm.enable_json_schema_validation=True
@@ -71,9 +76,12 @@ litellm.REPEATED_STREAMING_CHUNK_LIMIT = 20
 # litellm.disable_logging = True
 
 
+
 ###############################################################################
 
 
+
+@lru_cache(maxsize=30)
 def get_llm_messages(
     system_prompt: str = None, 
     user_prompt: str = None, 
@@ -106,6 +114,7 @@ def get_llm_messages(
     return messages
 
 
+
 def format_json_content(content: str) -> str:
     try:
         parsed = json.loads(content)
@@ -114,10 +123,12 @@ def format_json_content(content: str) -> str:
         return content
 
 
+
 def format_message_content(content: str) -> str:
     if content.strip().startswith("{") or content.strip().startswith("["):
         return format_json_content(content)
     return content
+
 
 
 def clean_markdown_fences(content: str) -> str:
@@ -137,9 +148,11 @@ def clean_markdown_fences(content: str) -> str:
     return text.strip()
 
 
+
 def text_validator_default(content: str):
     if not content or len(content.strip()) < 20:
         raise ValueError("生成的内容为空或过短。")
+
 
 
 self_correction_prompt = """
@@ -160,6 +173,7 @@ self_correction_prompt = """
 2.  严格根据 Pydantic 模型的要求, 修正并仅返回完整的、有效的 JSON 对象。
 3.  禁止在 JSON 前后添加任何额外解释或代码块。
 """
+
 
 
 def _handle_llm_failure(
@@ -197,6 +211,7 @@ def _handle_llm_failure(
         llm_params_for_api["messages"] = llm_params["messages"]
 
     logger.info("正在准备重试...")
+
 
 
 async def llm_completion(
@@ -301,7 +316,9 @@ async def llm_completion(
     raise RuntimeError("llm_completion 在所有重试后失败, 这是一个不应出现的情况。")
 
 
+
 ###############################################################################
+
 
 
 extraction_system_prompt = """
@@ -310,10 +327,12 @@ extraction_system_prompt = """
 不要添加任何解释、注释或代码块。
 """
 
+
 extraction_user_prompt = """
 请从以下文本中提取信息并生成 JSON 对象:
 {{cleaned_output}}
 """
+
 
 
 async def txt_to_json(

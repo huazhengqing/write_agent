@@ -1,5 +1,7 @@
+from functools import lru_cache
 from typing import List, Optional, Dict, Literal, Any, get_args
 from pydantic import BaseModel, Field, conlist
+
 
 
 ###############################################################################
@@ -8,6 +10,7 @@ from pydantic import BaseModel, Field, conlist
 CategoryType = Literal["story", "book", "report"]
 TaskType = Literal["write", "design", "search"]
 LanguageType = Literal["cn", "en"]
+
 
 class Task(BaseModel):
     id: str = Field(..., description="任务的唯一标识符, 采用层级结构, 父任务id.子任务序号。如 '1', '1.1', '1.2.1'")
@@ -32,7 +35,9 @@ class Task(BaseModel):
     run_id: str = Field(..., description="整个流程运行的唯一ID, 用于隔离不同任务的记忆")
 
 
+
 ###############################################################################
+
 
 
 ComplexReason = Literal[
@@ -49,6 +54,7 @@ ComplexReason = Literal[
     "vague_goal"
 ]
 
+
 class AtomOutput(BaseModel):
     reasoning: Optional[str] = Field(None, description="关于任务是原子还是复杂的推理过程。")
     update_goal: Optional[str] = Field(None, description="在分析了任务后, 对原始[核心目标]的优化或澄清。如果LLM认为不需要修改, 则此字段可以省略。")
@@ -61,6 +67,7 @@ class AtomOutput(BaseModel):
 
 
 ###############################################################################
+
 
 
 class PlanNode(BaseModel):
@@ -76,11 +83,14 @@ class PlanNode(BaseModel):
     length: Optional[str] = Field(None, description="对于 'write' 类型的任务, 此任务的预估长度或字数。")
     sub_tasks: List['PlanNode'] = Field(default_factory=list, description="分解出的更深层次的子任务列表。")
 
+
 class PlanOutput(PlanNode):
     reasoning: Optional[str] = Field(None, description="关于任务分解的推理过程。")
 
 
+
 ###############################################################################
+
 
 
 RouteCategory = Literal[
@@ -97,11 +107,13 @@ RouteCategory = Literal[
     "trend_integration"
 ]
 
+
 class RouteOutput(BaseModel):
     categories: List[RouteCategory] = Field(description=f"判断出的任务类型列表。列表中的每个元素都必须是 {get_args(RouteCategory)} 之一。对于复合任务, 可以返回多个类别。")
 
 
 ###############################################################################
+
 
 
 def convert_plan_to_tasks(sub_task_outputs: List[PlanNode], parent_task: Task) -> List[Task]:
@@ -136,9 +148,12 @@ def convert_plan_to_tasks(sub_task_outputs: List[PlanNode], parent_task: Task) -
     return tasks
 
 
+
 ###############################################################################
 
 
+
+@lru_cache(maxsize=30)
 def natural_sort_key(task_id: str) -> List[int]:
     """为任务ID字符串提供健壮的自然排序键, 处理空或格式错误的ID。"""
     if not task_id:
@@ -152,6 +167,8 @@ def natural_sort_key(task_id: str) -> List[int]:
         return []
 
 
+
+@lru_cache(maxsize=30)
 def get_sibling_ids_up_to_current(task_id: str) -> List[str]:
     """
     根据任务ID, 生成从第一个兄弟任务到其自身的所有兄弟任务的ID列表。

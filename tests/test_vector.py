@@ -8,13 +8,9 @@ from llama_index.vector_stores.chroma import ChromaVectorStore
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from utils.vector import (
-    get_vector_store,
-    vector_add,
-    get_vector_query_engine,
-    index_query,
-    index_query_batch,
-)
+from rag.vector import get_vector_store
+from rag.vector_add import vector_add
+from rag.vector_query import get_vector_query_engine, index_query, index_query_batch
 from tests.conftest import get_all_test_data_params
 from tests import test_data
 

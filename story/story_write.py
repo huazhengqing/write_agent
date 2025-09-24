@@ -4,7 +4,6 @@ from utils.log import ensure_task_logger
 from utils.prefect import get_cache_key, local_storage, readable_json_serializer
 from utils.models import Task
 from utils.sqlite_task import get_task_db
-
 from agents.atom import atom
 from agents.plan import plan, plan_reflection, plan_write_to_design, plan_write_to_write
 from agents.design import design, design_aggregate, design_reflection
@@ -14,9 +13,9 @@ from agents.summary import summary, summary_aggregate
 from agents.hierarchy import hierarchy, hierarchy_reflection
 from agents.review import review_design, review_write
 from agents.route import route
-
 from story.story_rag import get_story_rag
 from prefect import flow, task
+
 
 
 @task(
@@ -35,6 +34,7 @@ async def task_atom(task: Task) -> Task:
         return await atom(task)
 
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -49,6 +49,7 @@ async def task_plan(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await plan(task)
+
 
 
 @task(
@@ -67,6 +68,7 @@ async def task_plan_write_to_design(task: Task) -> Task:
         return await plan_write_to_design(task)
 
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -81,6 +83,7 @@ async def task_plan_write_to_write(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await plan_write_to_write(task)
+
 
 
 @task(
@@ -99,6 +102,7 @@ async def task_plan_reflection(task: Task) -> Task:
         return await plan_reflection(task)
 
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -113,6 +117,7 @@ async def task_route(task: Task) -> str:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await route(task)
+
 
 
 @task(
@@ -131,6 +136,7 @@ async def task_design(task: Task, category: str) -> Task:
         return await design(task, category)
 
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -144,6 +150,7 @@ async def task_design_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await design_reflection(task)
+
 
 
 @task(
@@ -162,6 +169,7 @@ async def task_hierarchy(task: Task) -> Task:
         return await hierarchy(task)
 
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -176,7 +184,8 @@ async def task_hierarchy_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await hierarchy_reflection(task)
-    
+
+
 
 @task(
     persist_result=True, 
@@ -194,6 +203,7 @@ async def task_search(task: Task) -> Task:
         return await search(task)
 
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -208,6 +218,7 @@ async def task_write_before_reflection(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await write_before_reflection(task)
+
 
 
 @task(
@@ -227,6 +238,7 @@ async def task_write(task: Task) -> Task:
         return ret
 
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -242,6 +254,7 @@ async def task_write_reflection(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         ret = await write_reflection(task)
         return ret
+
 
 
 @task(
@@ -261,6 +274,7 @@ async def task_summary(task: Task) -> Task:
         return ret
 
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -275,6 +289,7 @@ async def task_aggregate_design(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await design_aggregate(task)
+
 
 
 @task(
@@ -293,6 +308,7 @@ async def task_aggregate_search(task: Task) -> Task:
         return await search_aggregate(task)
 
 
+
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -307,6 +323,7 @@ async def task_aggregate_summary(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await summary_aggregate(task)
+
 
 
 @task(
@@ -325,6 +342,7 @@ async def task_review_design(task: Task) -> Task:
         return await review_design(task)
 
 
+
 @task(
     persist_result=True,
     result_storage=local_storage,
@@ -339,6 +357,7 @@ async def task_review_write(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await review_write(task)
+
 
 
 @task(
@@ -358,6 +377,7 @@ def task_save_data(task: Task, operation_name: str) -> bool:
             raise ValueError(f"传递给 task_save_data 的任务信息不完整, 缺少ID或目标: {task}")
         get_story_rag().save_data(task, operation_name)
         return True
+
 
 
 @flow(

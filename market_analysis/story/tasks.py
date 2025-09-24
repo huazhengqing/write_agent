@@ -9,7 +9,8 @@ from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..")))
 
 from market_analysis.story.base import get_market_vector_store, query_react
-from utils.vector import vector_add, get_vector_query_engine, index_query
+from rag.vector_query import get_vector_query_engine, index_query
+from rag.vector_add import vector_add
 from utils.file import data_market_dir
 from utils.prefect import local_storage, readable_json_serializer
 from prefect import task

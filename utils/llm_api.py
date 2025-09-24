@@ -1,6 +1,8 @@
 import copy
+from functools import lru_cache
 import os
 from typing import Any, Dict, List, Literal, Optional
+
 
 
 import logging
@@ -10,8 +12,10 @@ for handler in litellm_logger.handlers:
     litellm_logger.removeHandler(handler)
 
 
+
 from dotenv import load_dotenv
 load_dotenv()
+
 
 
 llm_temperatures = {
@@ -23,7 +27,9 @@ llm_temperatures = {
 }
 
 
+
 ###############################################################################
+
 
 
 llms_api = {
@@ -139,6 +145,8 @@ llms_api = {
     }
 }
 
+
+
 llm_api_params = {
     "temperature": llm_temperatures["reasoning"],
     "caching": True,
@@ -160,6 +168,9 @@ llm_api_params = {
     ]
 }
 
+
+
+@lru_cache(maxsize=30)
 def get_llm_params(
     llm_group: Literal['reasoning', 'fast', 'summary'] = 'reasoning',
     messages: Optional[List[Dict[str, Any]]] = None,
@@ -188,7 +199,9 @@ def get_llm_params(
     return llm_params
 
 
+
 ###############################################################################
+
 
 
 embeddings_api = {
@@ -205,6 +218,8 @@ embeddings_api = {
     }
 }
 
+
+
 embeddings_api_params = {
     "caching": True,
     "timeout": 300,
@@ -212,6 +227,9 @@ embeddings_api_params = {
     "respect_retry_after": True
 }
 
+
+
+@lru_cache(maxsize=30)
 def get_embedding_params(
     embedding: Literal['bge-m3', 'gemini'] = 'bge-m3',
     **kwargs: Any

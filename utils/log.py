@@ -1,7 +1,8 @@
-import threading
+from functools import lru_cache
 from loguru import logger
 import logging
 from utils.file import log_dir
+
 
 
 class PropagateHandler(logging.Handler):
@@ -9,18 +10,15 @@ class PropagateHandler(logging.Handler):
         logging.getLogger(record.name).handle(record)
 
 
-_pytest_logger_initialized = False
 
+@lru_cache(maxsize=None)
 def init_logger(file_name):
-    global _pytest_logger_initialized
-    if not _pytest_logger_initialized:
-        try:
-            logger.remove()
-        except ValueError:
-            pass
-        # 在测试期间, 注释此行可将所有日志输出重定向到文件
-        # logger.add(PropagateHandler(), format="{message}", level="DEBUG")
-        _pytest_logger_initialized = True
+    try:
+        logger.remove()
+    except ValueError:
+        pass
+    # 在测试期间, 注释此行可将所有日志输出重定向到文件
+    # logger.add(PropagateHandler(), format="{message}", level="DEBUG")
 
     sink_id = logger.add(
         log_dir / f"{file_name}.log",
@@ -34,6 +32,8 @@ def init_logger(file_name):
     return sink_id
 
 
+
+@lru_cache(maxsize=None)
 def init_logger_by_runid(file_name):
     logger.remove()
     class InterceptHandler(logging.Handler):
@@ -62,23 +62,15 @@ def init_logger_by_runid(file_name):
     )
 
 
-_SINK_IDS = {}
-_SINK_LOCK = threading.Lock()
 
+@lru_cache(maxsize=None)
 def ensure_task_logger(run_id: str):
-    if run_id in _SINK_IDS:
-        return
-
-    with _SINK_LOCK:
-        if run_id in _SINK_IDS:
-            return
-        sink_id = logger.add(
-            log_dir / f"{run_id}.log",
-            filter=lambda record: record["extra"].get("run_id") == run_id,
-            format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
-            level="DEBUG",
-            enqueue=True,
-            backtrace=True,
-            diagnose=True,
-        )
-        _SINK_IDS[run_id] = sink_id
+    logger.add(
+        log_dir / f"{run_id}.log",
+        filter=lambda record: record["extra"].get("run_id") == run_id,
+        format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
+        level="DEBUG",
+        enqueue=True,
+        backtrace=True,
+        diagnose=True,
+    )

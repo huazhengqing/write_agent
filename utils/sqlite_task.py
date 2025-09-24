@@ -124,6 +124,7 @@ class TaskDB:
             self.conn.commit()
 
 
+
     def add_task(self, task: Task):
         task_data = {
             "id": task.id,
@@ -159,6 +160,7 @@ class TaskDB:
             logger.info(f"任务添加/更新成功: id='{task.id}'")
 
 
+
     def add_sub_tasks(self, task: Task):
         import collections
         tasks_to_process = collections.deque(task.sub_tasks or [])
@@ -168,6 +170,7 @@ class TaskDB:
 
             if current_task.sub_tasks:
                 tasks_to_process.extend(current_task.sub_tasks)
+
 
 
     def add_result(self, task: Task):
@@ -223,6 +226,7 @@ class TaskDB:
             logger.info(f"任务 {task.id} 的结果已成功更新。更新字段: {list(fields_to_update.keys())}")
 
 
+
     def get_task_list(self, task: Task) -> str:
         """
         高效获取任务上下文列表 (父任务链 + 兄弟任务), 仅查询必要的字段。
@@ -258,6 +262,7 @@ class TaskDB:
             logger.trace(f"  - 任务上下文: {' '.join(filter(None, map(str, line_parts)))}")
             output_lines.append(" ".join(filter(None, map(str, line_parts))))
         return "\n".join(output_lines)
+
 
 
     def get_dependent_design(self, task: Task) -> str:
@@ -311,6 +316,7 @@ class TaskDB:
         return "\n\n".join(content_list)
 
 
+
     def has_preceding_sibling_design_tasks(self, task: Task) -> bool:
         """
         检查任务是否有同级的前置设计任务。
@@ -352,6 +358,7 @@ class TaskDB:
         return exists
 
 
+
     def get_dependent_search(self, task: Task) -> str:
         if not task.parent_id:
             return ""
@@ -380,6 +387,7 @@ class TaskDB:
         content_list = [row[1] for row in sorted_rows if row[1]]
         logger.info(f"为任务 {task.id} 找到 {len(content_list)} 条依赖的搜索结果。")
         return "\n\n".join(content_list)
+
 
 
     def get_subtask_design(self, parent_id: str) -> str:
@@ -417,6 +425,7 @@ class TaskDB:
         return "\n\n".join(content_list)
 
 
+
     def get_subtask_search(self, parent_id: str) -> str:
         logger.debug(f"正在获取父任务 {parent_id} 的所有搜索类子任务结果...")
         with self._lock:
@@ -434,6 +443,7 @@ class TaskDB:
         content_list = [row[1] for row in sorted_rows if row[1]]
         logger.info(f"为父任务 {parent_id} 找到 {len(content_list)} 条搜索类子任务结果。")
         return "\n\n".join(content_list)
+
 
 
     def get_subtask_summary(self, parent_id: str) -> str:
@@ -454,6 +464,7 @@ class TaskDB:
         
         logger.info(f"为父任务 {parent_id} 找到 {len(content_list)} 条写作类子任务摘要。")
         return "\n\n".join(content_list)
+
 
 
     def get_latest_write_reflection(self, length: int = 500) -> str:
@@ -493,6 +504,7 @@ class TaskDB:
         return "\n\n".join(reversed(content_parts))
 
 
+
     def get_word_count_last_24h(self) -> int:
         """
         获取最近24小时内 'write_reflection' 字段的总字数。
@@ -514,6 +526,7 @@ class TaskDB:
             total_words = sum(len(row[0]) for row in rows)
             logger.info(f"最近24小时总计写作字数: {total_words}")
             return total_words
+
 
 
     def get_write_text(self, task: Task) -> str:
@@ -538,6 +551,7 @@ class TaskDB:
         return "\n\n".join(content_list)
 
 
+
     def close(self):
         with self._lock:
             if self.conn:
@@ -546,6 +560,7 @@ class TaskDB:
 
 
 ###############################################################################
+
 
 
 @lru_cache(maxsize=None)

@@ -1,12 +1,16 @@
+from functools import lru_cache
 from typing import List
 from loguru import logger
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from utils.llm_api import llm_temperatures, get_llm_params
 from utils.llm import get_llm_messages, llm_completion
-from hybrid_prompts import synthesis_system_prompt, synthesis_user_prompt
-from utils.vector import index_query
+from utils.react_agent import call_react_agent, react_system_prompt
+from rag.hybrid_prompts import synthesis_system_prompt, synthesis_user_prompt
+from rag.vector_query import index_query
 
 
+
+@lru_cache(maxsize=30)
 async def hybrid_query(
     vector_query_engine: BaseQueryEngine,
     kg_query_engine: BaseQueryEngine,
@@ -42,6 +46,8 @@ async def hybrid_query(
     return final_answer
 
 
+
+@lru_cache(maxsize=30)
 async def hybrid_query_batch(
     vector_query_engine: BaseQueryEngine,
     kg_query_engine: BaseQueryEngine,
@@ -77,10 +83,12 @@ async def hybrid_query_batch(
     return results
 
 
+
 ###############################################################################
 
 
-from utils.react_agent import call_react_agent, react_system_prompt
+
+@lru_cache(maxsize=30)
 async def hybrid_query_react(
     vector_query_engine: BaseQueryEngine,
     kg_query_engine: BaseQueryEngine,

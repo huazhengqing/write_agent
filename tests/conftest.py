@@ -10,7 +10,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.log import init_logger
 from utils.file import log_dir
-from utils.vector import init_llama_settings
+from rag.vector import init_llama_settings
 from tests import test_data
 
 

@@ -1,15 +1,20 @@
+from functools import lru_cache
 from pathlib import Path
 from typing import Any, Dict
 from loguru import logger
 
+
 from dotenv import load_dotenv
 load_dotenv()
+
 
 from prefect.context import TaskRunContext
 from prefect.filesystems import LocalFileSystem
 from prefect.serializers import JSONSerializer
 
 
+
+@lru_cache(maxsize=None)
 def setup_prefect_storage() -> LocalFileSystem:
     block_name = "write-storage"
     from prefect.exceptions import ObjectNotFound
@@ -28,12 +33,16 @@ def setup_prefect_storage() -> LocalFileSystem:
         logger.success(f"成功创建并保存了 Prefect 存储块 '{block_name}'。")
         return storage_block
 
+
 local_storage = setup_prefect_storage()
+
 
 
 readable_json_serializer = JSONSerializer(dumps_kwargs={"indent": 2, "ensure_ascii": False})
 
 
+
+@lru_cache(maxsize=30)
 def get_cache_key(context: TaskRunContext, parameters: Dict[str, Any]) -> str:
     from utils.models import Task
     task: Task = parameters["task"]

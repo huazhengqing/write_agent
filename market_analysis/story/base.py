@@ -12,18 +12,22 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '.
 from utils.react_agent import call_react_agent
 from utils.file import data_market_dir
 from utils.search import web_search_tools
-from utils.vector import get_vector_query_engine, get_vector_store
+from rag.vector import get_vector_store
+from rag.vector_query import get_vector_query_engine, index_query
+
 
 
 ###############################################################################
 
 
-@lru_cache(maxsize=1)
+
+@lru_cache(maxsize=None)
 def get_market_vector_store() -> ChromaVectorStore:
     return get_vector_store(
         db_path=str(data_market_dir / "story"),
         collection_name="story_market"
     )
+
 
 
 ###############################################################################
