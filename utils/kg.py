@@ -80,7 +80,12 @@ def kg_add(
         property_graph_store=kg_store,
         transformations=[kg_node_parser],
         kg_extractors=[path_extractor],
-        embed_kg_nodes=True,
+        # 关键设置: 必须为 False。
+        # 原因: 当向知识图谱中添加新文档时，如果文档中包含已存在的实体（例如“龙傲天”），
+        # 程序会尝试“更新插入(Upsert)”该实体节点。若 embed_kg_nodes=True，程序会尝试更新该节点的向量，
+        # 这会与 Kuzu “不允许直接更新(SET)已索引属性”的规则冲突，导致运行时错误。
+        # 设置为 False 后，向量信息将仅存储在 ChunkNode 上，实体节点本身不含向量，从而避免此问题，同时保证混合检索能力。
+        embed_kg_nodes=False,
         embed_model=Settings.embed_model,
         show_progress=False,
     )
