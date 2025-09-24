@@ -10,7 +10,7 @@ from llama_index.core.agent.workflow import ReActAgent
 from llama_index.llms.litellm import LiteLLM
 from llama_index.core.workflow import Context
 
-from utils.config import llm_temperatures
+from utils.llm_api import llm_temperatures
 from utils.file import cache_dir
 from utils.llm import clean_markdown_fences, get_llm_params, text_validator_default, txt_to_json
 from utils.search import web_search_tools
@@ -47,7 +47,6 @@ async def call_react_agent(
         tools=tools,
         llm=llm,
         system_prompt=system_prompt,
-        max_iterations = 5, 
         state_prompt=state_prompt,
         verbose=True
     )
@@ -59,7 +58,11 @@ async def call_react_agent(
 
     logger.info("开始执行 ReAct Agent...")
     ctx = Context(agent)
-    handler = agent.run(user_prompt, ctx=ctx)
+    handler = agent.run(
+        user_prompt, 
+        ctx=ctx, 
+        max_iterations=5
+    )
 
     # response_text = ""
     # async for ev in handler.stream_events():

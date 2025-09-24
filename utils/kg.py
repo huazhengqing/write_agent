@@ -10,12 +10,12 @@ from llama_index.core import Document, Settings
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.indices.property_graph.base import PropertyGraphIndex
 from llama_index.graph_stores.kuzu.kuzu_property_graph import KuzuPropertyGraphStore
-from llama_index.llms.litellm import LiteLLM 
-from llama_index.core.node_parser import SentenceSplitter, NodeParser, MarkdownElementNodeParser, SimpleNodeParser
+from llama_index.llms.litellm import LiteLLM
+from llama_index.core.node_parser import SentenceSplitter, NodeParser, MarkdownElementNodeParser, JSONNodeParser
 from llama_index.core.indices.property_graph import SimpleLLMPathExtractor
 from llama_index.postprocessor.siliconflow_rerank.base import SiliconFlowRerank
 
-from utils.config import llm_temperatures, get_llm_params
+from utils.llm_api import llm_temperatures, get_llm_params
 from utils.vector import synthesizer
 from utils.kg_prompts import kg_extraction_prompt
 
@@ -52,23 +52,29 @@ def get_kg_store(db_path: str) -> KuzuPropertyGraphStore:
 def _get_kg_node_parser(
     content_format: Literal["md", "txt", "json"],
     content_length: int,
-    chunk_size: int,
-    chunk_overlap: int,
 ) -> NodeParser:
-    if content_length < chunk_size:
-        return SimpleNodeParser.from_defaults(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    if content_length > 0 and content_length < 512:
+        return SentenceSplitter(
+            chunk_size=512, 
+            chunk_overlap=100,
+        )
     if content_format == "json":
-        parser = SimpleNodeParser.from_defaults(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+        return JSONNodeParser(
+            include_metadata=True,
+            max_depth=5,
+            levels_to_keep=2
+        )
     elif content_format == "md":
-        parser = MarkdownElementNodeParser(
+        return MarkdownElementNodeParser(
             llm=None,
-            chunk_size=chunk_size,
-            chunk_overlap=chunk_overlap,
+            chunk_size=2048,
+            chunk_overlap=400,
             include_metadata=True,
         )
-    else:
-        parser = SentenceSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    return parser
+    return SentenceSplitter(
+        chunk_size=512, 
+        chunk_overlap=100,
+    )
 
 
 def kg_add(
@@ -77,10 +83,7 @@ def kg_add(
     metadata: Dict[str, Any],
     doc_id: str,
     content_format: Literal["md", "txt", "json"] = "md",
-    chars_per_triplet: int = 120,
     kg_extraction_prompt: str = kg_extraction_prompt,
-    chunk_size: int = 2048,
-    chunk_overlap: int = 400,
 ) -> None:
     logger.info(f"开始向知识图谱添加内容, doc_id='{doc_id}', format='{content_format}'...")
 
@@ -94,12 +97,11 @@ def kg_add(
         return
 
     doc = Document(id_=doc_id, text=content, metadata=metadata)
-    kg_node_parser = _get_kg_node_parser(content_format, len(content), chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-    max_triplets_per_chunk = max(1, round(chunk_size / chars_per_triplet))
+    kg_node_parser = _get_kg_node_parser(content_format, len(content))
     path_extractor = SimpleLLMPathExtractor(
         llm=llm_for_extraction,
         extract_prompt=kg_extraction_prompt,
-        max_paths_per_chunk=max_triplets_per_chunk,
+        max_paths_per_chunk=150,
     )
 
     logger.info(f"开始为 doc_id '{doc_id}' 构建知识图谱索引...")

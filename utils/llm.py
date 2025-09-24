@@ -12,7 +12,7 @@ from typing import List, Dict, Any, Literal, Optional, Type, Callable
 from litellm.caching.caching import Cache
 
 from utils.file import cache_dir
-from utils.config import get_llm_params, llm_temperatures
+from utils.llm_api import get_llm_params, llm_temperatures
 
 
 def custom_get_cache_key(**kwargs):

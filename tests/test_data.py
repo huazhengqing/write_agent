@@ -14,6 +14,7 @@
 命名规范: VECTOR_TEST_{CATEGORY}_{DESCRIPTION}
 """
 
+
 # ==============================================================================
 # 1. 基础与边缘用例 (Basic & Edge Cases)
 # 涵盖基本文件格式、空内容、简单中英文等。
@@ -49,6 +50,7 @@ VECTOR_TEST_MIXED_LANG = """
 
 The core component is the `Orchestrator`, 它负责解析 user query 并生成 a DAG (Directed Acyclic Graph) of tasks. 每个 node 代表一个 a sub-task。
 """
+
 
 # ==============================================================================
 # 2. 结构化内容 (Structured Content)
@@ -381,12 +383,14 @@ VECTOR_TEST_COMPOSITE_STRUCTURE = """
 
 ## 主角关系图
 
-'''```mermaid
+```mermaid
 graph TD
     A[龙傲天] -->|师徒| B(风清扬)
     A -->|挚友| D(赵日天)
     A -->|宿敌| C(叶良辰)
-```'''
+```
+"""
+
 
 # ==============================================================================
 # 3. 特殊格式与代码块 (Special Formats & Code Blocks)
@@ -396,13 +400,13 @@ graph TD
 VECTOR_TEST_DIAGRAM_CONTENT = """
 # 关系图: 主角团
 
-'''```mermaid
+```mermaid
 graph TD
     A[龙傲天] -->|师徒| B(风清扬)
     A -->|宿敌| C(叶良辰)
     A -->|挚友| D(赵日天)
     C -->|同门| E(魔重楼)
-```'''
+```
 
 上图展示了主角龙傲天与主要角色的关系网络。
 """
@@ -412,7 +416,7 @@ VECTOR_TEST_COMPLEX_MERMAID_DIAGRAM = """
 
 这是一个复杂的Mermaid关系图, 展示了小说第一卷中主要角色的行动线、关键事件的因果关系, 以及多条故事线的交织。
 
-'''```mermaid
+```mermaid
 graph TD
     subgraph "主角: 凯尔的觉醒之路"
         A1(凯尔在废墟星球发现古老飞船) --> A2{飞船AI“盖亚”苏醒};
@@ -427,7 +431,7 @@ graph TD
 
     %% 故事线交织
     A4 -- 在首都星港口遭遇 --> B3;
-```'''
+```
 
 上图展示了《星海编年史》第一卷的剧情网络。
 """
@@ -438,13 +442,13 @@ VECTOR_TEST_SPECIAL_CHARS = """
 这是一段包含各种特殊字符的文本:  `!@#$%^&*()_+-=[]{};':"\\|,.&lt;&gt;/?~`
 
 ## Python 代码示例
-'''```python
+```python
 def fibonacci(n):
     a, b = 0, 1
     while a < n:
         print(a, end=' ')
         a, b = b, a+b
-```'''
+```
 
 ## 数学公式示例
 欧拉公式: e^(iπ) + 1 = 0
@@ -455,11 +459,11 @@ VECTOR_TEST_MD_WITH_CODE_BLOCK = """
 
 这是一个测试Markdown格式中包含代码块的文档。
 
-'''```python
+```python
 def test_function():
     print("This is a test code block in Markdown format")
     return True
-```'''
+```
 
 代码块上方和下方都有正常文本内容。"""
 
@@ -475,7 +479,7 @@ VECTOR_TEST_MD_WITH_COMPLEX_JSON_CODE_BLOCK = """
 
 下面是一个在Markdown文档中包含多层嵌套结构的复杂JSON代码块示例: 
 
-'''```json
+```json
 {
   "project": {
     "name": "九霄大陆世界构建",
@@ -500,7 +504,9 @@ VECTOR_TEST_MD_WITH_COMPLEX_JSON_CODE_BLOCK = """
     }
   }
 }
-```'''
+```
+"""
+
 
 # ==============================================================================
 # 4. 领域场景: 小说创作 (Domain Scenario: Novel Writing)
@@ -661,6 +667,7 @@ VECTOR_TEST_NOVEL_FULL_OUTLINE = """
 - **结局**: 林奇的数字意识陷入沉睡, 现实中的他生命体征微弱。苏菲带着“普罗米修斯”的核心代码逃离, 成为了被通缉的“恐怖分子”。“衔尾蛇”组织浮出水面, 故事留下巨大悬念。
 """
 
+
 # ==============================================================================
 # 5. 领域场景: 报告撰写 (Domain Scenario: Report Writing)
 # 模拟真实报告撰写场景中的各类文档。
@@ -774,6 +781,7 @@ VECTOR_TEST_DETAILED_REPORT_OUTLINE = """
   B. 术语表
 """
 
+
 # ==============================================================================
 # 6. 领域场景: 技术文档 (Domain Scenario: Technical Documentation)
 # 模拟技术书籍、API文档等内容。
@@ -817,6 +825,7 @@ grouped_by_team = df.groupby('Team')
 
 本章我们探讨了Pandas中强大而核心的GroupBy机制。通过掌握“拆分-应用-合并”的模式, 以及聚合、转换和过滤这三种核心操作, 你将能够解决绝大多数数据分组分析的需求。在下一章, 我们将学习如何处理时间序列数据。
 """
+
 
 # ==============================================================================
 # 7. 测试数据集集合 (Test Data Collections)

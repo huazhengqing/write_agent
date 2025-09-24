@@ -30,7 +30,7 @@ from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.llms.litellm import LiteLLM
 from llama_index.postprocessor.siliconflow_rerank import SiliconFlowRerank
 
-from utils.config import llm_temperatures, get_llm_params, get_embedding_params
+from utils.llm_api import llm_temperatures, get_llm_params, get_embedding_params
 from utils.vector_prompts import tree_summary_prompt, vector_store_query_prompt
 from utils.vector_extractor import get_vector_node_parser
 
@@ -255,6 +255,10 @@ def vector_add(
         logger.warning(f"内容 (id: {effective_doc_id}) 未解析出任何有效节点, 跳过添加。")
         return False
 
+    if doc_id:
+        logger.info(f"为 doc_id '{doc_id}' 执行更新操作, 将首先删除旧节点。")
+        vector_store.delete(doc_id)
+
     pipeline = IngestionPipeline(vector_store=vector_store, transformations=[Settings.embed_model])
     pipeline.run(nodes=nodes_to_insert)
 
@@ -331,8 +335,8 @@ def _create_auto_retriever_engine(
 def get_vector_query_engine(
     vector_store: VectorStore,
     filters: Optional[MetadataFilters] = None,
-    similarity_top_k: int = 25,
-    top_n: int = 5,
+    similarity_top_k: int = 50,
+    top_n: int = 10,
     use_auto_retriever: bool = False,
     vector_store_info: VectorStoreInfo = get_vector_store_info_default(),
 ) -> BaseQueryEngine:
@@ -418,5 +422,5 @@ async def index_query_batch(query_engine: BaseQueryEngine, questions: List[str])
     tasks = [safe_query(q) for q in questions]
     results = await asyncio.gather(*tasks)
 
-    logger.success(f"批量向量查询完成, 成功处理 {len(results)} 个问题。")
+    logger.info(f"收到批量回答: \n{results}")
     return results

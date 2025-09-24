@@ -12,7 +12,7 @@ from llama_index.core.indices.prompt_helper import PromptHelper
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from utils.config import get_llm_params, llm_temperatures
+from utils.llm_api import get_llm_params, llm_temperatures
 from utils.llm import get_llm_messages, llm_completion
 from prompts.story import summary as summary_prompts
 from utils.vector import text_qa_prompt, refine_prompt

@@ -50,22 +50,6 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
         super().__init__(llm=llm, summary_query_str=summary_query_str, **kwargs)
         self._mermaid_summary_prompt = PromptTemplate(mermaid_summary_prompt)
 
-    def _create_summary_and_content_nodes(
-        self, summary_text: str, content_text: str, metadata: dict
-    ) -> List[BaseNode]:
-        """辅助函数, 用于创建摘要节点和内容节点, 并将它们链接起来。"""
-        summary_node = TextNode(text=summary_text, metadata=metadata)
-        content_node = TextNode(text=content_text, metadata=metadata)
-        logger.debug(f"创建了摘要节点 (ID: {summary_node.id_}) 和内容节点 (ID: {content_node.id_})。")
-
-        summary_node.relationships[NodeRelationship.NEXT] = RelatedNodeInfo(
-            node_id=content_node.id_
-        )
-        content_node.relationships[NodeRelationship.PREVIOUS] = RelatedNodeInfo(
-            node_id=summary_node.id_
-        )
-        logger.debug("已在摘要节点和内容节点之间建立双向关系。")
-        return [summary_node, content_node]
 
     def _parse_table(self, element: Any, node: TextNode) -> List[BaseNode]:
         """
@@ -93,11 +77,15 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
         )
         logger.debug(f"Markdown 表格摘要生成完毕:\n{summary_response}")
 
-        return self._create_summary_and_content_nodes(
-            summary_text=f"表格摘要:\n{summary_response}",
-            content_text=table_md,
-            metadata=node.metadata.copy(),
+        # 将摘要和内容合并到单个节点中, 确保它们在检索时总是一起出现。
+        # 使用分隔符清晰地组织内容。
+        combined_text = (
+            f"这是一个表格, 其摘要如下:\n{summary_response}\n\n"
+            f"---\n\n"
+            f"原始表格Markdown内容:\n{table_md}"
         )
+        return [TextNode(text=combined_text, metadata=node.metadata.copy())]
+
 
     def _parse_mermaid(self, mermaid_code: str, metadata: dict) -> List[BaseNode]:
         """解析 Mermaid 图表, 生成摘要节点和代码节点。"""
@@ -110,11 +98,14 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
         )
         logger.debug(f"Mermaid 图表摘要生成完毕:\n{summary_response}")
 
-        return self._create_summary_and_content_nodes(
-            summary_text=f"Mermaid图表摘要:\n{summary_response}",
-            content_text=f"```mermaid\n{mermaid_code}\n```",
-            metadata=metadata,
+        # 同样, 将Mermaid图表的摘要和代码合并到单个节点。
+        combined_text = (
+            f"这是一个Mermaid图表, 其摘要如下:\n{summary_response}\n\n"
+            f"---\n\n"
+            f"原始Mermaid图表代码:\n```mermaid\n{mermaid_code}\n```"
         )
+        return [TextNode(text=combined_text, metadata=metadata)]
+
 
     def get_nodes_from_node(self, node: TextNode) -> List[BaseNode]:
         """从单个节点中获取节点列表。"""
@@ -166,12 +157,10 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
 
 
 def get_vector_node_parser(content_format: Literal["md", "txt", "json"], content_length: int = 0) -> NodeParser:
-    chunk_size = 2048
-    chunk_overlap = 400
-    if content_length > 0 and content_length < chunk_size:
+    if content_length > 0 and content_length < 512:
         return SentenceSplitter(
-            chunk_size=chunk_size, 
-            chunk_overlap=chunk_overlap,
+            chunk_size=512, 
+            chunk_overlap=100,
         )
     if content_format == "json":
         return JSONNodeParser(
@@ -179,15 +168,16 @@ def get_vector_node_parser(content_format: Literal["md", "txt", "json"], content
             max_depth=5, 
             levels_to_keep=2
         )
-    elif content_format == "txt":
-        return SentenceSplitter(
-            chunk_size=chunk_size, 
-            chunk_overlap=chunk_overlap,
+    elif content_format == "md":
+        return CustomMarkdownNodeParser(
+            llm=Settings.llm,
+            summary_query_str=summary_query_str,
+            mermaid_summary_prompt=mermaid_summary_prompt,
+            chunk_size=2048,
+            chunk_overlap=400,
         )
-    return CustomMarkdownNodeParser(
-        llm=Settings.llm,
-        summary_query_str=summary_query_str,
-        mermaid_summary_prompt=mermaid_summary_prompt,
-        chunk_size=chunk_size,
-        chunk_overlap=chunk_overlap,
+    return SentenceSplitter(
+        chunk_size=512, 
+        chunk_overlap=100,
     )
+
