@@ -1,46 +1,28 @@
 import os
-import re
-import asyncio
-import hashlib
-from datetime import datetime
 from pathlib import Path
-import chromadb
 from loguru import logger
-from diskcache import Cache
 from typing import Any, Callable, Dict, List, Literal, Optional
 
-from llama_index.core.ingestion import IngestionPipeline
-from llama_index.core import (
-    Document,
-    Settings,
-    SimpleDirectoryReader,
-    VectorStoreIndex,
-)
+from llama_index.core import Settings, VectorStoreIndex
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.prompts import PromptTemplate
 from llama_index.core.indices.prompt_helper import PromptHelper
-from llama_index.core.query_engine import RetrieverQueryEngine
-from llama_index.core.retrievers import VectorIndexAutoRetriever
-from llama_index.core.response_synthesizers import TreeSummarize
-from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo, MetadataInfo
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.core.schema import BaseNode
-from llama_index.vector_stores.chroma import ChromaVectorStore
-from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.llms.litellm import LiteLLM
-from llama_index.postprocessor.siliconflow_rerank import SiliconFlowRerank
-
-from utils.llm_api import llm_temperatures, get_llm_params, get_embedding_params
-from utils.vector_prompts import tree_summary_prompt, vector_store_query_prompt
-from utils.vector_extractor import get_vector_node_parser
 
 
+###############################################################################
+
+
+from llama_index.vector_stores.chroma import ChromaVectorStore
 ChromaVectorStore.model_config['extra'] = 'allow'
 if hasattr(ChromaVectorStore, 'model_rebuild'):
     ChromaVectorStore.model_rebuild(force=True)
 
 
 def init_llama_settings():
+    from utils.llm_api import llm_temperatures, get_llm_params, get_embedding_params
     llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["summarization"])
     Settings.llm = LiteLLM(**llm_params)
     
@@ -52,6 +34,7 @@ def init_llama_settings():
 
     embedding_params = get_embedding_params()
     embed_model_name = embedding_params.pop('model')
+    from llama_index.embeddings.litellm import LiteLLMEmbedding
     Settings.embed_model = LiteLLMEmbedding(model_name=embed_model_name, **embedding_params)
 
 init_llama_settings()
@@ -61,28 +44,34 @@ def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
     db_path_obj = Path(db_path)
     db_path_obj.mkdir(parents=True, exist_ok=True)
 
+    import chromadb
     db = chromadb.PersistentClient(path=str(db_path_obj))
     chroma_collection = db.get_or_create_collection(collection_name)
     vector_store = ChromaVectorStore(chroma_collection=chroma_collection)
 
     store_cache_path = db_path_obj / f"{collection_name}.cache.db"
+    from diskcache import Cache  
     vector_store.cache = Cache(str(store_cache_path), size_limit=int(32 * (1024**2)))
     
     return vector_store
 
 
-synthesis_llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["synthesis"])
-
-synthesizer = TreeSummarize(
-    llm=LiteLLM(**synthesis_llm_params),
-    summary_template=PromptTemplate(tree_summary_prompt),
-    prompt_helper = PromptHelper(
-        context_window=synthesis_llm_params.get('context_window', 8192),
-        num_output=synthesis_llm_params.get('max_tokens', 2048),
-        chunk_overlap_ratio=0.2,
-    ),
-    use_async=True,
-)
+def get_synthesizer():
+    from utils.llm_api import llm_temperatures, get_llm_params
+    synthesis_llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["synthesis"])
+    from llama_index.core.response_synthesizers import TreeSummarize
+    from utils.vector_prompts import tree_summary_prompt
+    synthesizer = TreeSummarize(
+        llm=LiteLLM(**synthesis_llm_params),
+        summary_template=PromptTemplate(tree_summary_prompt),
+        prompt_helper = PromptHelper(
+            context_window=synthesis_llm_params.get('context_window', 8192),
+            num_output=synthesis_llm_params.get('max_tokens', 2048),
+            chunk_overlap_ratio=0.2,
+        ),
+        use_async=True,
+    )
+    return synthesizer
 
 
 ###############################################################################
@@ -90,6 +79,7 @@ synthesizer = TreeSummarize(
 
 def file_metadata_default(file_path_str: str) -> dict:
     file_path = Path(file_path_str)
+    from datetime import datetime
     stat = file_path.stat()
     creation_time = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
     modification_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
@@ -104,8 +94,11 @@ def file_metadata_default(file_path_str: str) -> dict:
 def _load_and_filter_documents(
     input_dir: str,
     metadata_func: Callable[[str], dict]
-) -> List[Document]:
+) -> List['Document']:
+    from llama_index.core import Document
+
     logger.info(f"开始从目录 '{input_dir}' 加载和过滤文档...")
+    from llama_index.core import SimpleDirectoryReader
     try:
         reader = SimpleDirectoryReader(
             input_dir=input_dir,
@@ -140,6 +133,7 @@ def filter_invalid_nodes(nodes: List[BaseNode]) -> List[BaseNode]:
     valid_nodes = []
     initial_count = len(nodes)
     for node in nodes:
+        import re
         if node.text.strip() and re.search(r'\w', node.text):
             valid_nodes.append(node)
     
@@ -149,7 +143,9 @@ def filter_invalid_nodes(nodes: List[BaseNode]) -> List[BaseNode]:
     return valid_nodes
 
 
-def _parse_docs_to_nodes_by_format(documents: List[Document]) -> List[BaseNode]:
+def _parse_docs_to_nodes_by_format(documents: List['Document']) -> List[BaseNode]:
+    from llama_index.core import Document
+    from utils.vector_extractor import get_vector_node_parser
     logger.info("开始按文件格式解析文档为节点...")
     docs_by_format: Dict[str, List[Document]] = {
         "md": [], 
@@ -210,6 +206,7 @@ def vector_add_from_dir(
         logger.warning("🤷‍♀️ 过滤后没有唯一的节点可供索引。")
         return False
 
+    from llama_index.core.ingestion import IngestionPipeline
     pipeline = IngestionPipeline(vector_store=vector_store, transformations=[Settings.embed_model])
     pipeline.run(nodes=unique_nodes)
 
@@ -224,7 +221,9 @@ def _parse_content_to_nodes(
     doc_id: Optional[str] = None,
 ) -> List[BaseNode]:
     logger.info(f"开始为 doc_id '{doc_id}' 解析内容为节点 (格式: {content_format})...")
+    from llama_index.core import Document
     doc = Document(text=content, metadata=metadata, id_=doc_id)
+    from utils.vector_extractor import get_vector_node_parser
     node_parser = get_vector_node_parser(content_format, content_length=len(content))
     nodes = filter_invalid_nodes(node_parser.get_nodes_from_documents([doc], show_progress=False))
     logger.info(f"为 doc_id '{doc_id}' 解析出 {len(nodes)} 个节点。")
@@ -243,6 +242,7 @@ def vector_add(
         logger.warning(f"🤷 内容为空或包含错误, 跳过存入向量库。元数据: {metadata}")
         return False
 
+    import hashlib
     new_content_hash = hashlib.sha256(content.encode('utf-8')).hexdigest()
     doc_cache = getattr(vector_store, "cache", None)
     if doc_cache and doc_cache.get(new_content_hash):
@@ -259,6 +259,7 @@ def vector_add(
         logger.info(f"为 doc_id '{doc_id}' 执行更新操作, 将首先删除旧节点。")
         vector_store.delete(doc_id)
 
+    from llama_index.core.ingestion import IngestionPipeline
     pipeline = IngestionPipeline(vector_store=vector_store, transformations=[Settings.embed_model])
     pipeline.run(nodes=nodes_to_insert)
 
@@ -272,7 +273,9 @@ def vector_add(
 ###############################################################################
 
 
-def get_vector_store_info_default() -> VectorStoreInfo:
+def get_vector_store_info_default() -> 'VectorStoreInfo':
+    from llama_index.core.vector_stores import VectorStoreInfo
+    from llama_index.core.vector_stores import MetadataInfo
     metadata_field_info = [
         MetadataInfo(
             name="source",
@@ -309,13 +312,16 @@ def get_vector_store_info_default() -> VectorStoreInfo:
 
 def _create_auto_retriever_engine(
     index: VectorStoreIndex,
-    vector_store_info: VectorStoreInfo,
+    vector_store_info: 'VectorStoreInfo',
     similarity_top_k: int,
     node_postprocessors: List,
 ) -> BaseQueryEngine:
+    from utils.llm_api import llm_temperatures, get_llm_params
+    from utils.vector_prompts import vector_store_query_prompt
     logger.info("正在创建 Auto-Retriever 查询引擎...")
     reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
     reasoning_llm = LiteLLM(**reasoning_llm_params)
+    from llama_index.core.retrievers import VectorIndexAutoRetriever
     retriever = VectorIndexAutoRetriever(
         index=index,
         vector_store_info=vector_store_info,
@@ -323,9 +329,10 @@ def _create_auto_retriever_engine(
         prompt_template_str=vector_store_query_prompt, 
         similarity_top_k=similarity_top_k,
     )
+    from llama_index.core.query_engine import RetrieverQueryEngine
     query_engine = RetrieverQueryEngine(
         retriever=retriever,
-        response_synthesizer=synthesizer,
+        response_synthesizer=get_synthesizer(),
         node_postprocessors=node_postprocessors,
     )
     logger.success("Auto-Retriever 查询引擎创建成功。")
@@ -334,12 +341,14 @@ def _create_auto_retriever_engine(
 
 def get_vector_query_engine(
     vector_store: VectorStore,
-    filters: Optional[MetadataFilters] = None,
+    filters: Optional['MetadataFilters'] = None,
     similarity_top_k: int = 50,
     top_n: int = 10,
     use_auto_retriever: bool = False,
-    vector_store_info: VectorStoreInfo = get_vector_store_info_default(),
+    vector_store_info: Optional['VectorStoreInfo'] = None,
 ) -> BaseQueryEngine:
+    from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo
+
     logger.info("开始构建向量查询引擎...")
 
     index = VectorStoreIndex.from_vector_store(vector_store)
@@ -347,6 +356,7 @@ def get_vector_query_engine(
 
     reranker = None
     if top_n and top_n > 0:
+        from llama_index.postprocessor.siliconflow_rerank import SiliconFlowRerank
         reranker = SiliconFlowRerank(
             api_key=os.getenv("SILICONFLOW_API_KEY"),
             top_n=top_n,
@@ -354,16 +364,17 @@ def get_vector_query_engine(
     node_postprocessors = [reranker] if reranker else []
 
     if use_auto_retriever:
+        effective_vector_store_info = vector_store_info or get_vector_store_info_default()
         query_engine = _create_auto_retriever_engine(
             index=index,
-            vector_store_info=vector_store_info,
+            vector_store_info=effective_vector_store_info,
             similarity_top_k=similarity_top_k,
             node_postprocessors=node_postprocessors,
         )
     else:
         logger.info("正在创建标准查询引擎...")
         query_engine = index.as_query_engine(
-            response_synthesizer=synthesizer, 
+            response_synthesizer=get_synthesizer(), 
             filters=filters, 
             similarity_top_k=similarity_top_k,
             node_postprocessors=node_postprocessors, 
@@ -409,6 +420,8 @@ async def index_query_batch(query_engine: BaseQueryEngine, questions: List[str])
         return []
 
     logger.info(f"开始执行 {len(questions)} 个问题的批量向量查询...")
+    
+    import asyncio
     sem = asyncio.Semaphore(3)
 
     async def safe_query(question: str) -> str:

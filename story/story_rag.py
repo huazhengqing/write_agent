@@ -1,40 +1,27 @@
 import os
-import json
-import hashlib
-import asyncio
-import re
 from datetime import datetime
-import sys
-import threading
 from functools import lru_cache
 from loguru import logger
-from diskcache import Cache
-from typing import Dict, Any, List, Literal, Optional, Callable
+from typing import Dict, Any, Literal
 from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
-
 from utils.sqlite_task import get_task_db
-from utils.file import get_text_file_path, text_file_append, text_file_read
+from utils.file import get_text_file_path, text_file_append
 from utils.models import Task, get_sibling_ids_up_to_current
 from utils.loader import load_prompts
 from utils.kg import get_kg_query_engine, kg_add
 from utils.hybrid_query import hybrid_query_batch
-from utils.vector import index_query_batch, vector_add, get_vector_query_engine, index_query
-from utils.file import cache_dir
-from utils.llm import (
-    llm_temperatures,
-    get_llm_messages,
-    get_llm_params,
-    llm_completion
-)
-
+from utils.vector import index_query_batch, vector_add, get_vector_query_engine
+from utils.llm import llm_temperatures, get_llm_messages, get_llm_params, llm_completion
 from story.base import get_story_kg_store, get_story_vector_store
 
 
 class StoryRAG:
 
     def __init__(self):
+        from utils.file import cache_dir
         cache_story_dir = cache_dir / "story"
         os.makedirs(cache_story_dir, exist_ok=True)
+        from diskcache import Cache
         self.caches: Dict[str, Cache] = {
             'dependent_design': Cache(os.path.join(cache_story_dir, "dependent_design"), size_limit=int(32 * (1024**2))),
             'dependent_search': Cache(os.path.join(cache_story_dir, "dependent_search"), size_limit=int(32 * (1024**2))),
@@ -312,6 +299,7 @@ class StoryRAG:
             tasks_to_run["text_summary"] = self.get_text_summary(task, dependent_design, dependent_search, text_latest, task_list)
     
         if tasks_to_run:
+            import asyncio
             results = await asyncio.gather(*tasks_to_run.values())
             rag_results = dict(zip(tasks_to_run.keys(), results))
             ret.update(rag_results)
@@ -383,6 +371,7 @@ class StoryRAG:
         cached_result = self.caches['text_length'].get(key)
         if cached_result is not None:
             return cached_result
+        from utils.file import text_file_read
         full_content = text_file_read(file_path)
         length = len(full_content)
         self.caches['text_length'].set(key, length, tag=task.run_id)

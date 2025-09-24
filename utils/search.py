@@ -1,31 +1,25 @@
 import os
-import sys
-import httpx
 from loguru import logger
-import asyncio
 from typing import List, Optional, Callable, Any, Tuple
-from dotenv import load_dotenv
-from playwright.async_api import async_playwright
-from ddgs import DDGS
-from diskcache import Cache
 from llama_index.core.tools import FunctionTool
-import trafilatura
-
-from utils.file import cache_dir
 
 
+from dotenv import load_dotenv
 load_dotenv()
 
 
 SEARXNG_BASE_URL = os.getenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080/search")
 
 
+from utils.file import cache_dir
 cache_search_dir = cache_dir / "search"
 cache_search_dir.mkdir(parents=True, exist_ok=True)
+from diskcache import Cache
 cache_searh = Cache(str(cache_search_dir), expire=60 * 60 * 24 * 7)
 
 
 async def search_with_searxng(query: str, max_results: int) -> str:
+    import httpx
     async with httpx.AsyncClient(follow_redirects=True) as client:
         data = {"q": query, "format": "json"}
         headers = {
@@ -66,6 +60,7 @@ def search_with_ddg(query: str, max_results: int) -> str:
         "query": query,
         "max_results": max_results,
     }
+    from ddgs import DDGS
     with DDGS() as ddg:
         results = list(ddg.text(**params))
     if not results:
@@ -92,6 +87,7 @@ async def web_search(query: str, max_results: int = 10) -> str:
     ]
 
     last_exception = None
+    import asyncio
     for name, strategy_func in search_strategies:
         try:
             logger.info(f"开始使用 {name} 搜索")
@@ -429,6 +425,7 @@ def get_targeted_search_tool() -> FunctionTool:
 
 
 async def scrape_static(url: str) -> Optional[str]:
+    import httpx
     async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -441,6 +438,7 @@ async def scrape_static(url: str) -> Optional[str]:
         logger.warning(f"静态抓取未能获取到 HTML 内容: {url}")
         return None
     
+    import trafilatura
     page_text = trafilatura.extract(
         html_content,
         include_comments=False,
@@ -454,6 +452,7 @@ async def scrape_static(url: str) -> Optional[str]:
 
 
 async def scrape_dynamic(url: str) -> Optional[str]:
+    from playwright.async_api import async_playwright
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
@@ -465,6 +464,7 @@ async def scrape_dynamic(url: str) -> Optional[str]:
     if not html_content:
         raise RuntimeError(f"Playwright for URL '{url}' 未能获取到任何 HTML 内容。")
     
+    import trafilatura
     page_text = trafilatura.extract(
         html_content,
         include_comments=False,

@@ -1,11 +1,12 @@
 import os
-from pathlib import Path
-import re
-from dotenv import load_dotenv
-load_dotenv()
 from utils.models import Task
 
 
+from dotenv import load_dotenv
+load_dotenv()
+
+
+from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
 
 data_dir = project_root / ".data"
@@ -34,6 +35,7 @@ log_dir.mkdir(parents=True, exist_ok=True)
 
 
 def sanitize_filename(name: str) -> str:
+    import re
     s = re.sub(r'[\\/*?:"<>|]', "", name)
     s = s.replace(" ", "_")
     return s[:100]

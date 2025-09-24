@@ -1,10 +1,5 @@
 import nest_asyncio
 nest_asyncio.apply()
-import sys
-import json
-import hashlib
-import asyncio
-import argparse
 from loguru import logger
 from utils.file import sanitize_filename
 from utils.log import init_logger_by_runid
@@ -14,6 +9,9 @@ from story.story_write import flow_story_write
 
 
 init_logger_by_runid("write")
+
+
+###############################################################################
 
 
 async def write_all(tasks_data: list):
@@ -47,6 +45,7 @@ async def write_all(tasks_data: list):
         sanitized_category = sanitize_filename(category)
         sanitized_name = sanitize_filename(root_name)
         sanitized_language = sanitize_filename(language)
+        import hashlib
         stable_unique_id = hashlib.sha256(goal.encode('utf-8')).hexdigest()[:16]
         run_id = f"{sanitized_category}_{sanitized_name}_{sanitized_language}_{stable_unique_id}"
 
@@ -98,6 +97,7 @@ async def write_all(tasks_data: list):
 
     if tasks_to_run:
         logger.info(f"即将并行启动 {len(tasks_to_run)} 个流程...")
+        import asyncio
         results = await asyncio.gather(*tasks_to_run, return_exceptions=True)
 
         successful_runs = 0
@@ -114,18 +114,24 @@ async def write_all(tasks_data: list):
 
 
 def main():
+    import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "json_file",
         type=str, 
     )
     args = parser.parse_args()
+    import json
     with open(args.json_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
     tasks_data = data.get("tasks")
     if not tasks_data:
         return
+    import asyncio
     asyncio.run(write_all(tasks_data))
+
+
+###############################################################################
 
 
 if __name__ == "__main__":

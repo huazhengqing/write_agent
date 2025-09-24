@@ -1,15 +1,10 @@
-import asyncio
 from typing import List
 from loguru import logger
-
 from llama_index.core.base.base_query_engine import BaseQueryEngine
-from llama_index.core.tools import QueryEngineTool
-
 from utils.llm_api import llm_temperatures, get_llm_params
 from utils.llm import get_llm_messages, llm_completion
-from utils.vector import index_query
-from utils.react_agent import call_react_agent, react_system_prompt
 from hybrid_prompts import synthesis_system_prompt, synthesis_user_prompt
+from utils.vector import index_query
 
 
 async def hybrid_query(
@@ -26,6 +21,7 @@ async def hybrid_query(
     logger.info(f"开始对问题 '{question}' 执行混合查询...")
     vector_task = index_query(vector_query_engine, question)
     kg_task = index_query(kg_query_engine, question)
+    import asyncio
     vector_content, kg_content = await asyncio.gather(vector_task, kg_task)
 
     if not vector_content and not kg_content:
@@ -58,6 +54,7 @@ async def hybrid_query_batch(
 
     logger.info(f"开始执行 {len(questions)} 个问题的批量混合查询...")
 
+    import asyncio
     sem = asyncio.Semaphore(3)
 
     async def safe_hybrid_query(question: str) -> str:
@@ -83,6 +80,7 @@ async def hybrid_query_batch(
 ###############################################################################
 
 
+from utils.react_agent import call_react_agent, react_system_prompt
 async def hybrid_query_react(
     vector_query_engine: BaseQueryEngine,
     kg_query_engine: BaseQueryEngine,
@@ -90,6 +88,7 @@ async def hybrid_query_react(
     react_system_prompt: str = react_system_prompt,
 ) -> str:
     logger.info(f"开始对问题 '{query_str}' 执行基于ReAct的混合查询...")
+    from llama_index.core.tools import QueryEngineTool
     vector_tool = QueryEngineTool.from_defaults(
         query_engine=vector_query_engine,
         name="vector_search",

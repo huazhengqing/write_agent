@@ -1,18 +1,8 @@
-import asyncio
-import copy
-import os
-import re
-import collections
-import json
-import hashlib
-import litellm
-from loguru import logger
-from pydantic import BaseModel, ValidationError
-from typing import List, Dict, Any, Literal, Optional, Type, Callable
-from litellm.caching.caching import Cache
 
-from utils.file import cache_dir
-from utils.llm_api import get_llm_params, llm_temperatures
+import json
+from loguru import logger
+from pydantic import BaseModel
+from typing import Dict, Any, Optional, Type, Callable
 
 
 def custom_get_cache_key(**kwargs):
@@ -25,7 +15,7 @@ def custom_get_cache_key(**kwargs):
     # 检查是否为 completion 调用
     if "messages" in kwargs:
         messages = kwargs.get("messages", [])
-        temperature = kwargs.get("temperature", llm_temperatures["reasoning"])
+        temperature = kwargs.get("temperature", 0.1)
         messages_str = json.dumps(messages, sort_keys=True)
         key_data = {
             "type": "completion",
@@ -60,13 +50,19 @@ def custom_get_cache_key(**kwargs):
         key_data = {"type": "unknown", "params": json.dumps(serializable_kwargs, sort_keys=True, default=str)}
 
     key_string = json.dumps(key_data, sort_keys=True)
+    import hashlib
     return hashlib.sha256(key_string.encode("utf-8")).hexdigest()
 
 
+from litellm.caching.caching import Cache
+from utils.file import cache_dir
 cache = Cache(type="disk", disk_cache_dir=cache_dir / "litellm")
 cache.get_cache_key = custom_get_cache_key
+import litellm
 litellm.cache = cache
 litellm.enable_cache()
+
+
 litellm.enable_json_schema_validation=True
 litellm.drop_params = True
 litellm.telemetry = False
@@ -91,6 +87,7 @@ def get_llm_messages(
 
     system_content = system_prompt
     if context_dict_system:
+        import collections
         safe_context_system = collections.defaultdict(str, context_dict_system)
         system_content = system_prompt.format_map(safe_context_system)
     
@@ -99,6 +96,7 @@ def get_llm_messages(
 
     user_content = user_prompt
     if context_dict_user:
+        import collections
         safe_context_user = collections.defaultdict(str, context_dict_user)
         user_content = user_prompt.format_map(safe_context_user)
 
@@ -131,6 +129,7 @@ def clean_markdown_fences(content: str) -> str:
     if not text.startswith("```"):
         return text
     # 移除开头的 ```lang\n
+    import re
     text = re.sub(r"^```[^\n]*\n?", "", text, count=1)
     # 检查是否以 ``` 结尾
     if text.endswith("```"):
@@ -175,6 +174,7 @@ def _handle_llm_failure(
     litellm.cache.cache.delete_cache(cache_key)
 
     # 针对JSON解析/验证错误的自我修正逻辑
+    from pydantic import ValidationError
     if response_model and isinstance(e, (ValidationError, json.JSONDecodeError)) and raw_output_for_correction:
         logger.info("检测到JSON错误, 下次尝试将进行自我修正...")
         # 提取原始用户任务内容
@@ -328,6 +328,7 @@ async def txt_to_json(
         system_prompt=extraction_system_prompt,
         user_prompt=extraction_user_prompt.format(cleaned_output=cleaned_output)
     )
+    from utils.llm_api import get_llm_params, llm_temperatures
     extraction_llm_params = get_llm_params(
         llm_group='reasoning',
         messages=extraction_messages,

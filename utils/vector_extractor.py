@@ -1,14 +1,11 @@
-import re
 from loguru import logger
 from typing import Any, List, Literal
 
 from llama_index.core.bridge.pydantic import PrivateAttr
-from llama_index.core import Settings
-from llama_index.core.prompts import PromptTemplate
-from llama_index.core.node_parser import JSONNodeParser, SentenceSplitter
 from llama_index.core.node_parser import MarkdownElementNodeParser
+from llama_index.core.prompts import PromptTemplate
 from llama_index.core.node_parser.interface import NodeParser
-from llama_index.core.schema import BaseNode, TextNode, NodeRelationship, RelatedNodeInfo
+from llama_index.core.schema import BaseNode, TextNode, NodeRelationship
 from llama_index.llms.litellm import LiteLLM
 
 
@@ -28,10 +25,10 @@ mermaid_summary_prompt = """
 阅读下方的 Mermaid 图表代码, 并生成一段简洁、流畅、易于理解的自然语言摘要。
 
 # 核心原则
-1.  **识别核心**: 找出图表中的关键实体(节点)和它们之间的核心关系(连接)。
-2.  **概括整体**: 不要逐条罗列连接关系, 而是从整体上描述图表所表达的结构、流程或层级。例如, "此图表展示了一个三层架构, ... " 或 "该流程图描述了用户从登录到完成购买的完整步骤, ..."。
-3.  **解释意图**: 如果可能, 推断并解释图表的设计意图或它所解决的问题。
-4.  **忠于图表**: 摘要必须完全基于图表内容, 禁止引入外部信息。
+1. 识别核心: 找出图表中的关键实体(节点)和它们之间的核心关系(连接)。
+2. 概括整体: 不要逐条罗列连接关系, 而是从整体上描述图表所表达的结构、流程或层级。例如, "此图表展示了一个三层架构, ... " 或 "该流程图描述了用户从登录到完成购买的完整步骤, ..."。
+3. 解释意图: 如果可能, 推断并解释图表的设计意图或它所解决的问题。
+4. 忠于图表: 摘要必须完全基于图表内容, 禁止引入外部信息。
 
 # Mermaid 图表代码
 ---------------------
@@ -40,6 +37,7 @@ mermaid_summary_prompt = """
 
 # 内容摘要
 """
+
 
 
 class CustomMarkdownNodeParser(MarkdownElementNodeParser):
@@ -111,6 +109,7 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
         """从单个节点中获取节点列表。"""
         logger.debug(f"CustomMarkdownNodeParser: 开始从节点 (ID: {node.id_}) 提取子节点...")
         text = node.get_content()
+        import re
         parts = re.split(r"(```mermaid\n.*?\n```)", text, flags=re.DOTALL)
 
         final_nodes: List[BaseNode] = []
@@ -158,17 +157,20 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
 
 def get_vector_node_parser(content_format: Literal["md", "txt", "json"], content_length: int = 0) -> NodeParser:
     if content_length > 0 and content_length < 512:
+        from llama_index.core.node_parser import SentenceSplitter
         return SentenceSplitter(
             chunk_size=512, 
             chunk_overlap=100,
         )
     if content_format == "json":
+        from llama_index.core.node_parser import JSONNodeParser
         return JSONNodeParser(
             include_metadata=True,
             max_depth=5, 
             levels_to_keep=2
         )
     elif content_format == "md":
+        from llama_index.core import Settings
         return CustomMarkdownNodeParser(
             llm=Settings.llm,
             summary_query_str=summary_query_str,
@@ -176,6 +178,7 @@ def get_vector_node_parser(content_format: Literal["md", "txt", "json"], content
             chunk_size=2048,
             chunk_overlap=400,
         )
+    from llama_index.core.node_parser import SentenceSplitter
     return SentenceSplitter(
         chunk_size=512, 
         chunk_overlap=100,

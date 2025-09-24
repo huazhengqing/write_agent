@@ -2,6 +2,9 @@ from typing import List, Optional, Dict, Literal, Any, get_args
 from pydantic import BaseModel, Field, conlist
 
 
+###############################################################################
+
+
 CategoryType = Literal["story", "book", "report"]
 TaskType = Literal["write", "design", "search"]
 LanguageType = Literal["cn", "en"]
@@ -29,6 +32,9 @@ class Task(BaseModel):
     run_id: str = Field(..., description="整个流程运行的唯一ID, 用于隔离不同任务的记忆")
 
 
+###############################################################################
+
+
 ComplexReason = Literal[
     # write
     "design_insufficient",
@@ -54,6 +60,9 @@ class AtomOutput(BaseModel):
     complex_reasons: Optional[conlist(item_type=ComplexReason, min_length=1)] = Field(None, description="当任务被判定为 'complex' 时, 此字段列出具体原因。")
 
 
+###############################################################################
+
+
 class PlanNode(BaseModel):
     id: str = Field(..., description="任务的唯一字符串ID, 父任务id.子任务序号。例如 '1' 或 '1.3.2'。")
     task_type: TaskType = Field(..., description="任务类型, 值必须是: 'design' 或 'write' 或 'search'。")
@@ -69,6 +78,9 @@ class PlanNode(BaseModel):
 
 class PlanOutput(PlanNode):
     reasoning: Optional[str] = Field(None, description="关于任务分解的推理过程。")
+
+
+###############################################################################
 
 
 RouteCategory = Literal[
@@ -87,6 +99,9 @@ RouteCategory = Literal[
 
 class RouteOutput(BaseModel):
     categories: List[RouteCategory] = Field(description=f"判断出的任务类型列表。列表中的每个元素都必须是 {get_args(RouteCategory)} 之一。对于复合任务, 可以返回多个类别。")
+
+
+###############################################################################
 
 
 def convert_plan_to_tasks(sub_task_outputs: List[PlanNode], parent_task: Task) -> List[Task]:
@@ -119,6 +134,9 @@ def convert_plan_to_tasks(sub_task_outputs: List[PlanNode], parent_task: Task) -
             new_task.sub_tasks = convert_plan_to_tasks(plan_item.sub_tasks, new_task)
         tasks.append(new_task)
     return tasks
+
+
+###############################################################################
 
 
 def natural_sort_key(task_id: str) -> List[int]:

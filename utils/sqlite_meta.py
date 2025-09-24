@@ -1,10 +1,7 @@
-import sqlite3
-import threading
 from loguru import logger
 from typing import List, Optional, Dict, Any
 from functools import lru_cache
 from utils.models import Task
-from utils.file import data_dir
 
 
 """
@@ -31,10 +28,12 @@ Table: t_book_meta
 class BookMetaDB:
     def __init__(self, db_path: str):
         self.db_path = db_path
+        import sqlite3
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
         logger.info(f"SQLite BookMetaDB 连接已建立: {self.db_path}")
         self.cursor = self.conn.cursor()
+        import threading
         self._lock = threading.Lock()
         self._create_table()
 
@@ -152,6 +151,7 @@ class BookMetaDB:
 
 @lru_cache(maxsize=1)
 def get_meta_db() -> BookMetaDB:
+    from utils.file import data_dir
     db_path = data_dir / "books.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     instance = BookMetaDB(db_path=str(db_path))

@@ -1,12 +1,7 @@
-import sqlite3
 import json
-import collections
-import threading
 from loguru import logger
 from functools import lru_cache
-from typing import List, Optional, Dict
 from utils.models import Task, natural_sort_key
-from utils.file import data_dir
 
 
 """
@@ -56,9 +51,11 @@ Table: t_tasks
 class TaskDB:
     def __init__(self, db_path: str):
         self.db_path = db_path
+        import sqlite3
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         logger.info(f"SQLite TaskDB 连接已建立: {self.db_path}")
         self.cursor = self.conn.cursor()
+        import threading
         self._lock = threading.Lock()
         self._create_table()
 
@@ -163,6 +160,7 @@ class TaskDB:
 
 
     def add_sub_tasks(self, task: Task):
+        import collections
         tasks_to_process = collections.deque(task.sub_tasks or [])
         while tasks_to_process:
             current_task = tasks_to_process.popleft()
@@ -552,6 +550,7 @@ class TaskDB:
 
 @lru_cache(maxsize=None)
 def get_task_db(run_id: str) -> TaskDB:
+    from utils.file import data_dir
     db_path = data_dir / run_id / "task.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     store = TaskDB(db_path=str(db_path))

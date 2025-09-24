@@ -1,11 +1,8 @@
-from collections import defaultdict
 from loguru import logger
-
 from utils.models import Task
 from utils.loader import load_prompts
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures
 from utils.react_agent import call_react_agent
-
 from story.story_rag import get_story_rag
 
 
@@ -13,6 +10,7 @@ async def search(task: Task) -> Task:
     system_prompt = load_prompts(task.category, "search", "system_prompt")[0]
     context = get_story_rag().get_context_base(task)
     context["goal"] = task.goal
+    from collections import defaultdict
     system_prompt = system_prompt.format_map(defaultdict(str, context))
     user_prompt = f"请根据系统提示中的目标 '{task.goal}' 开始你的研究。"
     logger.info(f"开始搜索任务: Agent 开始为目标 {task.id} - '{task.goal}' 执行研究...")

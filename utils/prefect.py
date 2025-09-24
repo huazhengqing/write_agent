@@ -5,17 +5,15 @@ from loguru import logger
 from dotenv import load_dotenv
 load_dotenv()
 
-from utils.models import Task
-from utils.file import prefect_storage_path
-
 from prefect.context import TaskRunContext
 from prefect.filesystems import LocalFileSystem
-from prefect.exceptions import ObjectNotFound
 from prefect.serializers import JSONSerializer
 
 
 def setup_prefect_storage() -> LocalFileSystem:
     block_name = "write-storage"
+    from prefect.exceptions import ObjectNotFound
+    from utils.file import prefect_storage_path
     try:
         storage_block = LocalFileSystem.load(block_name)
         if Path(storage_block.basepath).resolve() != prefect_storage_path.resolve():
@@ -37,6 +35,7 @@ readable_json_serializer = JSONSerializer(dumps_kwargs={"indent": 2, "ensure_asc
 
 
 def get_cache_key(context: TaskRunContext, parameters: Dict[str, Any]) -> str:
+    from utils.models import Task
     task: Task = parameters["task"]
     task_name = context.task.name.removeprefix("task_")
     extra_params = {k: v for k, v in parameters.items() if k != 'task'}

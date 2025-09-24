@@ -1,27 +1,17 @@
-import os
-import sys
-import hashlib
 from loguru import logger
-from typing import List, Any, Literal, Optional, Type, Union
+from typing import List, Any, Optional, Type, Union
 from pydantic import BaseModel
-from diskcache import Cache
+from utils.react_agent_prompt import react_system_prompt
 
-from llama_index.core.agent.workflow import ReActAgent
-from llama_index.llms.litellm import LiteLLM
-from llama_index.core.workflow import Context
 
-from utils.llm_api import llm_temperatures
 from utils.file import cache_dir
-from utils.llm import clean_markdown_fences, get_llm_params, text_validator_default, txt_to_json
-from utils.search import web_search_tools
-from utils.react_agent_prompt import react_system_header, react_system_prompt, state_prompt
-
-
 cache_agent_dir = cache_dir / "react_agent"
 cache_agent_dir.mkdir(parents=True, exist_ok=True)
+from diskcache import Cache
 cache_query = Cache(str(cache_agent_dir), size_limit=int(32 * (1024**2)))
 
 
+from utils.search import web_search_tools
 async def call_react_agent(
     system_prompt: str = react_system_prompt,
     user_prompt: str = "",
@@ -32,6 +22,7 @@ async def call_react_agent(
     response_model_name = response_model.__name__ if response_model else "None"
 
     cache_key_str = f"react_agent:{user_prompt}:{system_prompt}:{','.join(tool_names_sorted)}:{response_model_name}"
+    import hashlib
     cache_key = hashlib.sha256(cache_key_str.encode()).hexdigest()
 
     cached_result = cache_query.get(cache_key)
@@ -43,7 +34,11 @@ async def call_react_agent(
     logger.info(f"tools=\n{','.join(tool_names_sorted)}")
     logger.info(f"response_model=\n{response_model_name}")
 
+    from utils.llm_api import llm_temperatures, get_llm_params
     llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
+    from llama_index.core.agent.workflow import ReActAgent
+    from llama_index.llms.litellm import LiteLLM
+    from utils.react_agent_prompt import state_prompt
     agent = ReActAgent(
         tools=tools,
         llm=LiteLLM(**llm_params),
@@ -51,7 +46,9 @@ async def call_react_agent(
         state_prompt=state_prompt,
         verbose=True
     )
+    from utils.react_agent_prompt import react_system_header
     agent.update_prompts({"react_header": react_system_header})
+    from llama_index.core.workflow import Context
     ctx = Context(agent)
     handler = agent.run(
         user_prompt, 
@@ -79,14 +76,17 @@ async def call_react_agent(
     else:
         raw_output = str(final_response)
 
+    from utils.llm import clean_markdown_fences
     cleaned_output = clean_markdown_fences(raw_output)
     logger.info(f"输出:\n{cleaned_output}")
 
     final_result = None
     if response_model:
+        from utils.llm import txt_to_json
         final_result = await txt_to_json(cleaned_output, response_model)
         logger.info(f"解析后的 JSON 对象: \n{final_result}")
     else:
+        from utils.llm import text_validator_default
         text_validator_default(cleaned_output)
         final_result = cleaned_output
 

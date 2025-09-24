@@ -1,11 +1,8 @@
-import collections
 import copy
 import os
 from typing import Any, Dict, List, Literal, Optional
-from dotenv import load_dotenv
 
-from litellm import RateLimitError, Timeout, APIConnectionError, ServiceUnavailableError, APIError
-import litellm
+
 import logging
 litellm_logger = logging.getLogger("litellm")
 litellm_logger.setLevel(logging.ERROR)
@@ -13,6 +10,7 @@ for handler in litellm_logger.handlers:
     litellm_logger.removeHandler(handler)
 
 
+from dotenv import load_dotenv
 load_dotenv()
 
 
