@@ -1,10 +1,7 @@
 from loguru import logger
 from typing import Any, List, Literal
-
 from llama_index.core.bridge.pydantic import PrivateAttr
-from llama_index.core.node_parser import MarkdownElementNodeParser
 from llama_index.core.prompts import PromptTemplate
-from llama_index.core.node_parser.interface import NodeParser
 from llama_index.core.schema import BaseNode, TextNode, NodeRelationship
 from llama_index.llms.litellm import LiteLLM
 
@@ -62,7 +59,7 @@ mermaid_summary_prompt = """
 """
 
 
-
+from llama_index.core.node_parser import MarkdownElementNodeParser
 class CustomMarkdownNodeParser(MarkdownElementNodeParser):
 
     _mermaid_summary_prompt: PromptTemplate = PrivateAttr()
@@ -73,12 +70,7 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
 
 
     def _parse_table(self, element: Any, node: TextNode) -> List[BaseNode]:
-        """
-        解析表格元素。
-        此方法覆盖默认行为, 将摘要放入一个单独节点的内容中, 而不是元数据中, 以避免元数据过长。
-        """
         table_md = element.element
-        
         try:
             table_df = element.table
             table_text_for_summary = "\n\n".join(["Table:", table_df.to_string()])
@@ -96,8 +88,6 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
         )
         logger.debug(f"Markdown 表格摘要生成完毕:\n{summary_response}")
 
-        # 将摘要和内容合并到单个节点中, 确保它们在检索时总是一起出现。
-        # 使用分隔符清晰地组织内容。
         combined_text = (
             f"这是一个表格, 其摘要如下:\n{summary_response}\n\n"
             f"---\n\n"
@@ -107,7 +97,6 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
 
 
     def _parse_mermaid(self, mermaid_code: str, metadata: dict) -> List[BaseNode]:
-        """解析 Mermaid 图表, 生成摘要节点和代码节点。"""
         if not mermaid_code.strip():
             return []
 
@@ -118,7 +107,6 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
         )
         logger.debug(f"Mermaid 图表摘要生成完毕:\n{summary_response}")
 
-        # 同样, 将Mermaid图表的摘要和代码合并到单个节点。
         combined_text = (
             f"这是一个Mermaid图表, 其摘要如下:\n{summary_response}\n\n"
             f"---\n\n"
@@ -128,9 +116,9 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
 
 
     def get_nodes_from_node(self, node: TextNode) -> List[BaseNode]:
-        """从单个节点中获取节点列表。"""
         logger.debug(f"CustomMarkdownNodeParser: 开始从节点 (ID: {node.id_}) 提取子节点...")
         text = node.get_content()
+
         import re
         parts = re.split(r"(```mermaid\n.*?\n```)", text, flags=re.DOTALL)
 
@@ -149,23 +137,18 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
                 final_nodes.extend(mermaid_nodes)
             else:
                 logger.debug("在 Markdown 中检测到常规文本部分, 正在解析...")
-                # 1. 提取元素
                 elements = self.extract_elements(part, table_filters=[self.filter_table], node_id=node.node_id)
                 elements = self.extract_html_tables(elements)
 
-                # 2. 从元素创建节点
                 for element in elements:
                     if element.type == "table":
-                        # 使用自定义的表格解析逻辑
                         table_nodes = self._parse_table(element, node)
                         final_nodes.extend(table_nodes)
                     else:
-                        # 处理文本和其他类型的元素
                         final_nodes.append(
                             TextNode(text=element.element, metadata=node.metadata, id_=element.id)
                         )
 
-        # 为所有新创建的节点设置源文档关系和元数据
         for n in final_nodes:
             n.relationships[NodeRelationship.SOURCE] = source_document
             n.metadata.update(node.metadata)
@@ -177,6 +160,7 @@ class CustomMarkdownNodeParser(MarkdownElementNodeParser):
 ###############################################################################
 
 
+from llama_index.core.node_parser.interface import NodeParser
 def get_vector_node_parser(content_format: Literal["md", "txt", "json"], content_length: int = 0) -> NodeParser:
     if content_length > 0 and content_length < 512:
         from llama_index.core.node_parser import SentenceSplitter
