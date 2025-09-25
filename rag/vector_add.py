@@ -37,7 +37,7 @@ def _parse_content_to_nodes(
 ) -> List[BaseNode]:
     logger.info(f"开始为 doc_id '{doc_id}' 解析内容为节点 (格式: {content_format})...")
     doc = Document(text=content, metadata=metadata, id_=doc_id)
-    from rag.vector_splitter import get_vector_node_parser
+    from rag.splitter import get_vector_node_parser
     node_parser = get_vector_node_parser(content_format, content_length=len(content))
     nodes = filter_invalid_nodes(node_parser.get_nodes_from_documents([doc], show_progress=False))
     logger.info(f"为 doc_id '{doc_id}' 解析出 {len(nodes)} 个节点。")
@@ -45,7 +45,6 @@ def _parse_content_to_nodes(
 
 
 
-@lru_cache(maxsize=30)
 def vector_add(
     vector_store: VectorStore,
     content: str,

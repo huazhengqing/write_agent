@@ -48,7 +48,6 @@ def get_kg_store(db_path: str) -> KuzuPropertyGraphStore:
 
 
 
-@lru_cache(maxsize=30)
 def kg_add(
     kg_store: KuzuPropertyGraphStore,
     content: str,
@@ -72,7 +71,7 @@ def kg_add(
     from llama_index.core import Document
     doc = Document(id_=doc_id, text=content, metadata=metadata)
     
-    from rag.vector_splitter import get_vector_node_parser
+    from rag.splitter import get_vector_node_parser
     kg_node_parser = get_vector_node_parser(content_format, len(content))
 
     from llama_index.core.indices.property_graph import SimpleLLMPathExtractor
@@ -114,7 +113,6 @@ def kg_add(
 
 
 
-@lru_cache(maxsize=30)
 def get_kg_query_engine(
     kg_store: KuzuPropertyGraphStore,
     kg_similarity_top_k: int = 300,

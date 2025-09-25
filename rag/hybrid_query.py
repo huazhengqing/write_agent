@@ -10,7 +10,6 @@ from rag.vector_query import index_query
 
 
 
-@lru_cache(maxsize=30)
 async def hybrid_query(
     vector_query_engine: BaseQueryEngine,
     kg_query_engine: BaseQueryEngine,
@@ -47,7 +46,6 @@ async def hybrid_query(
 
 
 
-@lru_cache(maxsize=30)
 async def hybrid_query_batch(
     vector_query_engine: BaseQueryEngine,
     kg_query_engine: BaseQueryEngine,
@@ -88,7 +86,6 @@ async def hybrid_query_batch(
 
 
 
-@lru_cache(maxsize=30)
 async def hybrid_query_react(
     vector_query_engine: BaseQueryEngine,
     kg_query_engine: BaseQueryEngine,

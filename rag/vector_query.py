@@ -52,7 +52,6 @@ def get_vector_store_info_default() -> VectorStoreInfo:
 
 
 
-@lru_cache(maxsize=30)
 def _create_auto_retriever_engine(
     index: VectorStoreIndex,
     vector_store_info: 'VectorStoreInfo',
@@ -81,7 +80,6 @@ def _create_auto_retriever_engine(
 
 
 
-@lru_cache(maxsize=30)
 def get_vector_query_engine(
     vector_store: VectorStore,
     filters: Optional[MetadataFilters] = None,
@@ -126,7 +124,6 @@ def get_vector_query_engine(
 
 
 
-@lru_cache(maxsize=30)
 async def index_query(query_engine: BaseQueryEngine, question: str) -> str:
     if not question:
         return ""
@@ -146,7 +143,6 @@ async def index_query(query_engine: BaseQueryEngine, question: str) -> str:
 
 
 
-@lru_cache(maxsize=30)
 async def index_query_batch(query_engine: BaseQueryEngine, questions: List[str]) -> List[str]:
     if not questions:
         return []

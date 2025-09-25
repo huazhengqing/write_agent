@@ -73,7 +73,7 @@ def _load_and_filter_documents(
 
 @lru_cache(maxsize=30)
 def _parse_docs_to_nodes_by_format(documents: List[Document]) -> List[BaseNode]:
-    from rag.vector_splitter import get_vector_node_parser
+    from rag.splitter import get_vector_node_parser
     logger.info("开始按文件格式解析文档为节点...")
     docs_by_format: Dict[str, List[Document]] = {
         "md": [], 
@@ -108,7 +108,6 @@ def _parse_docs_to_nodes_by_format(documents: List[Document]) -> List[BaseNode]:
 
 
 
-@lru_cache(maxsize=30)
 def vector_add_from_dir(
     vector_store: VectorStore,
     input_dir: str,
