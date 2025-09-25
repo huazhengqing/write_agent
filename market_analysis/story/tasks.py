@@ -1,7 +1,6 @@
 import os
 import sys
-from typing import Any, Optional, Tuple
-from datetime import datetime
+from typing import Optional, Tuple
 from loguru import logger
 
 from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
@@ -17,6 +16,7 @@ from prefect import task
 
 
 ###############################################################################
+
 
 
 @task(
@@ -59,7 +59,9 @@ async def task_load_platform_profile(platform: str) -> Tuple[str, str]:
     return platform, profile_content
 
 
+
 ###############################################################################
+
 
 
 broad_scan_system_prompt = """
@@ -88,6 +90,7 @@ broad_scan_system_prompt = """
 """
 
 
+
 @task(
     name="platform_briefing",
     persist_result=True,
@@ -103,7 +106,8 @@ async def task_platform_briefing(platform: str) -> str:
     system_prompt = broad_scan_system_prompt.format(platform=platform)
     user_prompt = f"请开始为平台 '{platform}' 生成市场动态简报。"
     report = await query_react(
-        agent_system_prompt=system_prompt, query_str=user_prompt
+        agent_system_prompt=system_prompt, 
+        query_str=user_prompt
     )
     if report:
         logger.success(f"Agent为 '{platform}' 完成了简报生成, 报告长度: {len(report)}。")
@@ -114,7 +118,9 @@ async def task_platform_briefing(platform: str) -> str:
         return f"## {platform} 平台市场动态简报\n\n生成报告时出错: {error_msg}"
 
 
+
 ###############################################################################
+
 
 
 assess_new_author_opportunity_system_prompt = """
@@ -147,6 +153,7 @@ assess_new_author_opportunity_system_prompt = """
 """
 
 
+
 @task(
     name="new_author_opportunity",
     persist_result=True,
@@ -159,14 +166,12 @@ assess_new_author_opportunity_system_prompt = """
 )
 async def task_new_author_opportunity(platform: str) -> str:
     logger.info(f"为平台 '{platform}' 生成新人机会评估报告...")
-
     system_prompt = assess_new_author_opportunity_system_prompt.format(platform=platform)
     user_prompt = f"请开始为平台 '{platform}' 生成新人机会评估报告。"
-
     report = await query_react(
-        agent_system_prompt=system_prompt, query_str=user_prompt
+        agent_system_prompt=system_prompt, 
+        query_str=user_prompt
     )
-
     if report:
         logger.success(f"Agent为 '{platform}' 完成了新人机会评估报告生成, 报告长度: {len(report)}。")
         return report
@@ -176,7 +181,9 @@ async def task_new_author_opportunity(platform: str) -> str:
         return f"## {platform} 平台新人机会评估报告\n\n生成报告时出错: {error_msg}"
 
 
+
 ###############################################################################
+
 
 
 @task(
@@ -188,17 +195,11 @@ async def task_new_author_opportunity(platform: str) -> str:
     retries=1,
     retry_delay_seconds=10,
 )
-def task_save_vector(content: Optional[str], doc_type: str, content_format: str = "md", **kwargs) -> bool:
+def task_save_vector(content: Optional[str], content_format: str = "md", **kwargs) -> bool:
     if not content:
-        logger.warning(f"内容为空, 跳过保存向量。元数据: doc_type={doc_type}, kwargs={kwargs}")
+        logger.warning(f"内容为空, 跳过保存向量。元数据: kwargs={kwargs}")
         return False
-
     final_metadata = kwargs.copy()
-    final_metadata["type"] = doc_type
-    # 自动添加保存日期, 方便按时间查询
-    if "date" not in final_metadata:
-        final_metadata["save_date"] = datetime.now().strftime("%Y-%m-%d")
-
     return vector_add(
         vector_store=get_market_vector_store(),
         content=content,
@@ -207,7 +208,9 @@ def task_save_vector(content: Optional[str], doc_type: str, content_format: str 
     )
 
 
+
 ###############################################################################
+
 
 
 @task(

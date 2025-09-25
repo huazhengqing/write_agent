@@ -3,6 +3,7 @@ import pytest
 import os
 import logging
 from pathlib import Path
+import litellm
 import nest_asyncio
 from loguru import logger
 
@@ -34,6 +35,7 @@ def pytest_generate_tests(metafunc):
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_environment():
     nest_asyncio.apply()
+    litellm.disable_logging = True
     logging.getLogger("litellm").setLevel(logging.WARNING)
     init_llama_settings()
 

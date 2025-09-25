@@ -34,6 +34,9 @@ def _parse_content_to_nodes(
     doc_id: Optional[str] = None,
 ) -> List[BaseNode]:
     logger.info(f"开始为 doc_id '{doc_id}' 解析内容为节点 (格式: {content_format})...")
+    from datetime import datetime
+    if "time" not in metadata:
+        metadata["time"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     doc = Document(text=content, metadata=metadata, id_=doc_id)
     from rag.splitter import get_vector_node_parser
     node_parser = get_vector_node_parser(content_format, content_length=len(content))

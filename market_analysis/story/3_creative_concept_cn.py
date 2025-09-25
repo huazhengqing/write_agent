@@ -261,24 +261,23 @@ opportunity_generation_user_prompt = """
 async def task_generate_opportunities(market_report: str, genre: str) -> Optional[str]:
     logger.info("启动创意脑暴, 生成小说选题...")
     logger.info(f"正在查询[{genre}]相关的历史创意库, 避免重复...")
-    
     query_engine = get_vector_query_engine(
         vector_store=get_market_vector_store(),
-        filters=MetadataFilters(filters=[ExactMatchFilter(key="type", value="novel_concept")]),
-        similarity_top_k=10,
-        top_n=5,
+        filters=MetadataFilters(
+            filters=[
+                ExactMatchFilter(key="type", value="novel_concept")
+            ]
+        ),
     )
     historical_concepts_str = await index_query(
         query_engine=query_engine,
         question=f"{genre} 小说核心创意",
     )
-
     if historical_concepts_str:
         logger.success(f"查询到历史创意, 将用于规避重复。")
     else:
         historical_concepts_str = "无相关历史创意可供参考。"
         logger.info("无相关历史创意可供参考。")
-
     user_prompt = opportunity_generation_user_prompt.format(
             market_report=market_report,
             historical_concepts=historical_concepts_str
@@ -294,7 +293,9 @@ async def task_generate_opportunities(market_report: str, genre: str) -> Optiona
     return opportunities
 
 
+
 ###############################################################################
+
 
 
 # 小说创意生成提示词
@@ -405,15 +406,14 @@ novel_concept_user_prompt = """
 async def task_generate_novel_concept(opportunities_report: str, platform: str, genre: str) -> Optional[str]:
     logger.info("深化选题, 生成详细小说创意...")
     logger.info(f"正在查询[{platform} - {genre}]相关的历史成功案例...")
-
     query_engine = get_vector_query_engine(
         vector_store=get_market_vector_store(),
-        filters=MetadataFilters(filters=[
-            ExactMatchFilter(key="type", value="novel_concept"),
-            ExactMatchFilter(key="platform", value=platform)
-        ]),
-        similarity_top_k=5,
-        top_n=3,
+        filters=MetadataFilters(
+            filters=[
+                ExactMatchFilter(key="type", value="novel_concept"),
+                ExactMatchFilter(key="platform", value=platform)
+            ]
+        ),
     )
     historical_success_cases_str = await index_query(
         query_engine=query_engine,
@@ -506,10 +506,9 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
             if report_content:
                 task_save_vector(
                     content=report_content,
-                    doc_type="deep_dive_report",
+                    type="deep_dive_report",
                     platform=candidate.platform,
                     genre=candidate.genre,
-                    content_format="markdown"
                 )
                 deep_dive_reports.append(
                     {
@@ -556,7 +555,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
 
         task_save_vector(
             content=json.dumps(final_decision_result.model_dump(), indent=2, ensure_ascii=False),
-            doc_type="final_decision_report",
+            type="final_decision_report",
             platform=final_choice_data["platform"],
             genre=final_choice_data["genre"],
             content_format="json"
@@ -575,7 +574,7 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
         logger.info(f"完整排名:\n{json.dumps([r.model_dump() for r in final_decision_result.ranking], indent=2, ensure_ascii=False)}")
         task_save_vector(
             content=json.dumps(final_decision_result.model_dump(), indent=2, ensure_ascii=False),
-            doc_type="final_decision_report",
+            type="final_decision_report",
             platform=final_choice_obj.platform,
             genre=final_choice_obj.genre,
             content_format="json"
@@ -601,10 +600,9 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
 
     task_save_vector(
         content=final_opportunities,
-        doc_type="opportunity_generation_report",
+        type="opportunity_generation_report",
         platform=chosen_platform,
         genre=chosen_genre,
-        content_format="markdown"
     )
 
     logger.info("--- 小说选题建议 ---")
@@ -617,10 +615,9 @@ async def creative_concept(candidates_to_explore: List[Candidate]):
 
     task_save_vector(
         content=detailed_concept,
-        doc_type="novel_concept",
+        type="novel_concept",
         platform=chosen_platform,
         genre=chosen_genre,
-        content_format="markdown"
     )
 
     logger.info("--- 详细小说创意 ---")

@@ -18,8 +18,6 @@ from utils.prefect import local_storage, readable_json_serializer
 from prefect import task, flow
 
 
-###############################################################################
-
 
 platform_research_prompt = """
 # 任务背景与目标
@@ -92,6 +90,7 @@ platform_research_prompt = """
 """
 
 
+
 @task(
     name="search_platform",
     persist_result=True,
@@ -114,36 +113,43 @@ async def search_platform(platform: str) -> Optional[str]:
     return md_content
 
 
-###############################################################################
-
 
 @flow(name="search_platform_all") 
-def search_platform_all(platforms: List[str]):
+async def search_platform_all(platforms: List[str]):
     logger.info(f"开始更新 {len(platforms)} 个平台的的基础信息...")
+    
+    # 1. 并行执行所有平台的搜索任务
     report_futures = search_platform.map(platforms)
+    
+    # 2. 等待所有搜索任务完成, 并获取报告内容
+    reports = [await future.result() for future in report_futures]
+
+    # 3. 使用获取到的报告内容, 并行执行保存 Markdown 和存入向量库的任务
     from market_analysis.story.tasks import task_save_markdown
-    filepath_futures = task_save_markdown.map(
+    save_md_futures = task_save_markdown.map(
         filename=platforms,
-        content=report_futures
+        content=reports
     )
     from market_analysis.story.tasks import task_save_vector
-    store_futures = task_save_vector.map(
-        content=report_futures,
-        doc_type="platform_profile",
-        content_format="markdown",
+    save_vector_futures = task_save_vector.map(
+        content=reports,
+        type="platform_profile",
         platform=platforms,
-        source=filepath_futures
     )
-    for future in store_futures:
-        future.result()
+
+    # 4. (可选) 等待保存任务完成
+    for future in save_vector_futures:
+        await future.result()
+    for future in save_md_futures:
+        await future.result()
+
     logger.info(f"已完成对 {len(platforms)} 个平台基础信息的更新流程。")
 
-
-###############################################################################
 
 
 if __name__ == "__main__":
     platforms1 = ["番茄小说", "起点中文网", "飞卢小说网", "晋江文学城", "七猫免费小说", "纵横中文网", "17K小说网", "刺猬猫", "掌阅"]
     platforms2 = ["Wattpad", "RoyalRoad", "AO3", "Webnovel", "Scribble Hub", "Tapas"]
     platforms = ["番茄小说"]
-    search_platform_all(platforms)
+    import asyncio
+    asyncio.run(search_platform_all(platforms))

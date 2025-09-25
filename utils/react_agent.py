@@ -3,7 +3,6 @@ from loguru import logger
 from typing import List, Any, Optional, Type, Union
 from pydantic import BaseModel
 from diskcache import Cache
-from utils.react_agent_prompt import react_system_prompt
 from utils.search import web_search_tools
 from utils.file import cache_dir
 
@@ -16,7 +15,7 @@ cache_query = Cache(str(cache_agent_dir), size_limit=int(32 * (1024**2)))
 
 
 async def call_react_agent(
-    system_prompt: str = react_system_prompt,
+    system_prompt: Optional[str] = None,
     user_prompt: str = "",
     tools: List[Any] = web_search_tools,
     response_model: Optional[Type[BaseModel]] = None
@@ -27,7 +26,6 @@ async def call_react_agent(
     cache_key_str = f"react_agent:{user_prompt}:{system_prompt}:{','.join(tool_names_sorted)}:{response_model_name}"
     import hashlib
     cache_key = hashlib.sha256(cache_key_str.encode()).hexdigest()
-
     cached_result = cache_query.get(cache_key)
     if cached_result is not None:
         return cached_result
@@ -50,7 +48,9 @@ async def call_react_agent(
         verbose=True
     )
     from utils.react_agent_prompt import react_system_header
-    agent.update_prompts({"react_header": react_system_header})
+    agent.update_prompts(
+        {"react_header": react_system_header}
+    )
     from llama_index.core.workflow import Context
     ctx = Context(agent)
     handler = agent.run(

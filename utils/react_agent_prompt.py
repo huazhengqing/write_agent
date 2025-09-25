@@ -22,7 +22,10 @@ react_system_header = """
 你可以使用以下工具: 
 {tool_desc}
 
-{context_prompt}
+# 上下文
+---
+{context}
+---
 
 # 输出格式
 严格遵从以下格式。不要在响应外部使用 Markdown 代码块。
@@ -65,9 +68,6 @@ react_system_header = """
 以下是当前由人类和助手消息交错组成的对话。
 """
 
-
-react_system_prompt = """
-"""
 
 
 state_prompt = """

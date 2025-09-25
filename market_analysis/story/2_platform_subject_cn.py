@@ -261,9 +261,8 @@ async def platform_subject(platforms_to_scan: list[str]):
             platform_reports[platform_name] = report
             task_save_vector(
                 content=report,
-                doc_type="broad_scan_report",
+                type="broad_scan_report",
                 platform=platform_name,
-                content_format="markdown"
             )
         except Exception as e:
             logger.error(f"扫描平台 '{platform_name}' 失败: {e}")
@@ -274,9 +273,8 @@ async def platform_subject(platforms_to_scan: list[str]):
         new_author_reports[platform_name] = opportunity_report
         task_save_vector(
             content=opportunity_report,
-            doc_type="new_author_opportunity_report",
+            type="new_author_opportunity_report",
             platform=platform_name,
-            content_format="markdown"
         )
 
     logger.info("--- 广域扫描对比报告 ---")
@@ -318,10 +316,9 @@ async def platform_subject(platforms_to_scan: list[str]):
             external_trend_reports[f"{platform}-{genre}"] = trend_report
             task_save_vector(
                 content=trend_report,
-                doc_type="external_trend_report",
+                type="external_trend_report",
                 platform=platform,
                 genre=genre,
-                content_format="markdown"
             )
 
     logger.info("决策初步机会...")
@@ -332,7 +329,7 @@ async def platform_subject(platforms_to_scan: list[str]):
 
     task_save_vector(
         content=json.dumps(initial_decision.model_dump(), indent=2, ensure_ascii=False),
-        doc_type="market_analysis_result",
+        type="market_analysis_result",
         platform="summary",
         content_format="json"
     )

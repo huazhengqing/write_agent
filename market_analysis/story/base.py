@@ -1,3 +1,7 @@
+import nest_asyncio
+nest_asyncio.apply()
+
+
 import os
 import sys
 from typing import List, Optional

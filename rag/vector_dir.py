@@ -19,13 +19,12 @@ def file_metadata_default(file_path_str: str) -> dict:
     file_path = Path(file_path_str)
     from datetime import datetime
     stat = file_path.stat()
-    creation_time = datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
-    modification_time = datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
     return {
+        "time": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "file_name": file_path.name,
         "file_path": file_path_str,
-        "creation_date": creation_time,
-        "modification_date": modification_time,
+        "creation_date": datetime.fromtimestamp(stat.st_ctime).strftime("%Y-%m-%d %H:%M:%S"),
+        "modification_date": datetime.fromtimestamp(stat.st_mtime).strftime("%Y-%m-%d %H:%M:%S"),
     }
 
 
