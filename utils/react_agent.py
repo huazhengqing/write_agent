@@ -8,16 +8,6 @@ from utils.file import cache_dir
 
 
 
-state_prompt = """
-当前状态:
-{state}
-
-当前消息:
-{msg}
-"""
-
-
-
 cache_agent_dir = cache_dir / "react_agent"
 cache_agent_dir.mkdir(parents=True, exist_ok=True)
 cache_query = Cache(str(cache_agent_dir), size_limit=int(32 * (1024**2)))
@@ -51,13 +41,10 @@ async def call_react_agent(
 
     from llama_index.core.agent.workflow import ReActAgent
     from llama_index.llms.litellm import LiteLLM
-    from utils.react_agent_prompt import state_prompt
     agent = ReActAgent(
         tools=tools,
         llm=LiteLLM(**llm_params),
         system_prompt=system_prompt,
-        state_prompt=state_prompt,
-        verbose=True
     )
 
     from llama_index.core.workflow import Context
