@@ -349,7 +349,6 @@ platform_site_map = {
 
 
 
-@lru_cache(maxsize=30)
 async def targeted_search(query: str, platforms: Optional[List[str]] = None, sites: Optional[List[str]] = None) -> str:
     # 归一化输入以提高缓存命中率
     normalized_query = query.lower().strip()

@@ -15,7 +15,6 @@ cache_query = Cache(str(cache_agent_dir), size_limit=int(32 * (1024**2)))
 
 
 
-@lru_cache(maxsize=30)
 async def call_react_agent(
     system_prompt: str = react_system_prompt,
     user_prompt: str = "",

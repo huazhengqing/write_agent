@@ -170,7 +170,6 @@ llm_api_params = {
 
 
 
-@lru_cache(maxsize=30)
 def get_llm_params(
     llm_group: Literal['reasoning', 'fast', 'summary'] = 'reasoning',
     messages: Optional[List[Dict[str, Any]]] = None,

@@ -13,7 +13,6 @@ init_llama_settings()
 
 
 
-@lru_cache(maxsize=30)
 def filter_invalid_nodes(nodes: List[BaseNode]) -> List[BaseNode]:
     valid_nodes = []
     initial_count = len(nodes)
@@ -28,7 +27,6 @@ def filter_invalid_nodes(nodes: List[BaseNode]) -> List[BaseNode]:
 
 
 
-@lru_cache(maxsize=30)
 def _parse_content_to_nodes(
     content: str,
     metadata: Dict[str, Any],

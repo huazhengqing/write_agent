@@ -81,7 +81,6 @@ litellm.REPEATED_STREAMING_CHUNK_LIMIT = 20
 
 
 
-@lru_cache(maxsize=30)
 def get_llm_messages(
     system_prompt: str = None, 
     user_prompt: str = None, 
