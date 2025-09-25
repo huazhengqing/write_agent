@@ -175,7 +175,7 @@ llm_api_params = {
         "APIConnectionError",
         "ServiceUnavailableError",
         "APIError",
-        "BadRequestError", 
+        "BadRequestError",
     ]
 }
 

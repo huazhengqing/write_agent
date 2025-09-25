@@ -18,7 +18,6 @@ cache_searh = Cache(str(cache_search_dir), expire=60 * 60 * 24 * 7)
 
 
 
-@lru_cache(maxsize=30)
 async def search_with_searxng(query: str, max_results: int) -> str:
     import httpx
     async with httpx.AsyncClient(follow_redirects=True) as client:
@@ -28,16 +27,13 @@ async def search_with_searxng(query: str, max_results: int) -> str:
             'X-Real-IP': '127.0.0.1'
         }
         search_url = SEARXNG_BASE_URL.rstrip('/')
-        if not search_url.endswith('/search'):
-            search_url += '/search'
-        
         response = await client.post(
             search_url,
             data=data,
             headers=headers,
-            timeout=15.0
+            timeout=45.0
         )
-        response.raise_for_status()  # 处理HTTP错误状态码
+        response.raise_for_status()
         data = response.json()
     
     results = data.get("results", [])
@@ -57,7 +53,6 @@ async def search_with_searxng(query: str, max_results: int) -> str:
 
 
 
-@lru_cache(maxsize=30)
 def search_with_ddg(query: str, max_results: int) -> str:
     params = {
         "query": query,
@@ -78,7 +73,6 @@ def search_with_ddg(query: str, max_results: int) -> str:
 
 
 
-@lru_cache(maxsize=30)
 async def web_search(query: str, max_results: int = 10) -> str:
     normalized_query = query.lower().strip()
     cache_key = f"web_search:{normalized_query}:{max_results}"
@@ -95,7 +89,6 @@ async def web_search(query: str, max_results: int = 10) -> str:
     import asyncio
     for name, strategy_func in search_strategies:
         try:
-            logger.info(f"开始使用 {name} 搜索")
             logger.info(f"搜索策略: 正在尝试使用 {name} 执行搜索: '{query}'")
             if asyncio.iscoroutinefunction(strategy_func):
                 search_results = await strategy_func(query, max_results)
@@ -120,7 +113,7 @@ async def web_search(query: str, max_results: int = 10) -> str:
 @lru_cache(maxsize=None)
 def get_web_search_tool() -> FunctionTool:
     return FunctionTool.from_defaults(
-        fn=web_search,
+        async_fn=web_search,
         name="web_search",
         description=(
             "功能: 执行通用网络搜索, 返回搜索结果列表(标题、链接、摘要)。\n"
@@ -136,7 +129,6 @@ def get_web_search_tool() -> FunctionTool:
 
 
 
-@lru_cache(maxsize=30)
 async def scrape_static(url: str) -> Optional[str]:
     import httpx
     async with httpx.AsyncClient(follow_redirects=True, timeout=20.0) as client:
@@ -165,7 +157,6 @@ async def scrape_static(url: str) -> Optional[str]:
 
 
 
-@lru_cache(maxsize=30)
 async def scrape_dynamic(url: str) -> Optional[str]:
     from playwright.async_api import async_playwright
     async with async_playwright() as p:
@@ -194,7 +185,6 @@ async def scrape_dynamic(url: str) -> Optional[str]:
 
 
 
-@lru_cache(maxsize=30)
 async def scrape_and_extract(url: str) -> str:
     logger.info(f"开始抓取 URL: {url}")
     cached_content = cache_searh.get(url)
@@ -245,7 +235,7 @@ async def scrape_and_extract(url: str) -> str:
 @lru_cache(maxsize=None)
 def get_web_scraper_tool() -> FunctionTool:
     return FunctionTool.from_defaults(
-        fn=scrape_and_extract,
+        async_fn=scrape_and_extract,
         name="web_scraper",
         description=(
             "功能: 抓取并提取指定URL网页的正文内容。\n"

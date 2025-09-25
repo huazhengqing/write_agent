@@ -1,6 +1,6 @@
 from functools import lru_cache
 from loguru import logger
-from typing import List, Any, Optional, Type, Union
+from typing import List, Any, Literal, Optional, Type, Union
 from pydantic import BaseModel
 from diskcache import Cache
 from utils.search import web_search_tools
@@ -15,6 +15,7 @@ cache_query = Cache(str(cache_agent_dir), size_limit=int(32 * (1024**2)))
 
 
 async def call_react_agent(
+    llm_group: Literal['reasoning', 'fast', 'summary'] = 'summary',
     system_prompt: Optional[str] = None,
     user_prompt: str = "",
     tools: List[Any] = web_search_tools,
@@ -36,8 +37,7 @@ async def call_react_agent(
     logger.info(f"response_model=\n{response_model_name}")
 
     from utils.llm_api import llm_temperatures, get_llm_params
-    # llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
-    llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["reasoning"])
+    llm_params = get_llm_params(llm_group=llm_group, temperature=llm_temperatures["reasoning"])
 
     from llama_index.core.agent.workflow import ReActAgent
     from llama_index.llms.litellm import LiteLLM
@@ -49,27 +49,33 @@ async def call_react_agent(
         state_prompt=state_prompt,
         verbose=True
     )
+
     from utils.react_agent_prompt import react_system_header
     agent.update_prompts({"react_header": react_system_header})
+
     from llama_index.core.workflow import Context
     ctx = Context(agent)
+
     handler = agent.run(
         user_prompt, 
-        ctx=ctx, 
+        ctx=ctx,
+        stepwise=False,
     )
 
-    # response_text = ""
-    # async for ev in handler.stream_events():
-    #     if hasattr(ev, 'delta'):
-    #         delta = ev.delta
-    #         if delta is not None:
-    #             response_text += str(delta)
-    #             print(f"{delta}", end="", flush=True)
+    response_text = ""
+    async for ev in handler.stream_events():
+        if hasattr(ev, 'delta'):
+            delta = ev.delta
+            if delta is not None:
+                response_text += str(delta)
+                print(f"{delta}", end="", flush=True)
+    
     final_response = await handler
     logger.info("执行完成。")
 
     # if response_text:
     #     return response_text
+    
     raw_output = ""
     if hasattr(final_response, 'response'):
         raw_output = str(final_response.response)
@@ -94,5 +100,8 @@ async def call_react_agent(
 
     if final_result is not None:
         cache_query.set(cache_key, final_result)
+
+    import asyncio
+    await asyncio.sleep(0.1)
 
     return final_result
