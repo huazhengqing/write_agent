@@ -7,7 +7,7 @@ import sys
 from typing import Optional, Dict, List
 import asyncio
 import json
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field 
 from loguru import logger
 from datetime import datetime
 
@@ -63,7 +63,7 @@ analyze_external_trends_prompt = """
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,
+    cache_expiration=timedelta(days=7),
 )
 async def task_analyze_external_trends(platform: str, genre: str) -> tuple[str, str, str]:
     report = await query_react(
@@ -112,7 +112,7 @@ class ParsedGenres(BaseModel):
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,
+    cache_expiration=timedelta(days=7),
 )
 async def task_parse_genres_from_report(platform: str, report: str) -> tuple[str, List[str]]:
     logger.info(f"为平台 '{platform}' 的报告解析热门题材...")
@@ -203,7 +203,7 @@ class MarketAnalysisResult(BaseModel):
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,
+    cache_expiration=timedelta(days=7),
 )
 async def task_choose_best_opportunity(
     platform_reports: Dict[str, str], 

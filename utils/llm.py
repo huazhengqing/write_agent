@@ -7,59 +7,27 @@ from typing import Dict, Any, Optional, Type, Callable
 
 
 
-@lru_cache(maxsize=30)
+from litellm.caching.caching import Cache as LiteLLMCache
+_original_litellm_get_cache_key = LiteLLMCache().get_cache_key
+
+
+
 def custom_get_cache_key(**kwargs):
-    """
-    根据调用类型(completion, embedding, rerank)生成不同的缓存键。
-    - completion: 基于 "messages" 和 "temperature"。
-    - embedding: 基于 "model" 和 "input"。
-    - rerank: 基于 "query", "documents" 和 "top_n"。
-    """
-    # 检查是否为 completion 调用
     if "messages" in kwargs:
         messages = kwargs.get("messages", [])
         temperature = kwargs.get("temperature", 0.1)
-        messages_str = json.dumps(messages, sort_keys=True)
-        key_data = {
-            "type": "completion",
-            "messages": messages_str,
+        key_string = json.dumps({
+            "messages": json.dumps(messages, sort_keys=True),
             "temperature": temperature,
-        }
-    # 检查是否为 embedding 调用
-    elif "input" in kwargs:
-        model = kwargs.get("model", "")
-        input_texts = kwargs.get("input", [])
-        input_str = json.dumps(input_texts, sort_keys=True)
-        key_data = {
-            "type": "embedding",
-            "model": model,
-            "input": input_str,
-        }
-    # 检查是否为 rerank 调用
-    elif "query" in kwargs and "documents" in kwargs:
-        query = kwargs.get("query", "")
-        documents = kwargs.get("documents", [])
-        top_n = kwargs.get("top_n")
-        docs_str = json.dumps(documents, sort_keys=True)
-        key_data = {
-            "type": "rerank",
-            "query": query,
-            "documents": docs_str,
-            "top_n": top_n,
-        }
-    # 后备逻辑, 使用所有可序列化参数
-    else:
-        serializable_kwargs = {k: v for k, v in kwargs.items() if isinstance(v, (str, int, float, bool, list, dict, tuple, type(None)))}
-        key_data = {"type": "unknown", "params": json.dumps(serializable_kwargs, sort_keys=True, default=str)}
-
-    key_string = json.dumps(key_data, sort_keys=True)
-    import hashlib
-    return hashlib.sha256(key_string.encode("utf-8")).hexdigest()
+        }, sort_keys=True)
+        import hashlib
+        return hashlib.sha256(key_string.encode("utf-8")).hexdigest()
+    
+    return _original_litellm_get_cache_key(**kwargs)
 
 
-
-from litellm.caching.caching import Cache
 from utils.file import cache_dir
+from litellm.caching.caching import Cache
 cache = Cache(type="disk", disk_cache_dir=cache_dir / "litellm")
 cache.get_cache_key = custom_get_cache_key
 import litellm
@@ -228,14 +196,12 @@ async def llm_completion(
     llm_params_for_api = llm_params.copy()
 
     if response_model:
-        logger.info(f"启用 JSON 模式, 目标模型: {response_model.__name__}")
         llm_params_for_api["response_format"] = {
             "type": "json_object",
             "schema": response_model.model_json_schema()
         }
 
     for attempt in range(max_retries):
-
         system_prompt = ""
         user_prompt = ""
         messages = llm_params_for_api.get("messages", [])

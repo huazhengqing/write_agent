@@ -36,7 +36,9 @@ async def call_react_agent(
     logger.info(f"response_model=\n{response_model_name}")
 
     from utils.llm_api import llm_temperatures, get_llm_params
-    llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
+    # llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
+    llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["reasoning"])
+
     from llama_index.core.agent.workflow import ReActAgent
     from llama_index.llms.litellm import LiteLLM
     from utils.react_agent_prompt import state_prompt
@@ -48,15 +50,12 @@ async def call_react_agent(
         verbose=True
     )
     from utils.react_agent_prompt import react_system_header
-    agent.update_prompts(
-        {"react_header": react_system_header}
-    )
+    agent.update_prompts({"react_header": react_system_header})
     from llama_index.core.workflow import Context
     ctx = Context(agent)
     handler = agent.run(
         user_prompt, 
         ctx=ctx, 
-        max_iterations=5
     )
 
     # response_text = ""

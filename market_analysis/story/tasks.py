@@ -2,6 +2,7 @@ import os
 import sys
 from typing import Optional, Tuple
 from loguru import logger
+from datetime import timedelta
 
 from llama_index.core.vector_stores import ExactMatchFilter, MetadataFilters
 
@@ -27,7 +28,7 @@ from prefect import task
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,
+    cache_expiration=timedelta(days=7),
 )
 async def task_load_platform_profile(platform: str) -> Tuple[str, str]:
     logger.info(f"正在从向量库加载平台 '{platform}' 的基础信息...")
@@ -99,7 +100,7 @@ broad_scan_system_prompt = """
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,
+    cache_expiration=timedelta(days=7),
 )
 async def task_platform_briefing(platform: str) -> str:
     logger.info(f"为平台 '{platform}' 生成市场动态简报...")
@@ -162,7 +163,7 @@ assess_new_author_opportunity_system_prompt = """
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,
+    cache_expiration=timedelta(days=7),
 )
 async def task_new_author_opportunity(platform: str) -> str:
     logger.info(f"为平台 '{platform}' 生成新人机会评估报告...")
@@ -191,7 +192,7 @@ async def task_new_author_opportunity(platform: str) -> str:
     persist_result=True,
     result_storage=local_storage,
     result_serializer=readable_json_serializer,
-    cache_expiration=604800,
+    cache_expiration=timedelta(days=7),
     retries=1,
     retry_delay_seconds=10,
 )
@@ -219,8 +220,8 @@ def task_save_vector(content: Optional[str], content_format: str = "md", **kwarg
     result_storage=local_storage,
     result_serializer=readable_json_serializer,
     retries=2,
-    retry_delay_seconds=10,
-    cache_expiration=604800,
+    retry_delay_seconds=10,    
+    cache_expiration=timedelta(days=7),
 )
 def task_save_markdown(filename: str, content: Optional[str]) -> Optional[str]:
     if not content:

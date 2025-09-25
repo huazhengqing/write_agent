@@ -34,8 +34,13 @@ llm_temperatures = {
 
 llms_api = {
     "reasoning": {
-        "model": "openrouter/deepseek/deepseek-r1-0528:free",
-        "api_key": os.getenv("OPENROUTER_API_KEY"),
+        # "model": "openrouter/deepseek/deepseek-r1-0528:free",
+        # "api_key": os.getenv("OPENROUTER_API_KEY"),
+        
+        "model": "openai/deepseek-ai/DeepSeek-R1-0528",
+        "api_base": "https://api-inference.modelscope.cn/v1/",
+        "api_key": os.getenv("modelscope_API_KEY"), 
+
         "context_window": 163840,
         "fallbacks": [
             {
@@ -58,6 +63,11 @@ llms_api = {
                 "model": "groq/qwen/qwen3-32b",
                 "api_key": os.getenv("GROQ_API_KEY"), 
                 "context_window": 131072,
+            }, 
+            {
+                "model": "openrouter/deepseek/deepseek-r1-0528:free",
+                "api_key": os.getenv("OPENROUTER_API_KEY"), 
+                "context_window": 163840,
             }, 
             # {
             #     "model": "openrouter/deepseek/deepseek-r1-0528",
@@ -165,6 +175,7 @@ llm_api_params = {
         "APIConnectionError",
         "ServiceUnavailableError",
         "APIError",
+        "BadRequestError", 
     ]
 }
 
@@ -177,10 +188,18 @@ def get_llm_params(
     tools: Optional[List[Dict[str, Any]]] = None,
     **kwargs: Any
 ) -> Dict[str, Any]:
-    llm_params = llms_api[llm_group].copy()
+    llm_config = copy.deepcopy(llms_api[llm_group])
 
+    llm_params = llm_config
     llm_params.update(**llm_api_params)
     llm_params.update(kwargs)
+
+    fallbacks = llm_config.get("fallbacks")
+    if fallbacks:
+        llm_params.setdefault("additional_kwargs", {})["fallbacks"] = fallbacks
+    exceptions_to_fallback = llm_api_params.get("exceptions_to_fallback_on")
+    if exceptions_to_fallback:
+        llm_params.setdefault("additional_kwargs", {})["exceptions_to_fallback_on"] = exceptions_to_fallback
 
     llm_params["temperature"] = temperature
 

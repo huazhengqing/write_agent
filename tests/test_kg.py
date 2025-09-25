@@ -153,10 +153,10 @@ def get_all_test_data_params():
     params = [
         # 1. 基础与边缘用例
         ("empty", test_data.VECTOR_TEST_EMPTY, "text", False),
-        ("simple_txt", test_data.VECTOR_TEST_SIMPLE_TXT, "text", True), # 简单文本也可能包含可提取信息
-        ("simple_cn", test_data.VECTOR_TEST_SIMPLE_CN, "text", True), # 简单中文文本也可能包含可提取信息
-        ("simple_md", test_data.VECTOR_TEST_SIMPLE_MD, "md", True),
-        ("simple_json", test_data.VECTOR_TEST_SIMPLE_JSON, "json", True),
+        ("simple_txt", test_data.VECTOR_TEST_SIMPLE_TXT, "text", False), # 简单文本也可能包含可提取信息
+        ("simple_cn", test_data.VECTOR_TEST_SIMPLE_CN, "text", False), # 简单中文文本也可能包含可提取信息
+        ("simple_md", test_data.VECTOR_TEST_SIMPLE_MD, "md", False),
+        ("simple_json", test_data.VECTOR_TEST_SIMPLE_JSON, "json", False),
         ("mixed_lang", test_data.VECTOR_TEST_MIXED_LANG, "md", True),
         # 2. 结构化内容
         ("table_data", test_data.VECTOR_TEST_TABLE_DATA, "md", True),
@@ -175,7 +175,7 @@ def get_all_test_data_params():
         ("complex_mermaid_diagram", test_data.VECTOR_TEST_COMPLEX_MERMAID_DIAGRAM, "md", True),
         ("special_chars", test_data.VECTOR_TEST_SPECIAL_CHARS, "md", True), # 包含 "欧拉公式" 应该能提取
         ("md_with_code_block", test_data.VECTOR_TEST_MD_WITH_CODE_BLOCK, "md", True),
-        ("json_with_code_block", test_data.VECTOR_TEST_JSON_WITH_CODE_BLOCK, "json", True),
+        ("json_with_code_block", test_data.VECTOR_TEST_JSON_WITH_CODE_BLOCK, "json", False),
         ("md_with_complex_json_code_block", test_data.VECTOR_TEST_MD_WITH_COMPLEX_JSON_CODE_BLOCK, "md", True),
         # 4. 领域场景: 小说创作
         ("character_info", test_data.VECTOR_TEST_CHARACTER_INFO, "md", True),

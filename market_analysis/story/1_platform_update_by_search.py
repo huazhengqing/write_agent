@@ -5,6 +5,7 @@ nest_asyncio.apply()
 import os
 import sys
 from typing import List, Optional
+from datetime import timedelta
 from loguru import logger
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
@@ -97,9 +98,9 @@ platform_research_prompt = """
     result_storage=local_storage,
     result_storage_key="story/market/search_platform_{parameters[platform]}.json",
     result_serializer=readable_json_serializer,
-    retries=1,
-    retry_delay_seconds=10,
-    cache_expiration=604800,
+    retries=3,
+    retry_delay_seconds=60,
+    cache_expiration=timedelta(days=7),
 )
 async def search_platform(platform: str) -> Optional[str]:
     from utils.react_agent import call_react_agent
@@ -122,7 +123,12 @@ async def search_platform_all(platforms: List[str]):
     report_futures = search_platform.map(platforms)
     
     # 2. 等待所有搜索任务完成, 并获取报告内容
-    reports = [await future.result() for future in report_futures]
+    reports = []
+    for future in report_futures:
+        # .result() 对于异步任务会返回一个协程, 但如果结果被缓存, 它会直接返回结果。
+        # 我们需要检查返回的是否是协程, 只有在是协程的情况下才 await。
+        result_or_coro = future.result()
+        reports.append(await result_or_coro if asyncio.iscoroutine(result_or_coro) else result_or_coro)
 
     # 3. 使用获取到的报告内容, 并行执行保存 Markdown 和存入向量库的任务
     from market_analysis.story.tasks import task_save_markdown
@@ -139,11 +145,16 @@ async def search_platform_all(platforms: List[str]):
 
     # 4. (可选) 等待保存任务完成
     for future in save_vector_futures:
-        await future.result()
+        future.result()
     for future in save_md_futures:
-        await future.result()
+        future.result()
 
     logger.info(f"已完成对 {len(platforms)} 个平台基础信息的更新流程。")
+
+
+
+async def main(platforms_to_run: List[str]):
+    await search_platform_all(platforms_to_run)
 
 
 
@@ -152,4 +163,4 @@ if __name__ == "__main__":
     platforms2 = ["Wattpad", "RoyalRoad", "AO3", "Webnovel", "Scribble Hub", "Tapas"]
     platforms = ["番茄小说"]
     import asyncio
-    asyncio.run(search_platform_all(platforms))
+    asyncio.run(main(platforms))

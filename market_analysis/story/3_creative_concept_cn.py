@@ -6,7 +6,7 @@ import json
 import os
 import sys
 from typing import Optional, Dict, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field 
 from loguru import logger
 from datetime import datetime
 from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
@@ -80,7 +80,7 @@ class FinalDecisionResult(BaseModel):
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,
+    cache_expiration=timedelta(days=7),
 )
 async def task_final_decision(reports: List[Dict[str, str]]) -> FinalDecisionResult:
     logger.info("在多个深度分析报告中进行最终决策...")
@@ -179,7 +179,7 @@ deep_dive_system_prompt = """
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,
+    cache_expiration=timedelta(days=7),
 )
 async def task_deep_dive_analysis(platform: str, genre: str, platform_profile: str, broad_scan_report: str, opportunity_report: str) -> Optional[str]:
     logger.info(f"对[{platform} - {genre}]启动深度分析...")
@@ -256,7 +256,7 @@ opportunity_generation_user_prompt = """
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,
+    cache_expiration=timedelta(days=7),
 )
 async def task_generate_opportunities(market_report: str, genre: str) -> Optional[str]:
     logger.info("启动创意脑暴, 生成小说选题...")
@@ -401,7 +401,7 @@ novel_concept_user_prompt = """
     result_serializer=readable_json_serializer,
     retries=2,
     retry_delay_seconds=10,
-    cache_expiration=604800,
+    cache_expiration=timedelta(days=7),
 )
 async def task_generate_novel_concept(opportunities_report: str, platform: str, genre: str) -> Optional[str]:
     logger.info("深化选题, 生成详细小说创意...")
