@@ -72,4 +72,3 @@ def get_synthesizer():
         use_async=True,
     )
     return synthesizer
-

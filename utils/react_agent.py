@@ -8,6 +8,16 @@ from utils.file import cache_dir
 
 
 
+state_prompt = """
+当前状态:
+{state}
+
+当前消息:
+{msg}
+"""
+
+
+
 cache_agent_dir = cache_dir / "react_agent"
 cache_agent_dir.mkdir(parents=True, exist_ok=True)
 cache_query = Cache(str(cache_agent_dir), size_limit=int(32 * (1024**2)))
@@ -15,7 +25,7 @@ cache_query = Cache(str(cache_agent_dir), size_limit=int(32 * (1024**2)))
 
 
 async def call_react_agent(
-    llm_group: Literal['reasoning', 'fast', 'summary'] = 'summary',
+    llm_group: Literal['reasoning', 'fast', 'summary'] = 'reasoning',
     system_prompt: Optional[str] = None,
     user_prompt: str = "",
     tools: List[Any] = web_search_tools,
@@ -49,9 +59,6 @@ async def call_react_agent(
         state_prompt=state_prompt,
         verbose=True
     )
-
-    from utils.react_agent_prompt import react_system_header
-    agent.update_prompts({"react_header": react_system_header})
 
     from llama_index.core.workflow import Context
     ctx = Context(agent)

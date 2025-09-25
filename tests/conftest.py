@@ -35,7 +35,11 @@ def pytest_generate_tests(metafunc):
 @pytest.fixture(scope="session", autouse=True)
 def setup_test_environment():
     nest_asyncio.apply()
+    # 解决 litellm 与 pytest-asyncio 的事件循环冲突
+    # https://docs.litellm.ai/docs/debugging/async_issues
+    litellm.set_verbose = False
     litellm.disable_logging = True
+    litellm.disable_streaming_logging = True
     logging.getLogger("litellm").setLevel(logging.WARNING)
     init_llama_settings()
 

@@ -32,7 +32,7 @@ def get_kg_store(db_path: str) -> KuzuPropertyGraphStore:
     db_path_obj.parent.mkdir(parents=True, exist_ok=True)
 
     import kuzu
-    db = kuzu.Database(str(db_path_obj), max_db_size=1024*1024*1024*8)     # 8 GB
+    db = kuzu.Database(str(db_path_obj), max_db_size=1024*1024*1024*32)
     from llama_index.core import Settings
     kg_store = KuzuPropertyGraphStore(db, embed_model=Settings.embed_model)
 
@@ -119,7 +119,7 @@ def kg_add(
 
 def get_kg_query_engine(
     kg_store: KuzuPropertyGraphStore,
-    kg_similarity_top_k: int = 300,
+    kg_similarity_top_k: int = 500, 
     top_n: int = 100,
 ) -> BaseQueryEngine:
     logger.info("开始构建知识图谱查询引擎...")
