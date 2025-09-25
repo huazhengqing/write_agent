@@ -21,10 +21,6 @@ data_market_dir = data_dir / "market"
 data_market_dir.mkdir(parents=True, exist_ok=True)
 
 
-data_platform_dir = data_dir / "platform"
-data_platform_dir.mkdir(parents=True, exist_ok=True)
-
-
 prefect_dir = project_root / ".prefect"
 os.environ["PREFECT_HOME"] = str(prefect_dir)
 prefect_dir.mkdir(parents=True, exist_ok=True)
