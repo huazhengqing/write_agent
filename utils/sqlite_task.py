@@ -229,30 +229,49 @@ class TaskDB:
 
     def get_task_list(self, task: Task) -> str:
         """
-        高效获取任务上下文列表 (父任务链 + 兄弟任务), 仅查询必要的字段。
+        高效获取任务上下文列表 (父任务链 + 每个父任务的所有兄弟任务 + 当前任务的兄弟任务), 仅查询必要的字段。
         """
         all_task_data = {}
         logger.debug(f"正在为任务 {task.id} 获取上下文任务列表...")
+
         with self._lock:
-            id_parts = task.id.split('.')
-            parent_chain_ids = []
-            if len(id_parts) > 1:
-                parent_chain_ids = [".".join(id_parts[:i]) for i in range(1, len(id_parts))]
-            query_parts = []
-            params = []
-            if parent_chain_ids:
-                placeholders = ','.join(['?'] * len(parent_chain_ids))
-                query_parts.append(f"id IN ({placeholders})")
-                params.extend(parent_chain_ids)
+            # 1. 找出所有需要查询的 parent_id
+            # 包括: 根 (parent_id IS NULL), 父任务链中每个任务的 parent_id, 以及当前任务的 parent_id
+            # 根任务的 parent_id 可能是 '' (空字符串) 或 NULL, 为了健壮性, 两者都考虑。
+            # 使用一个特殊值来代表根任务查询条件, 这里用空字符串 ''。
+            parent_ids_to_query = {''} 
             if task.parent_id:
-                query_parts.append("parent_id = ?")
-                params.append(task.parent_id)
-            if query_parts:
-                query = f"SELECT id, hierarchical_position, task_type, goal, length FROM t_tasks WHERE {' OR '.join(query_parts)}"
-                self.cursor.execute(query, tuple(params))
-                rows = self.cursor.fetchall()
-                for row in rows:
-                    all_task_data[row[0]] = (row[1], row[2], row[3], row[4])
+                parent_ids_to_query.add(task.parent_id)
+
+            id_parts = task.id.split('.')
+            if len(id_parts) > 1:
+                # 例如, task.id '1.2.3', id_parts ['1', '2', '3']
+                # 父任务链的 parent_id 是 '1' (1.2的父)
+                for i in range(1, len(id_parts) - 1):
+                    parent_ids_to_query.add(".".join(id_parts[:i]))
+
+            # 2. 构建查询
+            # 使用一个查询获取所有相关任务，提高效率
+            query_conditions = []
+            params = []
+            
+            # 处理非 NULL 的 parent_id
+            non_null_parent_ids = [pid for pid in parent_ids_to_query if pid != '']
+            if non_null_parent_ids:
+                placeholders = ','.join(['?'] * len(non_null_parent_ids))
+                query_conditions.append(f"parent_id IN ({placeholders})")
+                params.extend(non_null_parent_ids)
+            
+            # 处理根任务 (parent_id = '' 或 parent_id IS NULL)
+            if '' in parent_ids_to_query:
+                query_conditions.append("(parent_id = '' OR parent_id IS NULL)")
+
+            query = f"SELECT id, hierarchical_position, task_type, goal, length FROM t_tasks WHERE {' OR '.join(query_conditions)}"
+            self.cursor.execute(query, tuple(params))
+            rows = self.cursor.fetchall()
+            for row in rows:
+                all_task_data[row[0]] = (row[1], row[2], row[3], row[4])
+
         all_task_data[task.id] = (task.hierarchical_position, task.task_type, task.goal, task.length)
         sorted_ids = sorted(all_task_data.keys(), key=natural_sort_key)
         output_lines = []
@@ -286,7 +305,11 @@ class TaskDB:
         with self._lock:
             placeholders = ','.join(['?'] * len(dependent_ids))
             self.cursor.execute(
-                f"SELECT id, design, design_reflection, review_design, review_write FROM t_tasks WHERE id IN ({placeholders})",
+                f"""
+                SELECT id, design, design_reflection, review_design, review_write 
+                FROM t_tasks 
+                WHERE id IN ({placeholders})
+                """,
                 tuple(dependent_ids)
             )
             rows = self.cursor.fetchall()
@@ -376,7 +399,12 @@ class TaskDB:
         with self._lock:
             placeholders = ','.join(['?'] * len(dependent_ids))
             self.cursor.execute(
-                f"SELECT id, search FROM t_tasks WHERE id IN ({placeholders}) AND task_type = 'search'",
+                f"""
+                SELECT id, search 
+                FROM t_tasks 
+                WHERE id IN ({placeholders}) AND task_type = 'search' 
+                AND search IS NOT NULL AND search != ''
+                """,
                 tuple(dependent_ids)
             )
             rows = self.cursor.fetchall()
@@ -394,7 +422,11 @@ class TaskDB:
         logger.debug(f"正在获取父任务 {parent_id} 的所有设计类子任务内容...")
         with self._lock:
             self.cursor.execute(
-                "SELECT id, design, design_reflection, review_design, review_write FROM t_tasks WHERE parent_id = ? AND task_type = 'design'",
+                """
+                SELECT id, design, design_reflection, review_design, review_write 
+                FROM t_tasks 
+                WHERE parent_id = ? AND task_type = 'design'
+                """,
                 (parent_id,)
             )
             rows = self.cursor.fetchall()
@@ -430,7 +462,12 @@ class TaskDB:
         logger.debug(f"正在获取父任务 {parent_id} 的所有搜索类子任务结果...")
         with self._lock:
             self.cursor.execute(
-                "SELECT id, search FROM t_tasks WHERE parent_id = ? AND task_type = 'search'",
+                """
+                SELECT id, search 
+                FROM t_tasks 
+                WHERE parent_id = ? AND task_type = 'search' 
+                AND search IS NOT NULL AND search != ''
+                """,
                 (parent_id,)
             )
             rows = self.cursor.fetchall()
@@ -450,7 +487,12 @@ class TaskDB:
         logger.debug(f"正在获取父任务 {parent_id} 的所有写作类子任务摘要...")
         with self._lock:
             self.cursor.execute(
-                "SELECT id, summary FROM t_tasks WHERE parent_id = ? AND task_type = 'write'",
+                """
+                SELECT id, summary 
+                FROM t_tasks 
+                WHERE parent_id = ? AND task_type = 'write' 
+                AND summary IS NOT NULL AND summary != ''
+                """,
                 (parent_id,)
             )
             rows = self.cursor.fetchall()
