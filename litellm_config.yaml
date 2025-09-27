@@ -248,7 +248,7 @@ router_settings:
   num_retries: 3
   allowed_fails: 3
   cooldown_time: 30
-  enable_pre_call_checks: true
+  enable_pre_call_checks: false
   max_fallbacks: 5
   cache_responses: true
   retry_policy: {
@@ -266,4 +266,5 @@ router_settings:
 
 
 environment_variables:
+  LITELLM_LOG: INFO
   REPEATED_STREAMING_CHUNK_LIMIT: 20
