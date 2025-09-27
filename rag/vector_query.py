@@ -9,7 +9,7 @@ from llama_index.core.vector_stores import VectorStoreInfo
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo
-from utils.llm_api import llm_temperatures, get_llm_params
+from utils.llm import llm_temperatures, get_llm_params
 from rag.vector_prompts import vector_store_query_prompt
 from rag.vector import get_synthesizer
 

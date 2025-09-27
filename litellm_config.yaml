@@ -201,6 +201,23 @@ model_list:
       rpm: 60
       tpm: 300
 
+  - model_name: embedding
+    litellm_params:
+      model: openai/BAAI/bge-m3
+      api_base: https://api.siliconflow.cn/v1/
+      api_key: os.environ/SILICONFLOW_API_KEY
+
+  - model_name: embedding2
+    litellm_params:
+      model: gemini/embedding-001
+      api_key: os.environ/GEMINI_API_KEY
+
+  - model_name: rerank
+    litellm_params:
+      model: siliconflow/BAAI/bge-reranker-v2-m3
+      api_base: https://api.siliconflow.cn/v1/rerank
+      api_key: os.environ/SILICONFLOW_API_KEY
+
 
 litellm_settings:
   request_timeout: 600
@@ -220,6 +237,9 @@ litellm_settings:
   disable_safety_check: true
   safe_mode: false
   safe_prompt: false
+  enable_json_schema_validation: true
+  drop_params: true
+  telemetry: false
 
 
 router_settings:
@@ -244,3 +264,6 @@ router_settings:
   content_policy_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
   context_window_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
 
+
+environment_variables:
+  REPEATED_STREAMING_CHUNK_LIMIT: 20

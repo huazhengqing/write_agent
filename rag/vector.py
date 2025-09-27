@@ -1,4 +1,5 @@
 
+import os
 from pathlib import Path
 from functools import lru_cache
 from llama_index.core import Settings
@@ -7,8 +8,7 @@ from llama_index.core.prompts import PromptTemplate
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.core.indices.prompt_helper import PromptHelper
 from llama_index.core.response_synthesizers import TreeSummarize
-from utils.llm_api import llm_temperatures, get_llm_params, get_embedding_params
-from utils.llm_api import llm_temperatures, get_llm_params
+from utils.llm import llm_temperatures, get_llm_params
 from rag.vector_prompts import tree_summary_prompt
 
 
@@ -26,13 +26,15 @@ def init_llama_settings():
     Settings.llm = LiteLLM(**llm_params)
 
     Settings.prompt_helper = PromptHelper(
-        context_window=llm_params.get('context_window', 8192),
-        num_output=llm_params.get('max_tokens', 2048),
+        # context_window=llm_params.get('context_window', 8192),
+        # num_output=llm_params.get('max_tokens', 2048),
         chunk_overlap_ratio=0.2,
     )
-    embedding_params = get_embedding_params()
-    embed_model_name = embedding_params.pop('model')
-    Settings.embed_model = LiteLLMEmbedding(model_name=embed_model_name, **embedding_params)
+    Settings.embed_model = LiteLLMEmbedding(
+        model_name="openai/embedding",
+        api_base=os.getenv("LITELLM_PROXY_URL"),
+        api_key=os.getenv("LITELLM_MASTER_KEY"),
+    )
 
 
 

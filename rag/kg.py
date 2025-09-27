@@ -5,7 +5,7 @@ from loguru import logger
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.llms.litellm import LiteLLM
 from llama_index.graph_stores.kuzu.kuzu_property_graph import KuzuPropertyGraphStore
-from utils.llm_api import llm_temperatures, get_llm_params
+from utils.llm import llm_temperatures, get_llm_params
 from rag.kg_prompts import kg_extraction_prompt
 
 
@@ -134,7 +134,7 @@ def get_kg_query_engine(
 
     postprocessors = []
     if top_n > 0:
-        from llama_index.postprocessor.siliconflow_rerank.base import SiliconFlowRerank
+        from llama_index.postprocessor.siliconflow_rerank import SiliconFlowRerank
         reranker = SiliconFlowRerank(
             api_key=os.getenv("SILICONFLOW_API_KEY"),
             top_n=top_n,

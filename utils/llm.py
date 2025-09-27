@@ -1,51 +1,44 @@
-
-from functools import lru_cache
 import json
+import os
 from loguru import logger
 from pydantic import BaseModel
-from typing import Dict, Any, Optional, Type, Callable
-
-
-
-from litellm.caching.caching import Cache as LiteLLMCache
-_original_litellm_get_cache_key = LiteLLMCache().get_cache_key
-
-
-
-def custom_get_cache_key(**kwargs):
-    if "messages" in kwargs:
-        messages = kwargs.get("messages", [])
-        temperature = kwargs.get("temperature", 0.1)
-        key_string = json.dumps({
-            "messages": json.dumps(messages, sort_keys=True),
-            "temperature": temperature,
-        }, sort_keys=True)
-        import hashlib
-        return hashlib.sha256(key_string.encode("utf-8")).hexdigest()
-    
-    return _original_litellm_get_cache_key(**kwargs)
-
-
-from utils.file import cache_dir
-from litellm.caching.caching import Cache
-cache = Cache(type="disk", disk_cache_dir=cache_dir / "litellm")
-cache.get_cache_key = custom_get_cache_key
+from typing import Dict, Any, Optional, List, Literal, Type, Callable
 import litellm
-litellm.cache = cache
-litellm.enable_cache()
+import copy
+
+from dotenv import load_dotenv
+load_dotenv()
+
+
+llm_temperatures = {
+    "creative": 0.75,
+    "reasoning": 0.1,
+    "summarization": 0.2,
+    "synthesis": 0.4,
+    "classification": 0.0,
+}
 
 
 
-litellm.enable_json_schema_validation=True
-litellm.drop_params = True
-litellm.telemetry = False
-litellm.REPEATED_STREAMING_CHUNK_LIMIT = 20
-# litellm._turn_on_debug()
-# litellm.disable_logging = True
-
-
-
-###############################################################################
+def get_llm_params(
+    llm_group: Literal['reasoning', 'fast', 'summary'] = 'reasoning',
+    messages: Optional[List[Dict[str, Any]]] = None,
+    temperature: float = llm_temperatures["reasoning"],
+    tools: Optional[List[Dict[str, Any]]] = None,
+    **kwargs: Any
+) -> Dict[str, Any]:
+    llm_params = {
+        "model": f"openai/{llm_group}",
+        "api_base": os.getenv("LITELLM_PROXY_URL"),
+        "api_key": os.getenv("LITELLM_MASTER_KEY")
+    }
+    llm_params.update(kwargs)
+    llm_params["temperature"] = temperature
+    if tools is not None:
+        llm_params["tools"] = tools
+    if messages is not None:
+        llm_params["messages"] = copy.deepcopy(messages)
+    return llm_params
 
 
 
@@ -79,6 +72,10 @@ def get_llm_messages(
         messages.append({"role": "user", "content": user_content})
 
     return messages
+
+
+
+###############################################################################
 
 
 
@@ -142,23 +139,43 @@ self_correction_prompt = """
 """
 
 
+def _clear_proxy_cache(cache_key: Optional[str]):
+    if not cache_key:
+        logger.debug("没有可用的 cache_key, 跳过缓存删除。")
+        return
+
+    proxy_base_url = os.getenv("LITELLM_PROXY_URL")
+    if not proxy_base_url:
+        logger.warning("无法获取 LITELLM_PROXY_URL, 跳过缓存删除。")
+        return
+
+    delete_url = f"{proxy_base_url}/cache/delete"
+    headers = {"Authorization": f"Bearer {os.getenv('LITELLM_MASTER_KEY')}"}
+    data = {"keys": [cache_key]}
+
+    try:
+        import httpx
+        with httpx.Client() as client:
+            response = client.post(delete_url, json=data, headers=headers, timeout=10)
+            response.raise_for_status()
+            logger.info(f"成功从 litellm proxy 删除缓存: key='{cache_key}'")
+    except Exception as http_e:
+        logger.warning(f"从 litellm proxy 删除缓存失败: key='{cache_key}', 错误: {http_e}")
+
+
 
 def _handle_llm_failure(
     e: Exception,
     llm_params: Dict[str, Any],
     llm_params_for_api: Dict[str, Any],
+    cache_key: Optional[str],
     response_model: Optional[Type[BaseModel]],
     raw_output_for_correction: Optional[str],
 ):
-    # 清理失败调用的缓存
-    cache_key = litellm.cache.get_cache_key(**llm_params_for_api)
-    litellm.cache.cache.delete_cache(cache_key)
-
-    # 针对JSON解析/验证错误的自我修正逻辑
+    _clear_proxy_cache(cache_key)
     from pydantic import ValidationError
     if response_model and isinstance(e, (ValidationError, json.JSONDecodeError)) and raw_output_for_correction:
         logger.info("检测到JSON错误, 下次尝试将进行自我修正...")
-        # 提取原始用户任务内容
         original_user_content = ""
         for msg in reversed(llm_params["messages"]):
             if msg["role"] == "user":
@@ -200,7 +217,7 @@ async def llm_completion(
             "type": "json_object",
             "schema": response_model.model_json_schema()
         }
-
+    
     for attempt in range(max_retries):
         system_prompt = ""
         user_prompt = ""
@@ -219,14 +236,15 @@ async def llm_completion(
         logger.info(f"开始 LLM 调用 (尝试 {attempt + 1}/{max_retries})...")
 
         raw_output_for_correction = None
+        cache_key_from_response = None
         try:
             response = await litellm.acompletion(**llm_params_for_api)
             logger.debug(f"LLM 原始响应: {response}")
-
             if not response.choices or not response.choices[0].message:
                 raise ValueError("LLM响应中缺少 choices 或 message。")
-            
+
             message = response.choices[0].message
+            cache_key_from_response = response.get("x-litellm-cache-key")
 
             if response_model:
                 validated_data = None
@@ -274,6 +292,7 @@ async def llm_completion(
                 e=e,
                 llm_params=llm_params,
                 llm_params_for_api=llm_params_for_api,
+                cache_key=cache_key_from_response,
                 response_model=response_model,
                 raw_output_for_correction=raw_output_for_correction,
             )
@@ -312,7 +331,7 @@ async def txt_to_json(
         system_prompt=extraction_system_prompt,
         user_prompt=extraction_user_prompt.format(cleaned_output=cleaned_output)
     )
-    from utils.llm_api import get_llm_params, llm_temperatures
+    from utils.llm import get_llm_params, llm_temperatures
     extraction_llm_params = get_llm_params(
         llm_group='reasoning',
         messages=extraction_messages,
