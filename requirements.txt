@@ -13,7 +13,7 @@ trafilatura
 python-dotenv
 pytest-asyncio
 pysqlite3-binary
-litellm[caching]
+litellm
 sentence_transformers
 llama-index
 llama-index-llms-litellm

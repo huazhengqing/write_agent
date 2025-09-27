@@ -8,10 +8,6 @@ from utils.file import cache_dir
 
 
 
-SEARXNG_BASE_URL = os.getenv("SEARXNG_BASE_URL", "http://127.0.0.1:8080/search")
-
-
-
 cache_search_dir = cache_dir / "search"
 cache_search_dir.mkdir(parents=True, exist_ok=True)
 cache_searh = Cache(str(cache_search_dir), expire=60 * 60 * 24 * 7)
@@ -26,7 +22,7 @@ async def search_with_searxng(query: str, max_results: int) -> str:
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             'X-Real-IP': '127.0.0.1'
         }
-        search_url = SEARXNG_BASE_URL.rstrip('/')
+        search_url = os.getenv("SEARXNG_BASE_URL").rstrip('/')
         response = await client.post(
             search_url,
             data=data,
