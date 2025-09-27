@@ -1,0 +1,246 @@
+general_settings:
+  master_key: sk-1234
+  litellm_proxy_admin_panel:
+    enable: True
+
+
+model_list:
+  - model_name: reasoning
+    litellm_params:
+      model: openai/deepseek-ai/DeepSeek-R1-0528
+      api_base: https://api-inference.modelscope.cn/v1/
+      api_key: os.environ/MODEL_SCOPE_API_KEY
+      context_window: 163840
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+  - model_name: reasoning
+    litellm_params:
+      model: openrouter/deepseek/deepseek-r1-0528:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      context_window: 163840
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+  - model_name: reasoning
+    litellm_params:
+      model: gemini/gemini-2.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+      context_window: 1048576
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+  - model_name: reasoning
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+      context_window: 131072
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+  - model_name: reasoning
+    litellm_params:
+      model: groq/qwen/qwen3-32b
+      api_key: os.environ/GROQ_API_KEY
+      context_window: 131072
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+
+  - model_name: reasoning2
+    litellm_params:
+      model: openrouter/deepseek/deepseek-r1-0528
+      api_key: os.environ/OPENROUTER_API_KEY
+      context_window: 163840
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
+  - model_name: fast
+    litellm_params:
+      model: openai/deepseek-ai/DeepSeek-V3
+      api_base: https://api-inference.modelscope.cn/v1/
+      api_key: os.environ/MODEL_SCOPE_API_KEY
+      context_window: 163840
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+  - model_name: fast
+    litellm_params:
+      model: openrouter/deepseek/deepseek-chat-v3-0324:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      context_window: 163840
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+  - model_name: fast
+    litellm_params:
+      model: gemini/gemini-2.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+      context_window: 1048576
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+  - model_name: fast
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+      context_window: 131072
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+  - model_name: fast
+    litellm_params:
+      model: groq/qwen/qwen3-32b
+      api_key: os.environ/GROQ_API_KEY
+      context_window: 131072
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+
+  - model_name: fast2
+    litellm_params:
+      model: openrouter/deepseek/deepseek-chat-v3-0324
+      api_key: os.environ/OPENROUTER_API_KEY
+      context_window: 163840
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+    model_info:
+      input_cost_per_token: 0
+      output_cost_per_token: 0
+
+  - model_name: summary
+    litellm_params:
+      model: openai/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B
+      api_base: https://api.siliconflow.cn/v1/
+      api_key: os.environ/SILICONFLOW_API_KEY
+      context_window: 131072
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+  - model_name: summary
+    litellm_params:
+      model: openai/deepseek-ai/DeepSeek-R1-0528-Qwen3-8B
+      api_base: https://api-inference.modelscope.cn/v1/
+      api_key: os.environ/MODEL_SCOPE_API_KEY
+      context_window: 131072
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+  - model_name: summary
+    litellm_params:
+      model: openrouter/deepseek/deepseek-r1-0528-qwen3-8b:free
+      api_key: os.environ/OPENROUTER_API_KEY
+      context_window: 1048576
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+  - model_name: summary
+    litellm_params:
+      model: gemini/gemini-2.5-flash-lite
+      api_key: os.environ/GEMINI_API_KEY
+      context_window: 131072
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+  - model_name: summary
+    litellm_params:
+      model: groq/llama-3.1-8b-instant
+      api_key: os.environ/GROQ_API_KEY
+      context_window: 131072
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+
+  - model_name: summary2
+    litellm_params:
+      model: openrouter/deepseek/deepseek-r1-0528-qwen3-8b
+      api_key: os.environ/OPENROUTER_API_KEY
+      context_window: 32000
+      max_tokens: 8000
+      max_completion_tokens: 10000
+      temperature: 0
+      rpm: 60
+      tpm: 300
+
+
+litellm_settings:
+  request_timeout: 600
+  num_retries: 5
+  allowed_fails: 3
+  set_verbose: false
+  drop_params: false
+  default_fallbacks: ["reasoning2"]
+  fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
+  content_policy_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
+  context_window_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
+  cache: true 
+  cache_params:
+    type: disk
+  respect_retry_after: true
+  disable_moderation: true
+  disable_safety_check: true
+  safe_mode: false
+  safe_prompt: false
+
+
+router_settings:
+  routing_strategy: simple-shuffle
+  timeout: 600
+  num_retries: 3
+  allowed_fails: 3
+  cooldown_time: 30
+  enable_pre_call_checks: true
+  max_fallbacks: 5
+  cache_responses: true
+  retry_policy: {
+    "BadRequestErrorRetries": 3,
+    "AuthenticationErrorRetries": 0,
+    "TimeoutErrorRetries": 3,
+    "RateLimitErrorRetries": 0,
+    "ContentPolicyViolationErrorRetries": 0,
+    "InternalServerErrorRetries": 3
+  }
+  default_fallbacks: ["reasoning2"]
+  fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
+  content_policy_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
+  context_window_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
+
