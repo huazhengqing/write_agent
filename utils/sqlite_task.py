@@ -554,6 +554,32 @@ class TaskDB:
 
 
 
+    def get_oldest_task_to_translate(self) -> dict | None:
+        """
+        获取最早一个需要翻译的任务。
+        条件: 'write' 字段有内容, 但 'translation' 字段为空或NULL。
+        返回: 单个任务的字典，如果找不到则返回 None。
+        """
+        logger.trace("正在查询最早一个需要翻译的任务...")
+        with self._lock:
+            import sqlite3
+            original_factory = self.conn.row_factory
+            self.conn.row_factory = sqlite3.Row
+            self.cursor.execute(
+                """
+                SELECT * FROM t_tasks 
+                WHERE write IS NOT NULL AND write != '' 
+                AND (translation IS NULL OR translation = '')
+                ORDER BY id
+                LIMIT 1
+                """
+            )
+            row = self.cursor.fetchone()
+            self.conn.row_factory = original_factory
+        return dict(row) if row else None
+
+
+
     def close(self):
         with self._lock:
             if self.conn:

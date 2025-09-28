@@ -15,7 +15,6 @@ from agents.search import search, search_aggregate
 from agents.write import write_plan, write_draft, write_critic, write_refine, write_review
 from agents.summary import summary, summary_aggregate
 from agents.hierarchy import hierarchy_proposer, hierarchy_critic, hierarchy_synthesizer
-from agents.translation import translation_proposer, translation_critic, translation_refine
 from agents.refine import refine
 from story.story_rag import get_story_rag
 from prefect import flow, task
@@ -393,84 +392,6 @@ async def task_write_review(task: Task) -> Task:
 ###############################################################################
 
 
-
-@task(
-    persist_result=True,
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key,
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/translation_proposer.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_translation_proposer",
-)
-async def task_translation_proposer(task: Task) -> Task:
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await translation_proposer(task)
-
-@task(
-    persist_result=True,
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key,
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/translation_critic.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_translation_critic",
-)
-async def task_translation_critic(task: Task) -> Task:
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await translation_critic(task)
-
-@task(
-    persist_result=True,
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key,
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/translation_refine.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_translation_refine",
-)
-async def task_translation_refine(task: Task) -> Task:
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await translation_refine(task)
-
-
-###############################################################################
-
-
-
-# @task(
-#     persist_result=True, 
-#     result_storage=local_storage,
-#     cache_key_fn=get_cache_key, 
-#     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write.json",
-#     result_serializer=readable_json_serializer,
-#     retries=1,
-#     retry_delay_seconds=5,
-#     task_run_name="{task.run_id}_{task.id}_write",
-# )
-# async def task_write(task: Task) -> Task:
-#     ensure_task_logger(task.run_id)
-#     with logger.contextualize(run_id=task.run_id):
-#         # This is a placeholder for a multi-step write process
-#         # In a real scenario, this would call plan, draft, critic, refine
-#         task_result = await task_write_plan(task)
-#         task_result = await task_write_draft(task_result)
-#         task_result = await task_write_critic(task_result)
-#         task_result = await task_write_refine(task_result)
-#         return task_result
-
-
-
-###############################################################################
-
-
-
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -544,7 +465,22 @@ def task_save_data(task: Task, operation_name: str) -> bool:
         return True
 
 
+
 ###############################################################################
+
+
+async def run_review_flow(task: Task):
+    """封装审查和保存的流程"""
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        logger.info(f"执行: 审查正文: write 任务='{task.id}'")
+        review_task_result = await task_write_review(task)
+        task_save_data(review_task_result, "task_write_review")
+
+
+
+###############################################################################
+
 
 
 @flow(
@@ -609,20 +545,13 @@ async def flow_story_write(current_task: Task):
                 logger.info(f"执行: 正文摘要: write 任务='{current_task.id}'")
                 task_result = await task_summary(task_result)
                 task_save_data(task_result, "task_summary")
-                
+
                 keywords_to_skip_review = ["场景", "节拍", "段落"]
                 position = task_result.hierarchical_position
                 if position and "章" in position and not any(keyword in position for keyword in keywords_to_skip_review):
                     logger.info(f"执行: 审查正文: write 任务='{task_result.id}' ")
                     task_result = await task_write_review(task_result)
                     task_save_data(task_result, "task_write_review")
-                
-                # 翻译任务可以并行
-                logger.info(f"执行: 翻译: write 任务='{current_task.id}'")
-                task_result = await task_translation_proposer(task_result)
-                task_result = await task_translation_critic(task_result)
-                task_result = await task_translation_refine(task_result)
-                task_save_data(task_result, "task_translation")
             else:
                 raise ValueError(f"未知的原子任务类型: {task_result.task_type}")
         else:
