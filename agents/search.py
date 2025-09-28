@@ -7,28 +7,24 @@ from story.story_rag import get_story_rag
 
 
 async def search(task: Task) -> Task:
-    system_prompt = load_prompts(task.category, "search", "system_prompt")[0]
-    context = get_story_rag().get_context_base(task)
-    context["goal"] = task.goal
-    from collections import defaultdict
-    system_prompt = system_prompt.format_map(defaultdict(str, context))
-    user_prompt = f"请根据系统提示中的目标 '{task.goal}' 开始你的研究。"
-    logger.info(f"开始搜索任务: Agent 开始为目标 {task.id} - '{task.goal}' 执行研究...")
+    system_prompt, user_prompt = load_prompts(f"prompts.{task.category}.search.search", "system_prompt", "user_prompt")
+    context = await get_story_rag().get_context(task)
+    messages = get_llm_messages(system_prompt=system_prompt, user_prompt=user_prompt, context_dict_user=context)
+    final_system_prompt = messages[0]["content"]
+    final_user_prompt = messages[1]["content"]
     search_result = await call_react_agent(
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        temperature=llm_temperatures["reasoning"]
+        system_prompt=final_system_prompt,
+        user_prompt=final_user_prompt
     )
     if search_result is None:
         raise ValueError(f"Agent在为任务 '{task.id}' 执行搜索时, 经过多次重试后仍然失败。")
     updated_task = task.model_copy(deep=True)
     updated_task.results["search"] = search_result
-    logger.info(f"搜索任务 '{task.id}' 完成。\n{search_result}")
     return updated_task
 
 
 async def search_aggregate(task: Task) -> Task:
-    system_prompt, user_prompt = load_prompts(task.category, "search_aggregate", "system_prompt", "user_prompt")
+    system_prompt, user_prompt = load_prompts(f"prompts.{task.category}.search.search_aggregate", "system_prompt", "user_prompt")
     context = get_story_rag().get_aggregate_search(task)
     messages = get_llm_messages(system_prompt=system_prompt, user_prompt=user_prompt, context_dict_user=context)
     llm_params = get_llm_params(messages=messages, temperature=llm_temperatures["reasoning"])

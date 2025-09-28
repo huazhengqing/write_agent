@@ -5,16 +5,39 @@ from utils.prefect import get_cache_key, local_storage, readable_json_serializer
 from utils.models import Task
 from utils.sqlite_task import get_task_db
 from agents.atom import atom
-from agents.plan import plan, plan_reflection, plan_write_to_design, plan_write_to_write
-from agents.design import design, design_aggregate, design_reflection
+from agents.plan import (
+    plan_write_proposer, plan_write_critic, plan_write_synthesizer,
+    plan_design_proposer, plan_design_critic, plan_design_synthesizer,
+    plan_search_planner, plan_search_synthesizer
+)
+from agents.design import design_guideline, design_execute, design_aggregate
 from agents.search import search, search_aggregate
-from agents.write import write, write_before_reflection, write_reflection
+from agents.write import write_plan, write_draft, write_critic, write_refine, write_review
 from agents.summary import summary, summary_aggregate
-from agents.hierarchy import hierarchy, hierarchy_reflection
-from agents.review import review_design, review_write
-from agents.route import route
+from agents.hierarchy import hierarchy_proposer, hierarchy_critic, hierarchy_synthesizer
+from agents.translation import translation_proposer, translation_critic, translation_refine
+from agents.refine import refine
 from story.story_rag import get_story_rag
 from prefect import flow, task
+
+
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/refine.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_refine",
+)
+async def task_refine(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await refine(task)
+
+###############################################################################
 
 
 
@@ -34,158 +57,174 @@ async def task_atom(task: Task) -> Task:
         return await atom(task)
 
 
-
-@task(
-    persist_result=True, 
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_plan",
-)
-async def task_plan(task: Task) -> Task:
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await plan(task)
+###############################################################################
 
 
 
 @task(
-    persist_result=True, 
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_write_to_design.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_plan_write_to_design",
-)
-async def task_plan_write_to_design(task: Task) -> Task:
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await plan_write_to_design(task)
-
-
-
-@task(
-    persist_result=True, 
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_write_to_write.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_plan_write_to_write",
-)
-async def task_plan_write_to_write(task: Task) -> Task:
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await plan_write_to_write(task)
-
-
-
-@task(
-    persist_result=True, 
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_reflection.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_plan_reflection",
-)
-async def task_plan_reflection(task: Task) -> Task:
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await plan_reflection(task)
-
-
-
-@task(
-    persist_result=True, 
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/route.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_route",
-)
-async def task_route(task: Task) -> str:
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await route(task)
-
-
-
-@task(
-    persist_result=True, 
+    persist_result=True,
     result_storage=local_storage,
     cache_key_fn=get_cache_key,
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_{parameters[category]}.json",
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_write_proposer.json",
     result_serializer=readable_json_serializer,
     retries=1,
     retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_design_{category}",
+    task_run_name="{task.run_id}_{task.id}_plan_write_proposer",
 )
-async def task_design(task: Task, category: str) -> Task:
+async def task_plan_write_proposer(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return await design(task, category)
+        return await plan_write_proposer(task)
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_write_critic.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_plan_write_critic",
+)
+async def task_plan_write_critic(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await plan_write_critic(task)
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_write_synthesizer.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_plan_write_synthesizer",
+)
+async def task_plan_write_synthesizer(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await plan_write_synthesizer(task)
+
+###############################################################################
+
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_design_proposer.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_plan_design_proposer",
+)
+async def task_plan_design_proposer(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await plan_design_proposer(task)
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_design_critic.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_plan_design_critic",
+)
+async def task_plan_design_critic(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await plan_design_critic(task)
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_design_synthesizer.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_plan_design_synthesizer",
+)
+async def task_plan_design_synthesizer(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await plan_design_synthesizer(task)
+
+###############################################################################
+
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_search_planner.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_plan_search_planner",
+)
+async def task_plan_search_planner(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await plan_search_planner(task)
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/plan_search_synthesizer.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_plan_search_synthesizer",
+)
+async def task_plan_search_synthesizer(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await plan_search_synthesizer(task)
+
+
+###############################################################################
 
 
 
 @task(
-    persist_result=True, 
+    persist_result=True,
     result_storage=local_storage,
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_reflection.json",
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_guideline.json",
     result_serializer=readable_json_serializer,
     retries=1,
     retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_design_reflection",
+    task_run_name="{task.run_id}_{task.id}_design_guideline",
 )
-async def task_design_reflection(task: Task) -> Task:
+async def task_design_guideline(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return await design_reflection(task)
-
-
+        return await design_guideline(task)
 
 @task(
-    persist_result=True, 
+    persist_result=True,
     result_storage=local_storage,
-    cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/hierarchy.json",
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/design_execute.json",
     result_serializer=readable_json_serializer,
     retries=1,
     retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_hierarchy",
+    task_run_name="{task.run_id}_{task.id}_design_execute",
 )
-async def task_hierarchy(task: Task) -> Task:
+async def task_design_execute(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        return await hierarchy(task)
+        return await design_execute(task)
 
 
 
-@task(
-    persist_result=True, 
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/hierarchy_reflection.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_hierarchy_reflection",
-)
-async def task_hierarchy_reflection(task: Task) -> Task:
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await hierarchy_reflection(task)
-
-
+###############################################################################
 
 @task(
     persist_result=True, 
@@ -204,57 +243,119 @@ async def task_search(task: Task) -> Task:
 
 
 
-@task(
-    persist_result=True, 
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write_before_reflection.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_write_before_reflection",
-)
-async def task_write_before_reflection(task: Task) -> Task:
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await write_before_reflection(task)
+###############################################################################
 
 
 
 @task(
-    persist_result=True, 
+    persist_result=True,
     result_storage=local_storage,
-    cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write.json",
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/hierarchy_proposer.json",
     result_serializer=readable_json_serializer,
     retries=1,
     retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_write",
+    task_run_name="{task.run_id}_{task.id}_hierarchy_proposer",
 )
-async def task_write(task: Task) -> Task:
+async def task_hierarchy_proposer(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        ret = await write(task)
-        return ret
+        return await hierarchy_proposer(task)
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/hierarchy_critic.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_hierarchy_critic",
+)
+async def task_hierarchy_critic(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await hierarchy_critic(task)
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/hierarchy_synthesizer.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_hierarchy_synthesizer",
+)
+async def task_hierarchy_synthesizer(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await hierarchy_synthesizer(task)
+
+
+###############################################################################
 
 
 
 @task(
-    persist_result=True, 
+    persist_result=True,
     result_storage=local_storage,
-    cache_key_fn=get_cache_key, 
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write_reflection.json",
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write_plan.json",
     result_serializer=readable_json_serializer,
     retries=1,
     retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_write_reflection",
+    task_run_name="{task.run_id}_{task.id}_write_plan",
 )
-async def task_write_reflection(task: Task) -> Task:
+async def task_write_plan(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
-        ret = await write_reflection(task)
-        return ret
+        return await write_plan(task)
 
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write_draft.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_write_draft",
+)
+async def task_write_draft(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await write_draft(task)
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write_critic.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_write_critic",
+)
+async def task_write_critic(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await write_critic(task)
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write_refine.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_write_refine",
+)
+async def task_write_refine(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await write_refine(task)
 
 
 @task(
@@ -272,6 +373,101 @@ async def task_summary(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         ret = await summary(task)
         return ret
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/review_write.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_review_write",
+)
+async def task_write_review(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await write_review(task)
+
+
+###############################################################################
+
+
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/translation_proposer.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_translation_proposer",
+)
+async def task_translation_proposer(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await translation_proposer(task)
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/translation_critic.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_translation_critic",
+)
+async def task_translation_critic(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await translation_critic(task)
+
+@task(
+    persist_result=True,
+    result_storage=local_storage,
+    cache_key_fn=get_cache_key,
+    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/translation_refine.json",
+    result_serializer=readable_json_serializer,
+    retries=1,
+    retry_delay_seconds=5,
+    task_run_name="{task.run_id}_{task.id}_translation_refine",
+)
+async def task_translation_refine(task: Task) -> Task:
+    ensure_task_logger(task.run_id)
+    with logger.contextualize(run_id=task.run_id):
+        return await translation_refine(task)
+
+
+###############################################################################
+
+
+
+# @task(
+#     persist_result=True, 
+#     result_storage=local_storage,
+#     cache_key_fn=get_cache_key, 
+#     result_storage_key="{parameters[task].run_id}/{parameters[task].id}/write.json",
+#     result_serializer=readable_json_serializer,
+#     retries=1,
+#     retry_delay_seconds=5,
+#     task_run_name="{task.run_id}_{task.id}_write",
+# )
+# async def task_write(task: Task) -> Task:
+#     ensure_task_logger(task.run_id)
+#     with logger.contextualize(run_id=task.run_id):
+#         # This is a placeholder for a multi-step write process
+#         # In a real scenario, this would call plan, draft, critic, refine
+#         task_result = await task_write_plan(task)
+#         task_result = await task_write_draft(task_result)
+#         task_result = await task_write_critic(task_result)
+#         task_result = await task_write_refine(task_result)
+#         return task_result
+
+
+
+###############################################################################
 
 
 
@@ -325,38 +521,7 @@ async def task_aggregate_summary(task: Task) -> Task:
         return await summary_aggregate(task)
 
 
-
-@task(
-    persist_result=True,
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key,
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/review_design.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_review_design",
-)
-async def task_review_design(task: Task) -> Task:
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await review_design(task)
-
-
-
-@task(
-    persist_result=True,
-    result_storage=local_storage,
-    cache_key_fn=get_cache_key,
-    result_storage_key="{parameters[task].run_id}/{parameters[task].id}/review_write.json",
-    result_serializer=readable_json_serializer,
-    retries=1,
-    retry_delay_seconds=5,
-    task_run_name="{task.run_id}_{task.id}_review_write",
-)
-async def task_review_write(task: Task) -> Task:
-    ensure_task_logger(task.run_id)
-    with logger.contextualize(run_id=task.run_id):
-        return await review_write(task)
+###############################################################################
 
 
 
@@ -378,6 +543,8 @@ def task_save_data(task: Task, operation_name: str) -> bool:
         get_story_rag().save_data(task, operation_name)
         return True
 
+
+###############################################################################
 
 
 @flow(
@@ -405,43 +572,39 @@ async def flow_story_write(current_task: Task):
                 logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停任务: {current_task.run_id}")
                 return
 
-        logger.info(f"判断原子任务='{current_task.id}' ")
-
-        task_result = current_task
+        logger.info(f"改进任务信息='{current_task.id}' ")
+        task_result = await task_refine(current_task)
+        task_save_data(task_result, "task_refine")
+        
+        logger.info(f"判断原子任务='{task_result.id}' ")
         task_result.results["atom_result"] = ""
         if current_task.task_type == "write":
             db = get_task_db(run_id=current_task.run_id)
             if not db.has_preceding_sibling_design_tasks(current_task):
                 task_result.results["atom_result"] = "complex"
                 task_result.results["complex_reasons"] = ["design_insufficient"]
-
+                task_result.results["has_preceding_sibling_design_tasks"] = "false"
         if task_result.results["atom_result"] != "complex":
             task_result = await task_atom(current_task)
-            task_save_data(task_result, "task_atom")
+        task_save_data(task_result, "task_atom")
 
         if task_result.results.get("atom_result") == "atom": 
             if task_result.task_type == "design":
                 logger.info(f"执行: design 任务='{current_task.id}'")
-                category = await task_route(task_result)
-                logger.info(f"执行: design {category} 任务='{current_task.id}'")
-                task_result = await task_design(task_result, category=category)
-                task_save_data(task_result, f"task_design_{category}")
+                task_result = await task_design_guideline(task_result)
+                task_result = await task_design_execute(task_result)
+                task_save_data(task_result, "task_design")
             elif task_result.task_type == "search":
                 logger.info(f"执行: search 任务='{current_task.id}'")
                 task_result = await task_search(task_result)
                 task_save_data(task_result, "task_search")
             elif task_result.task_type == "write":
-                logger.info(f"执行: 设计反思: write 任务='{current_task.id}'")
-                task_result = await task_write_before_reflection(task_result)
-                task_save_data(task_result, "task_write_before_reflection")
-
-                logger.info(f"执行: 写作初稿: write 任务='{current_task.id}'")
-                task_result = await task_write(task_result)
+                logger.info(f"执行: 写作: write 任务='{current_task.id}'")
+                task_result = await task_write_plan(task_result)
+                task_result = await task_write_draft(task_result)
+                task_result = await task_write_critic(task_result)
+                task_result = await task_write_refine(task_result)
                 task_save_data(task_result, "task_write")
-
-                logger.info(f"执行: 反思初稿: write 任务='{current_task.id}'")
-                task_result = await task_write_reflection(task_result)
-                task_save_data(task_result, "task_write_reflection")
 
                 logger.info(f"执行: 正文摘要: write 任务='{current_task.id}'")
                 task_result = await task_summary(task_result)
@@ -451,74 +614,58 @@ async def flow_story_write(current_task: Task):
                 position = task_result.hierarchical_position
                 if position and "章" in position and not any(keyword in position for keyword in keywords_to_skip_review):
                     logger.info(f"执行: 审查正文: write 任务='{task_result.id}' ")
-                    task_result = await task_review_write(task_result)
-                    task_save_data(task_result, "task_review_write")
+                    task_result = await task_write_review(task_result)
+                    task_save_data(task_result, "task_write_review")
+                
+                # 翻译任务可以并行
+                logger.info(f"执行: 翻译: write 任务='{current_task.id}'")
+                task_result = await task_translation_proposer(task_result)
+                task_result = await task_translation_critic(task_result)
+                task_result = await task_translation_refine(task_result)
+                task_save_data(task_result, "task_translation")
             else:
                 raise ValueError(f"未知的原子任务类型: {task_result.task_type}")
         else:
             logger.info(f"任务 '{current_task.id}' 不是原子任务, 进行分解。")
             if task_result.task_type == "write":
-
-                complex_reasons = task_result.results.get("complex_reasons", [])
-                if 'design_insufficient' in complex_reasons:
-                    logger.info(f"分解: write to disign 任务='{task_result.id}' ")
-                    task_result = await task_plan_write_to_design(task_result)
+                # complex_reasons = task_result.results.get("complex_reasons", [])
+                has_preceding_sibling_design_tasks = task_result.results.get("has_preceding_sibling_design_tasks", "")
+                if has_preceding_sibling_design_tasks == "false":
+                    logger.info(f"缺少设计方案，分解写作任务='{task_result.id}' ")
+                    task_result = await task_plan_write_proposer(task_result)
+                    task_result = await task_plan_write_critic(task_result)
+                    task_result = await task_plan_write_synthesizer(task_result)
                     task_save_data(task_result, "task_plan")
                 else:
-                    logger.info(f"审查设计方案: write 任务='{task_result.id}' ")
-                    task_result = await task_review_design(task_result)
-                    task_save_data(task_result, "task_review_design")
-
-                    logger.info(f"划分结构: write 任务='{task_result.id}' ")
-                    task_result = await task_hierarchy(task_result)
+                    logger.info(f"划分层级结构，分解写作任务='{task_result.id}' ")
+                    task_result = await task_hierarchy_proposer(task_result)
+                    task_result = await task_hierarchy_critic(task_result)
+                    task_result = await task_hierarchy_synthesizer(task_result)
                     task_save_data(task_result, "task_hierarchy")
-
-                    logger.info(f"反思划分结构结果: write 任务='{task_result.id}' ")
-                    task_result = await task_hierarchy_reflection(task_result)
-                    task_save_data(task_result, "task_hierarchy_reflection")
-
-                    logger.info(f"分解: write to write 任务='{task_result.id}' ")
-                    task_result = await task_plan_write_to_write(task_result)
-                    task_save_data(task_result, "task_plan")
-                    
-                logger.info(f"反思分解结果: write 任务='{task_result.id}' ")
-                task_result = await task_plan_reflection(task_result)
-                task_save_data(task_result, "task_plan_reflection")
-
             elif task_result.task_type == "design":
-
-                logger.info(f"分解: design 任务='{task_result.id}' ")
-                task_result = await task_plan(task_result)
+                logger.info(f"分解设计任务='{task_result.id}' ")
+                task_result = await task_plan_design_proposer(task_result)
+                task_result = await task_plan_design_critic(task_result)
+                task_result = await task_plan_design_synthesizer(task_result)
                 task_save_data(task_result, "task_plan")
-
-                logger.info(f"反思分解结果: design 任务='{task_result.id}' ")
-                task_result = await task_plan_reflection(task_result)
-                task_save_data(task_result, "task_plan_reflection")
-
             elif task_result.task_type == "search":
-
-                logger.info(f"分解: search 任务='{task_result.id}' ")
-                task_result = await task_plan(task_result)
+                logger.info(f"分解搜索任务='{task_result.id}' ")
+                task_result = await task_plan_search_planner(task_result)
+                task_result = await task_plan_search_synthesizer(task_result)
                 task_save_data(task_result, "task_plan")
-
             else:
                 raise ValueError(f"未知的任务类型: {task_result.task_type}")
 
-
             if task_result.sub_tasks:
                 logger.info(f"任务 '{current_task.id}' 分解为 {len(task_result.sub_tasks)} 个子任务, 开始递归处理。")
-
                 for sub_task in task_result.sub_tasks:
-
                     if day_wordcount_goal > 0:
                         db = get_task_db(run_id=current_task.run_id)
                         word_count_24h = db.get_word_count_last_24h()
                         if word_count_24h >= day_wordcount_goal:
                             logger.info(f"已达到最近24小时字数目标 ({word_count_24h}字), 暂停处理后续子任务: {sub_task.run_id}")
                             return
-
                     await flow_story_write(sub_task)
-
                 if task_result.task_type == "design":
                     logger.info(f"聚合: design 任务='{task_result.id}' ")
                     task_result = await task_aggregate_design(task_result)
@@ -536,9 +683,8 @@ async def flow_story_write(current_task: Task):
                     position = task_result.hierarchical_position
                     if position and "章" in position and not any(keyword in position for keyword in keywords_to_skip_review):
                         logger.info(f"审查正文: write 任务='{task_result.id}' ")
-                        task_result = await task_review_write(task_result)
-                        task_save_data(task_result, "task_review_write")
-
+                        task_result = await task_write_review(task_result)
+                        task_save_data(task_result, "task_write_review")
                 else:
                     raise ValueError(f"未知的聚合任务类型: {task_result.task_type}")
             else:

@@ -37,97 +37,54 @@ class StoryRAG:
 
     def save_data(self, task: Task, task_type: str):
         task_db = get_task_db(run_id=task.run_id)
-        if task_type == "task_atom":
-            if task.id == "1" or task.results.get("update_goal"):
+        if task_type == "task_refine":
+            if task.id == "1" or task.results.get("refine"):
                 self.caches['task_list'].evict(tag=task.run_id)
                 task_db.add_task(task)
+        elif task_type == "task_atom":
             task_db.add_result(task)
-        elif task_type == "task_plan":
-            if task.results.get("plan"):
-                task_db.add_result(task)
-        elif task_type == "task_plan_reflection":
-            if task.results.get("plan_reflection"):
+        elif task_type in ["task_plan", "task_hierarchy"]:
+            task_db.add_result(task)
+            if task.sub_tasks:
                 self.caches['task_list'].evict(tag=task.run_id)
                 self.caches['upper_design'].evict(tag=task.run_id)
                 self.caches['upper_search'].evict(tag=task.run_id)
-                task_db.add_result(task)
                 task_db.add_sub_tasks(task)
-        elif task_type == "review_design":
-            if task.results.get("review_design"):
+        elif task_type == "task_write_review":
+            if task.results.get("write_review"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
                 task_db.add_result(task)
-                self.save_design(task, task.results.get("review_design"))
-        elif task_type == "review_write":
-            if task.results.get("review_write"):
-                self.caches['dependent_design'].evict(tag=task.run_id)
-                task_db.add_result(task)
-                self.save_design(task, task.results.get("review_write"))
-        elif task_type in [
-            "task_design",
-            "task_design_market",
-            "task_design_title",
-            "task_design_style",
-            "task_design_review",
-            "task_design_character",
-            "task_design_system",
-            "task_design_concept",
-            "task_design_worldview",
-            "task_design_plot",
-            "task_design_general",
-        ]:
+                self.save_design(task, task.results.get("write_review"))
+        elif task_type == "task_design":
             if task.results.get("design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
                 task_db.add_result(task)
                 self.save_design(task, task.results.get("design"))
-        elif task_type == "task_design_reflection":
-            if task.results.get("design_reflection"):
-                self.caches['dependent_design'].evict(tag=task.run_id)
-                task_db.add_result(task)
-                self.save_design(task, task.results.get("design_reflection"))
-        elif task_type == "task_hierarchy":
-            if task.results.get("design"):
-                self.caches['dependent_design'].evict(tag=task.run_id)
-                task_db.add_result(task)
-        elif task_type == "task_hierarchy_reflection":
-            if task.results.get("design_reflection"):
-                self.caches['dependent_design'].evict(tag=task.run_id)
-                task_db.add_result(task)
-                self.save_design(task, task.results.get("design_reflection"))
         elif task_type == "task_search":
             if task.results.get("search"):
                 self.caches['dependent_search'].evict(tag=task.run_id)
                 task_db.add_result(task)
                 self.save_search(task, task.results.get("search"))
-        elif task_type == "task_write_before_reflection":
-            if task.results.get("design_reflection"):
-                self.caches['dependent_design'].evict(tag=task.run_id)
-                task_db.add_result(task)
-                self.save_design(task, task.results.get("design_reflection"))
         elif task_type == "task_write":
-            if task.results.get("write"):
-                task_db.add_result(task)
-        elif task_type == "task_write_reflection":
-            write_reflection = task.results.get("write_reflection")
-            if write_reflection:
+            final_content = task.results.get("write")
+            if final_content:
                 self.caches['text_latest'].evict(tag=task.run_id)
                 self.caches['text_length'].evict(tag=task.run_id)
                 task_db.add_result(task)
-                header_parts = [
-                    task.id,
-                    task.hierarchical_position,
-                    task.goal,
-                    task.length,
-                ]
+                header_parts = [task.id, task.hierarchical_position, task.goal, task.length]
                 header = " ".join(filter(None, header_parts))
                 timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                content = f"## 任务\n{header}\n{timestamp}\n\n{write_reflection}"
+                content = f"## 任务\n{header}\n{timestamp}\n\n{final_content}"
                 text_file_append(get_text_file_path(task), content)
-                self.save_write(task, write_reflection)
+                self.save_write(task, final_content)
         elif task_type == "task_summary":
             if task.results.get("summary"):
                 self.caches['text_summary'].evict(tag=task.run_id)
                 task_db.add_result(task)
                 self.save_summary(task, task.results.get("summary"))
+        elif task_type == "task_translation":
+            if task.results.get("translation"):
+                task_db.add_result(task)
         elif task_type == "task_aggregate_design":
             if task.results.get("design"):
                 self.caches['dependent_design'].evict(tag=task.run_id)
@@ -144,7 +101,7 @@ class StoryRAG:
                 task_db.add_result(task)
                 self.save_summary(task, task.results.get("summary"))
         else:
-            raise ValueError("不支持的任务类型")
+            raise ValueError(f"不支持的保存任务类型: {task_type}")
 
 
     def save_design(self, task: Task, content: str) -> None:
@@ -178,7 +135,6 @@ class StoryRAG:
             metadata=doc_metadata,
             doc_id=task.id,
             content_format="md",
-            chars_per_triplet=50, # 设计文档信息密度较高, 每100个字符提取一个三元组
             kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_design")[0]
         )
         logger.info(f"[{task.id}] design 内容存储完成。")
@@ -218,8 +174,7 @@ class StoryRAG:
             metadata=doc_metadata,
             doc_id=task.id,
             content_format="txt",
-            chars_per_triplet=100, # 正文叙述信息密度较低, 每200个字符提取一个三元组
-            kg_extraction_prompt=load_prompts(task.category, "kg", "kg_extraction_prompt_write")[0]
+            kg_extraction_prompt=load_prompts(f"prompts.{task.category}.rag.kg", "kg_extraction_prompt_write")[0]
         )
         logger.info(f"[{task.id}] write 内容存储完成。")
     
@@ -345,7 +300,7 @@ class StoryRAG:
         if cached_result is not None:
             return cached_result
         task_db = get_task_db(run_id=task.run_id)
-        full_content = task_db.get_latest_write_reflection(length)
+        full_content = task_db.get_latest_write(length)
         if len(full_content) <= length:
             result = full_content
         else:
@@ -420,13 +375,13 @@ class StoryRAG:
         inquiry_type: Literal['search', 'design', 'write']
     ) -> Dict[str, Any]:
         if inquiry_type == 'search':
-            system_prompt, user_prompt, Inquiry = load_prompts(task.category, "rag_query", "system_prompt_search", "user_prompt_search", "Inquiry")
+            system_prompt, user_prompt, Inquiry = load_prompts(f"prompts.{task.category}.rag.rag_query", "system_prompt_search", "user_prompt_search", "Inquiry")
         elif inquiry_type == 'design':
-            system_prompt, user_prompt, system_prompt_design_for_write, Inquiry = load_prompts(task.category, "rag_query", "system_prompt_design", "user_prompt_design", "system_prompt_design_for_write", "Inquiry")
+            system_prompt, user_prompt, system_prompt_design_for_write, Inquiry = load_prompts(f"prompts.{task.category}.rag.rag_query", "system_prompt_design", "user_prompt_design", "system_prompt_design_for_write", "Inquiry")
             if task.task_type == 'write' and task.results.get("atom_result") == "atom":
                 system_prompt = system_prompt_design_for_write
         elif inquiry_type == 'write':
-            system_prompt, user_prompt, Inquiry = load_prompts(task.category, "rag_query", "system_prompt_write", "user_prompt_write", "Inquiry")
+            system_prompt, user_prompt, Inquiry = load_prompts(f"prompts.{task.category}.rag.rag_query", "system_prompt_write", "user_prompt_write", "Inquiry")
         else:
             raise ValueError(f"不支持的探询类型: {inquiry_type}")
         context_dict_user = {

@@ -20,30 +20,26 @@ Table: t_tasks
 - acceptance_criteria: TEXT - JSON 格式的、任务完成的验收标准。
 - length: TEXT - 预估产出字数 (用于 'write' 任务)。
 - dependency: TEXT - JSON 格式的、执行前必须完成的同级任务ID列表。
-- plan: TEXT - 任务分解结果
-- plan_reasoning: TEXT - 任务分解的推理过程
-- plan_reflection: TEXT - 任务分解结果的反思结果
-- plan_reflection_reasoning: TEXT - 任务分解结果的反思的推理过程
-- design: TEXT - 设计方案
-- design_reasoning: TEXT - 设计方案的推理过程
-- design_reflection: TEXT - 设计方案的反思结果
-- design_reflection_reasoning: TEXT -  设计方案的反思的推理过程
-- search: TEXT - 搜索结果
-- search_reasoning: TEXT - 搜索结果的推理过程
-- write: TEXT - 正文
-- write_reasoning: TEXT - 正文的推理过程
-- write_reflection: TEXT - 正文的反思结果
-- write_reflection_reasoning: TEXT - 正文的反思的推理过程
-- summary: TEXT - 正文摘要
-- summary_reasoning: TEXT - 正文摘要的推理过程
 - atom: TEXT - 判断原子任务的完整JSON结果
 - atom_reasoning: TEXT - 判断原子任务的推理过程
 - atom_result: TEXT - 判断原子任务的结果 ('atom' 或 'complex')
+- plan: TEXT - 任务分解结果
+- plan_reasoning: TEXT - 任务分解的推理过程
+- design: TEXT - 设计方案
+- design_reasoning: TEXT - 设计方案的推理过程
+- search: TEXT - 搜索结果
+- search_reasoning: TEXT - 搜索结果的推理过程
+- hierarchy: TEXT - 结构划分结果
+- hierarchy_reasoning: TEXT - 结构划分的推理过程
+- write: TEXT - 正文
+- write_reasoning: TEXT - 正文的推理过程
+- translation: TEXT - 翻译结果
+- translation_reasoning: TEXT - 翻译的推理过程
+- summary: TEXT - 正文摘要
+- summary_reasoning: TEXT - 正文摘要的推理过程
+- write_review: TEXT - 正文评审结果
+- write_review_reasoning: TEXT - 正文评审的推理过程
 - created_at: TIMESTAMP - 记录创建时的时间戳。
-- review_design: TEXT - 设计评审结果
-- review_design_reasoning: TEXT - 设计评审的推理过程
-- review_write: TEXT - 正文评审结果
-- review_write_reasoning: TEXT - 正文评审的推理过程
 - updated_at: TIMESTAMP - 记录最后更新时的时间戳。
 """
 
@@ -76,30 +72,26 @@ class TaskDB:
                 acceptance_criteria TEXT,
                 length TEXT,
                 dependency TEXT,
-                plan TEXT,
-                plan_reasoning TEXT,
-                plan_reflection TEXT,
-                plan_reflection_reasoning TEXT,
-                design TEXT,
-                design_reasoning TEXT,
-                design_reflection TEXT,
-                design_reflection_reasoning TEXT,
-                search TEXT,
-                search_reasoning TEXT,
-                write TEXT,
-                write_reasoning TEXT,
-                write_reflection TEXT,
-                write_reflection_reasoning TEXT,
-                summary TEXT,
-                summary_reasoning TEXT,
                 atom TEXT,
                 atom_reasoning TEXT,
                 atom_result TEXT,
+                plan TEXT,
+                plan_reasoning TEXT,
+                design TEXT,
+                design_reasoning TEXT,
+                search TEXT,
+                search_reasoning TEXT,
+                hierarchy TEXT,
+                hierarchy_reasoning TEXT,
+                write TEXT,
+                write_reasoning TEXT,
+                translation TEXT,
+                translation_reasoning TEXT,
+                summary TEXT,
+                summary_reasoning TEXT,
+                write_review TEXT,
+                write_review_reasoning TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                review_design TEXT,
-                review_design_reasoning TEXT,
-                review_write TEXT,
-                review_write_reasoning TEXT,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
             """)
@@ -175,29 +167,25 @@ class TaskDB:
 
     def add_result(self, task: Task):
         update_fields = {
-            "plan_reasoning": task.results.get("plan_reasoning"),
-            "plan_reflection_reasoning": task.results.get("plan_reflection_reasoning"),
-            "design": task.results.get("design"),
-            "design_reasoning": task.results.get("design_reasoning"),
-            "design_reflection": task.results.get("design_reflection"),
-            "design_reflection_reasoning": task.results.get("design_reflection_reasoning"),
-            "search": task.results.get("search"),
-            "search_reasoning": task.results.get("search_reasoning"),
-            "write": task.results.get("write"),
-            "write_reasoning": task.results.get("write_reasoning"),
-            "write_reflection": task.results.get("write_reflection"),
-            "write_reflection_reasoning": task.results.get("write_reflection_reasoning"),
-            "summary": task.results.get("summary"),
-            "summary_reasoning": task.results.get("summary_reasoning"),
             "atom_reasoning": task.results.get("atom_reasoning"),
             "atom_result": task.results.get("atom_result"),
-            "review_design": task.results.get("review_design"),
-            "review_design_reasoning": task.results.get("review_design_reasoning"),
-            "review_write": task.results.get("review_write"),
-            "review_write_reasoning": task.results.get("review_write_reasoning"),
+            "plan_reasoning": task.results.get("plan_reasoning"),
+            "design": task.results.get("design"),
+            "design_reasoning": task.results.get("design_reasoning"),
+            "search": task.results.get("search"),
+            "search_reasoning": task.results.get("search_reasoning"),
+            "hierarchy_reasoning": task.results.get("hierarchy_reasoning"),
+            "write": task.results.get("write"),
+            "write_reasoning": task.results.get("write_reasoning"),
+            "translation": task.results.get("translation"),
+            "translation_reasoning": task.results.get("translation_reasoning"),
+            "summary": task.results.get("summary"),
+            "summary_reasoning": task.results.get("summary_reasoning"),
+            "write_review": task.results.get("write_review"),
+            "write_review_reasoning": task.results.get("write_review_reasoning"),
         }
-        # 统一处理可能需要序列化的字段 (plan, plan_reflection, atom)
-        for field_name in ["plan", "plan_reflection", "atom"]:
+        # 统一处理可能需要序列化的字段 (plan, hierarchy, atom)
+        for field_name in ["plan", "hierarchy", "atom"]:
             data = task.results.get(field_name)
             if isinstance(data, dict):
                 update_fields[field_name] = json.dumps(data, ensure_ascii=False)
@@ -306,7 +294,7 @@ class TaskDB:
             placeholders = ','.join(['?'] * len(dependent_ids))
             self.cursor.execute(
                 f"""
-                SELECT id, design, design_reflection, review_design, review_write 
+                SELECT id, design
                 FROM t_tasks 
                 WHERE id IN ({placeholders})
                 """,
@@ -320,21 +308,9 @@ class TaskDB:
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = []
         for row in sorted_rows:
-            # 逻辑: 组合多个设计相关字段
-            # 1. 设计内容: design_reflection 优先于 design
-            # 2. 设计评审: review_design
-            # 3. 正文评审: review_write
-            parts = []
-            design_content = row[2] or row[1]  # design_reflection or design
+            design_content = row[1]  # design
             if design_content:
-                parts.append(design_content)
-            if row[3]:  # review_design
-                parts.append(row[3])
-            if row[4]:  # review_write
-                parts.append(row[4])
-            content = "\n\n".join(parts)
-            if content:
-                content_list.append(content)
+                content_list.append(design_content)
         logger.info(f"为任务 {task.id} 找到 {len(content_list)} 条依赖的设计内容。")
         return "\n\n".join(content_list)
 
@@ -423,7 +399,7 @@ class TaskDB:
         with self._lock:
             self.cursor.execute(
                 """
-                SELECT id, design, design_reflection, review_design, review_write 
+                SELECT id, design
                 FROM t_tasks 
                 WHERE parent_id = ? AND task_type = 'design'
                 """,
@@ -438,21 +414,9 @@ class TaskDB:
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = []
         for row in sorted_rows:
-            # 逻辑: 组合多个设计相关字段
-            # 1. 设计内容: design_reflection 优先于 design
-            # 2. 设计评审: review_design
-            # 3. 正文评审: review_write
-            parts = []
-            design_content = row[2] or row[1]  # design_reflection or design
+            design_content = row[1]  # design
             if design_content:
-                parts.append(design_content)
-            if row[3]:  # review_design
-                parts.append(row[3])
-            if row[4]:  # review_write
-                parts.append(row[4])
-            content = "\n\n".join(parts)
-            if content:
-                content_list.append(content)
+                content_list.append(design_content)
         logger.info(f"为父任务 {parent_id} 找到 {len(content_list)} 条设计类子任务内容。")
         return "\n\n".join(content_list)
 
@@ -509,25 +473,21 @@ class TaskDB:
 
 
 
-    def get_latest_write_reflection(self, length: int = 500) -> str:
-        # 通过 updated_at 倒序获取最近更新的内容, 这是最高效的方式。
-        # 此查询利用新创建的 idx_updated_at 索引, 避免了全表扫描, 显著提升性能。
-        # 原有实现是基于任务ID进行自然排序, 必须加载所有数据到内存, 性能较差。
-        # 此处将"最新"的定义从"任务ID最大"调整为"时间上最近更新", 更符合直觉且高效。
-        logger.debug(f"正在获取最近的写作反思内容, 目标长度: {length}...")
+    def get_latest_write(self, length: int = 500) -> str:
+        logger.debug(f"正在获取最近的正文内容, 目标长度: {length}...")
         with self._lock:
             self.cursor.execute(
                 """
-                SELECT write_reflection 
+                SELECT write 
                 FROM t_tasks 
-                WHERE write_reflection IS NOT NULL AND write_reflection != '' 
+                WHERE write IS NOT NULL AND write != '' 
                 ORDER BY updated_at DESC
                 """
             )
             rows = self.cursor.fetchall()
 
         if not rows:
-            logger.debug("未找到任何写作反思内容。")
+            logger.debug("未找到任何正文内容。")
             return ""
 
         # 累积内容直到达到指定长度
@@ -541,7 +501,7 @@ class TaskDB:
                 if total_length >= length:
                     break
         
-        logger.info(f"获取了 {len(content_parts)} 条最近的写作反思, 总长度: {total_length}。")
+        logger.info(f"获取了 {len(content_parts)} 条最近的正文, 总长度: {total_length}。")
         # 因为我们是按时间倒序获取的(最新在前), 所以需要反转列表以恢复正确的时序
         return "\n\n".join(reversed(content_parts))
 
@@ -549,16 +509,16 @@ class TaskDB:
 
     def get_word_count_last_24h(self) -> int:
         """
-        获取最近24小时内 'write_reflection' 字段的总字数。
+        获取最近24小时内 'write' 字段的总字数。
         """
         logger.debug("正在统计最近24小时的写作字数...")
         with self._lock:
             self.cursor.execute(
                 """
-                SELECT write_reflection 
+                SELECT write 
                 FROM t_tasks 
                 WHERE updated_at >= datetime('now', '-24 hours') 
-                AND write_reflection IS NOT NULL AND write_reflection != ''
+                AND write IS NOT NULL AND write != ''
                 """
             )
             rows = self.cursor.fetchall()

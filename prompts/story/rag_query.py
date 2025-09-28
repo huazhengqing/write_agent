@@ -91,20 +91,20 @@ user_prompt_design = """
 {task_list}
 
 ## 设计方案
-<dependent_design>
+---
 {dependent_design}
-</dependent_design>
+---
 
 ## 信息收集成果
-<dependent_search>
+---
 {dependent_search}
-</dependent_search>
+---
 
 ## 最新章节(续写起点)
 - 从此处无缝衔接
-<text_latest>
+---
 {text_latest}
-</text_latest>
+---
 """
 
 
@@ -161,20 +161,20 @@ user_prompt_write = """
 {task_list}
 
 ## 设计方案
-<dependent_design>
+---
 {dependent_design}
-</dependent_design>
+---
 
 ## 信息收集成果
-<dependent_search>
+---
 {dependent_search}
-</dependent_search>
+---
 
 ## 最新章节(续写起点)
 - 从此处无缝衔接
-<text_latest>
+---
 {text_latest}
-</text_latest>
+---
 """
 
 
@@ -227,18 +227,18 @@ user_prompt_search = """
 {task_list}
 
 ## 设计方案
-<dependent_design>
+---
 {dependent_design}
-</dependent_design>
+---
 
 ## 信息收集成果
-<dependent_search>
+---
 {dependent_search}
-</dependent_search>
+---
 
 ## 最新章节(续写起点)
 - 从此处无缝衔接
-<text_latest>
+---
 {text_latest}
-</text_latest>
+---
 """
