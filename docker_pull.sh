@@ -1,5 +1,6 @@
 #!/bin/bash
 
+
 docker pull ghcr.io/berriai/litellm:main-stable
 docker pull prefecthq/prefect:3-latest
 docker pull searxng/searxng:latest

@@ -204,8 +204,6 @@ async def llm_completion(
     validator: Optional[Callable[[Any], None]] = None,
     max_retries: int = 6
 ) -> Dict[str, Any]:
-    logger.info("开始执行 llm_completion...")
-
     params_to_log = llm_params.copy()
     params_to_log.pop("messages", None)
     logger.info(f"LLM 参数:\n{json.dumps(params_to_log, indent=2, ensure_ascii=False, default=str)}")
@@ -239,7 +237,7 @@ async def llm_completion(
         cache_key_from_response = None
         try:
             response = await litellm.acompletion(**llm_params_for_api)
-            logger.debug(f"LLM 原始响应: {response}")
+            # logger.debug(f"LLM 原始响应: {response}")
             if not response.choices or not response.choices[0].message:
                 raise ValueError("LLM响应中缺少 choices 或 message。")
 
@@ -251,7 +249,7 @@ async def llm_completion(
                 if message.tool_calls:
                     tool_call = message.tool_calls[0]
                     raw_output_for_correction = tool_call.function.arguments
-                    logger.debug(f"从 tool_calls 中提取的原始参数: {raw_output_for_correction}")
+                    # logger.debug(f"从 tool_calls 中提取的原始参数: {raw_output_for_correction}")
                     cleaned_args = clean_markdown_fences(raw_output_for_correction)
                     if hasattr(tool_call.function, "parsed_arguments") and tool_call.function.parsed_arguments:
                         parsed_args = tool_call.function.parsed_arguments
@@ -259,7 +257,7 @@ async def llm_completion(
                         parsed_args = json.loads(cleaned_args)
                     validated_data = response_model(**parsed_args)
                 elif message.content:
-                    logger.debug(f"从 message.content 中提取的原始内容: {message.content}")
+                    # logger.debug(f"从 message.content 中提取的原始内容: {message.content}")
                     raw_output_for_correction = clean_markdown_fences(message.content)
                     validated_data = response_model.model_validate_json(raw_output_for_correction)
 
@@ -272,7 +270,7 @@ async def llm_completion(
                 active_validator = validator or text_validator_default
                 active_validator(message.content)
             
-            logger.success("LLM 响应成功通过验证。")
+            # logger.success("LLM 响应成功通过验证。")
 
             reasoning = message.get("reasoning_content") or message.get("reasoning", "")
             if reasoning:

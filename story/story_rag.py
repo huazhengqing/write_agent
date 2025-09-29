@@ -388,13 +388,13 @@ class StoryRAG:
         inquiry_type: Literal['search', 'design', 'write']
     ) -> Dict[str, Any]:
         if inquiry_type == 'search':
-            system_prompt, user_prompt, Inquiry = load_prompts(f"prompts.{task.category}.rag.rag_query", "system_prompt_search", "user_prompt_search", "Inquiry")
+            system_prompt, user_prompt, Inquiry = load_prompts(f"prompts.{task.category}.rag_query", "system_prompt_search", "user_prompt_search", "Inquiry")
         elif inquiry_type == 'design':
-            system_prompt, user_prompt, system_prompt_design_for_write, Inquiry = load_prompts(f"prompts.{task.category}.rag.rag_query", "system_prompt_design", "user_prompt_design", "system_prompt_design_for_write", "Inquiry")
+            system_prompt, user_prompt, system_prompt_design_for_write, Inquiry = load_prompts(f"prompts.{task.category}.rag_query", "system_prompt_design", "user_prompt_design", "system_prompt_design_for_write", "Inquiry")
             if task.task_type == 'write' and task.results.get("atom_result") == "atom":
                 system_prompt = system_prompt_design_for_write
         elif inquiry_type == 'write':
-            system_prompt, user_prompt, Inquiry = load_prompts(f"prompts.{task.category}.rag.rag_query", "system_prompt_write", "user_prompt_write", "Inquiry")
+            system_prompt, user_prompt, Inquiry = load_prompts(f"prompts.{task.category}.rag_query", "system_prompt_write", "user_prompt_write", "Inquiry")
         else:
             raise ValueError(f"不支持的探询类型: {inquiry_type}")
         context_dict_user = {
@@ -415,11 +415,9 @@ class StoryRAG:
     
     
     async def get_upper_search(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
-        logger.info(f"[{task.id}] 开始获取上层搜索(upper_search)上下文...")
         cache_key = f"get_upper_search:{task.run_id}:{task.id}"
         cached_result = self.caches['upper_search'].get(cache_key)
         if cached_result is not None:
-            logger.info(f"[{task.id}] 命中上层搜索(upper_search)缓存。")
             return cached_result
         
         inquiry = await self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'search')
@@ -428,7 +426,7 @@ class StoryRAG:
             logger.warning(f"[{task.id}] 生成的探询问题为空, 跳过上层搜索。")
             return ""
         
-        vector_store = get_story_vector_store(task.run_id, "search")
+        logger.info(f"[{task.id}] 开始获取上层搜索(upper_search)上下文...")
 
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
@@ -437,7 +435,7 @@ class StoryRAG:
         filters = MetadataFilters(filters=active_filters) if active_filters else None
         
         query_engine = get_vector_query_engine(
-            vector_store=vector_store,
+            vector_store=get_story_vector_store(task.run_id, "search"),
             filters=filters,
             similarity_top_k=150,
             top_n=50,
@@ -447,8 +445,6 @@ class StoryRAG:
         result = "\n\n---\n\n".join(results)
         if not results:
             logger.warning(f"[{task.id}] 上层搜索(upper_search)未能生成答案或找到相关文档。")
-        else:
-            logger.success(f"[{task.id}] 上层搜索(upper_search)成功完成。")
 
         self.caches['upper_search'].set(cache_key, result, tag=task.run_id)
         logger.info(f"[{task.id}] 获取上层搜索(upper_search)上下文的流程已结束。")
@@ -456,8 +452,6 @@ class StoryRAG:
 
 
     async def get_upper_design(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
-        logger.info(f"[{task.id}] 开始获取上层设计(upper_design)上下文...")
-
         cache_key = f"get_upper_design:{task.run_id}:{task.id}"
         cached_result = self.caches['upper_design'].get(cache_key)
         if cached_result is not None:
@@ -468,6 +462,8 @@ class StoryRAG:
         if not all_questions:
             logger.warning(f"[{task.id}] 生成的探询问题为空, 跳过上层设计检索。")
             return ""
+
+        logger.info(f"[{task.id}] 开始获取上层设计(upper_design)上下文...")
 
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
@@ -484,11 +480,9 @@ class StoryRAG:
  
 
     async def get_text_summary(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
-        logger.info(f"[{task.id}] 开始获取历史情节概要(text_summary)上下文...")
         cache_key = f"get_text_summary:{task.run_id}:{task.id}"
         cached_result = self.caches['text_summary'].get(cache_key)
         if cached_result is not None:
-            logger.info(f"[{task.id}] 命中历史情节概要(text_summary)缓存。")
             return cached_result
 
         inquiry = await self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'write')
@@ -496,6 +490,8 @@ class StoryRAG:
         if not all_questions:
             logger.warning(f"[{task.id}] 生成的探询问题为空, 跳过历史情节概要检索。")
             return ""
+
+        logger.info(f"[{task.id}] 开始获取历史情节概要(text_summary)上下文...")
 
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)

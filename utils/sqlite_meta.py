@@ -31,7 +31,6 @@ class BookMetaDB:
         import sqlite3
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
         self.conn.row_factory = sqlite3.Row
-        logger.info(f"SQLite BookMetaDB 连接已建立: {self.db_path}")
         self.cursor = self.conn.cursor()
         import threading
         self._lock = threading.Lock()
@@ -41,7 +40,6 @@ class BookMetaDB:
 
     def _create_table(self):
         with self._lock:
-            logger.debug("正在检查并创建 t_book_meta 表...")
             self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS t_book_meta (
                 run_id TEXT PRIMARY KEY,
@@ -70,7 +68,6 @@ class BookMetaDB:
                 UPDATE t_book_meta SET updated_at = CURRENT_TIMESTAMP WHERE run_id = OLD.run_id;
             END;
             """)
-            logger.debug("t_book_meta 表及相关索引、触发器已准备就绪。")
             self.conn.commit()
 
 
@@ -98,7 +95,6 @@ class BookMetaDB:
         update_clause = ", ".join([f"{key} = excluded.{key}" for key in meta_data if key != 'run_id'])
 
         with self._lock:
-            logger.debug(f"正在添加或更新书籍元数据: run_id='{task.run_id}'")
             self.cursor.execute(
                 f"""
                 INSERT INTO t_book_meta ({columns})
@@ -109,7 +105,6 @@ class BookMetaDB:
                 meta_data
             )
             self.conn.commit()
-            logger.info(f"书籍元数据添加/更新成功: run_id='{task.run_id}'")
 
 
 
@@ -118,13 +113,11 @@ class BookMetaDB:
         根据 run_id 获取单本书的元数据。
         """
         with self._lock:
-            logger.debug(f"正在查询书籍元数据: run_id='{run_id}'")
             self.cursor.execute(
                 "SELECT * FROM t_book_meta WHERE run_id = ?",
                 (run_id,)
             )
             row = self.cursor.fetchone()
-        logger.info(f"书籍元数据查询 {'成功' if row else '失败'}: run_id='{run_id}'")
         return dict(row) if row else None
 
 
@@ -134,12 +127,10 @@ class BookMetaDB:
         获取所有书的元数据列表, 按最后更新时间降序排列。
         """
         with self._lock:
-            logger.debug("正在查询所有书籍的元数据...")
             self.cursor.execute(
                 "SELECT * FROM t_book_meta ORDER BY updated_at DESC"
             )
             rows = self.cursor.fetchall()
-        logger.info(f"共查询到 {len(rows)} 本书的元数据。")
         return [dict(row) for row in rows]
 
 
@@ -147,7 +138,6 @@ class BookMetaDB:
     def close(self):
         with self._lock:
             if self.conn:
-                logger.info(f"正在关闭 SQLite BookMetaDB 连接: {self.db_path}")
                 self.conn.close()
 
 

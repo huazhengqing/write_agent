@@ -13,15 +13,14 @@ class PropagateHandler(logging.Handler):
 
 @lru_cache(maxsize=None)
 def init_logger(file_name):
-    try:
-        logger.remove()
-    except ValueError:
-        pass
+    logger.remove()
+    log_path = log_dir / f"{file_name}.log"
+    if log_path.exists():
+        log_path.unlink()
     # 在测试期间, 注释此行可将所有日志输出重定向到文件
     # logger.add(PropagateHandler(), format="{message}", level="DEBUG")
-
     sink_id = logger.add(
-        log_dir / f"{file_name}.log",
+        log_path,
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         rotation="10 MB",
         level="DEBUG",
@@ -36,22 +35,25 @@ def init_logger(file_name):
 @lru_cache(maxsize=None)
 def init_logger_by_runid(file_name):
     logger.remove()
-    class InterceptHandler(logging.Handler):
-        def emit(self, record: logging.LogRecord):
-            try:
-                level = logger.level(record.levelname).name
-            except ValueError:
-                level = record.levelno
-            # 找到调用栈的正确深度
-            frame, depth = logging.currentframe(), 2
-            while frame and frame.f_code.co_filename == logging.__file__:
-                frame = frame.f_back
-                depth += 1
-            logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
-    logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
-    logging.getLogger("llama_index").setLevel(logging.DEBUG)
+    log_path = log_dir / f"{file_name}.log"
+    if log_path.exists():
+        log_path.unlink()
+    # class InterceptHandler(logging.Handler):
+    #     def emit(self, record: logging.LogRecord):
+    #         try:
+    #             level = logger.level(record.levelname).name
+    #         except ValueError:
+    #             level = record.levelno
+    #         # 找到调用栈的正确深度
+    #         frame, depth = logging.currentframe(), 2
+    #         while frame and frame.f_code.co_filename == logging.__file__:
+    #             frame = frame.f_back
+    #             depth += 1
+    #         logger.opt(depth=depth, exception=record.exc_info).log(level, record.getMessage())
+    # logging.basicConfig(handlers=[InterceptHandler()], level=0, force=True)
+    # logging.getLogger("llama_index").setLevel(logging.DEBUG)
     logger.add(
-        log_dir / f"{file_name}.log",
+        log_path,
         filter=lambda record: not record["extra"].get("run_id"), 
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         rotation="00:00",
@@ -65,8 +67,11 @@ def init_logger_by_runid(file_name):
 
 @lru_cache(maxsize=None)
 def ensure_task_logger(run_id: str):
+    log_path = log_dir / f"{run_id}.log"
+    if log_path.exists():
+        log_path.unlink()
     logger.add(
-        log_dir / f"{run_id}.log",
+        log_path,
         filter=lambda record: record["extra"].get("run_id") == run_id,
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",
         level="DEBUG",

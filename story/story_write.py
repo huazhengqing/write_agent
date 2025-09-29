@@ -36,8 +36,8 @@ async def task_refine(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         return await refine(task)
 
-###############################################################################
 
+###############################################################################
 
 
 @task(
@@ -57,7 +57,6 @@ async def task_atom(task: Task) -> Task:
 
 
 ###############################################################################
-
 
 
 @task(
@@ -104,6 +103,7 @@ async def task_plan_write_synthesizer(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await plan_write_synthesizer(task)
+
 
 ###############################################################################
 
@@ -153,6 +153,7 @@ async def task_plan_design_synthesizer(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         return await plan_design_synthesizer(task)
 
+
 ###############################################################################
 
 
@@ -190,7 +191,6 @@ async def task_plan_search_synthesizer(task: Task) -> Task:
 ###############################################################################
 
 
-
 @task(
     persist_result=True,
     result_storage=local_storage,
@@ -222,8 +222,8 @@ async def task_design_execute(task: Task) -> Task:
         return await design_execute(task)
 
 
-
 ###############################################################################
+
 
 @task(
     persist_result=True, 
@@ -241,9 +241,7 @@ async def task_search(task: Task) -> Task:
         return await search(task)
 
 
-
 ###############################################################################
-
 
 
 @task(
@@ -293,7 +291,6 @@ async def task_hierarchy_synthesizer(task: Task) -> Task:
 
 
 ###############################################################################
-
 
 
 @task(
@@ -407,8 +404,6 @@ async def task_aggregate_design(task: Task) -> Task:
     with logger.contextualize(run_id=task.run_id):
         return await design_aggregate(task)
 
-
-
 @task(
     persist_result=True, 
     result_storage=local_storage,
@@ -423,8 +418,6 @@ async def task_aggregate_search(task: Task) -> Task:
     ensure_task_logger(task.run_id)
     with logger.contextualize(run_id=task.run_id):
         return await search_aggregate(task)
-
-
 
 @task(
     persist_result=True, 
@@ -443,7 +436,6 @@ async def task_aggregate_summary(task: Task) -> Task:
 
 
 ###############################################################################
-
 
 
 @task(
@@ -465,7 +457,6 @@ def task_save_data(task: Task, operation_name: str) -> bool:
         return True
 
 
-
 ###############################################################################
 
 
@@ -478,9 +469,7 @@ async def run_review_flow(task: Task):
         task_save_data(review_task_result, "task_write_review")
 
 
-
 ###############################################################################
-
 
 
 @flow(

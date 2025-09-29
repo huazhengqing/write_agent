@@ -137,7 +137,7 @@ async def start_translation_services(tasks_data: list):
 ###############################################################################
 
 
-def main():
+async def main():
     import argparse
     parser = argparse.ArgumentParser(description="启动一个或多个书籍的持续翻译服务。")
     parser.add_argument(
@@ -148,11 +148,12 @@ def main():
     args = parser.parse_args()
     with open(args.json_file, 'r', encoding='utf-8') as f:
         data = json.load(f)
-    asyncio.run(start_translation_services(data.get("tasks", [])))
+    await start_translation_services(data.get("tasks", []))
 
 
 ###############################################################################
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

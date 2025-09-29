@@ -13,24 +13,19 @@ from loguru import logger
 
 
 async def write_all(tasks_data: list):
-    logger.info(f"接收到 {len(tasks_data)} 个任务, 准备并行处理...")
-
     tasks_by_category = {
         "story": [], 
         "book": [], 
         "report": []
     }
-
     for task_info in tasks_data:
         if not task_info or not task_info.get('category') or not task_info.get('language'):
             logger.error(f"任务信息不完整, 跳过: {task_info}")
             continue
-
         category = task_info.get('category')
         if category not in tasks_by_category:
             logger.warning(f"未知的任务类别 '{category}', 已跳过。当前支持的类别: {list(tasks_by_category.keys())}")
             continue
-
         language = task_info.get('language', 'error')
         root_name = task_info.get("name", "untitled")
         goal = task_info.get("goal", "")
@@ -48,7 +43,6 @@ async def write_all(tasks_data: list):
         stable_unique_id = hashlib.sha256(goal.encode('utf-8')).hexdigest()[:16]
         run_id = f"{sanitized_category}_{sanitized_name}_{sanitized_language}_{stable_unique_id}"
 
-        # 构建根任务对象
         task_params = {
             "id": "1",
             "parent_id": "",
@@ -70,11 +64,9 @@ async def write_all(tasks_data: list):
         from utils.models import Task
         root_task = Task(**{k: v for k, v in task_params.items() if v is not None})
 
-        # 将书籍元信息写入数据库
         from utils.sqlite_meta import get_meta_db
         book_meta_db = get_meta_db()
         book_meta_db.add_or_update_book_meta(task=root_task)
-        logger.info(f"已为任务 {root_task.run_id} 添加/更新书籍元信息。")
 
         tasks_by_category[category].append(root_task)
 
@@ -83,7 +75,6 @@ async def write_all(tasks_data: list):
 
     # 为 'story' (小说) 类别准备任务
     if story_tasks := tasks_by_category["story"]:
-        logger.info(f"准备为 {len(story_tasks)} 个 'story' 任务启动 'flow_story_write' 流程...")
         from story.story_write import flow_story_write
         tasks_to_run.extend([flow_story_write(task) for task in story_tasks])
         launched_tasks.extend(story_tasks)
@@ -116,7 +107,11 @@ async def write_all(tasks_data: list):
         logger.info("没有可执行的流程。")
 
 
-def main():
+async def main():
+    from utils.prefect import setup_prefect_storage
+    await setup_prefect_storage()
+    logger.info("Prefect 存储已初始化, 开始加载任务流程...")
+
     import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument(
@@ -130,12 +125,12 @@ def main():
     tasks_data = data.get("tasks")
     if not tasks_data:
         return
-    import asyncio
-    asyncio.run(write_all(tasks_data))
+    await write_all(tasks_data)
 
 
 ###############################################################################
 
 
 if __name__ == "__main__":
-    main()
+    import asyncio
+    asyncio.run(main())

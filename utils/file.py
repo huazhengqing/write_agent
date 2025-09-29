@@ -2,20 +2,15 @@ from functools import lru_cache
 import os
 from utils.models import Task
 
-
-
 from dotenv import load_dotenv
 load_dotenv()
-
 
 
 from pathlib import Path
 project_root = Path(__file__).resolve().parent.parent
 
-
 data_dir = project_root / ".data"
 data_dir.mkdir(parents=True, exist_ok=True)
-
 
 prefect_dir = project_root / ".prefect"
 os.environ["PREFECT_HOME"] = str(prefect_dir)
@@ -23,14 +18,11 @@ prefect_dir.mkdir(parents=True, exist_ok=True)
 prefect_storage_path = prefect_dir / "storage"
 prefect_storage_path.mkdir(parents=True, exist_ok=True)
 
-
 cache_dir = project_root / ".cache"
 cache_dir.mkdir(parents=True, exist_ok=True)
 
-
 output_dir = project_root / "output"
 output_dir.mkdir(parents=True, exist_ok=True)
-
 
 log_dir = project_root / "logs"
 log_dir.mkdir(parents=True, exist_ok=True)

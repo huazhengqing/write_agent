@@ -1,11 +1,11 @@
-from functools import lru_cache
+from functools import lru_cache, wraps
 from pathlib import Path
 from typing import Any, Dict
+from async_lru import alru_cache
 from loguru import logger
 
 
-from dotenv import load_dotenv
-load_dotenv()
+from utils.file import prefect_storage_path
 
 
 from prefect.context import TaskRunContext
@@ -14,27 +14,23 @@ from prefect.serializers import JSONSerializer
 
 
 
-@lru_cache(maxsize=None)
-def setup_prefect_storage() -> LocalFileSystem:
+local_storage: LocalFileSystem = None
+
+@alru_cache(maxsize=1)
+async def setup_prefect_storage() -> None:
     block_name = "write-storage"
     from prefect.exceptions import ObjectNotFound
-    from utils.file import prefect_storage_path
     try:
-        storage_block = LocalFileSystem.load(block_name)
+        storage_block = await LocalFileSystem.load(block_name)
         if Path(storage_block.basepath).resolve() != prefect_storage_path.resolve():
-            logger.warning(f"存储块 '{block_name}' 的路径已过时。正在更新为: {prefect_storage_path}")
             storage_block.basepath = str(prefect_storage_path)
-            storage_block.save(name=block_name, overwrite=True)
-        return storage_block
+            await storage_block.save(name=block_name, overwrite=True)
     except (ObjectNotFound, ValueError):
-        logger.info(f"Prefect 存储块 '{block_name}' 不存在, 正在创建...")
         storage_block = LocalFileSystem(basepath=str(prefect_storage_path))
-        storage_block.save(name=block_name, overwrite=True)
-        logger.success(f"成功创建并保存了 Prefect 存储块 '{block_name}'。")
-        return storage_block
+        await storage_block.save(name=block_name, overwrite=True)
 
-
-local_storage = setup_prefect_storage()
+    global local_storage
+    local_storage = storage_block
 
 
 
@@ -51,3 +47,5 @@ def get_cache_key(context: TaskRunContext, parameters: Dict[str, Any]) -> str:
     extra_key = "_".join(str(v) for k, v in sorted(extra_params.items()))
     base_key = f"{task.run_id}_{task.id}_{task_name}"
     return f"{base_key}_{extra_key}" if extra_key else base_key
+
+
