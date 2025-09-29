@@ -7,11 +7,9 @@ from utils.search import web_search_tools
 from utils.file import cache_dir
 
 
-
 cache_agent_dir = cache_dir / "react_agent"
 cache_agent_dir.mkdir(parents=True, exist_ok=True)
 cache_query = Cache(str(cache_agent_dir), size_limit=int(32 * (1024**2)))
-
 
 
 async def call_react_agent(

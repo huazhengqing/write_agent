@@ -3,6 +3,7 @@ from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures
 from utils.loader import load_prompts
 from story.story_rag import get_story_rag
+from story.base import hybrid_query_react
 
 
 
@@ -20,6 +21,33 @@ async def plan_write_proposer(task: Task) -> Task:
     updated_task = task.model_copy(deep=True)
     updated_task.results["plan_proposer"] = proposer_message.content
     updated_task.results["plan_proposer_reasoning"] = proposer_message.get("reasoning_content") or proposer_message.get("reasoning", "")
+    return updated_task
+
+
+async def plan_write_proposer_react(task: Task) -> Task:
+    """为 write_to_design 任务使用 ReAct 模式执行提议步骤"""
+    # 1. 加载为 ReAct Agent 专门设计的 Prompt
+    proposer_system, proposer_user = load_prompts(f"prompts.{task.category}.plan.plan_write_1_react", "system_prompt", "user_prompt")
+
+    # 2. 仅获取基础上下文信息
+    context = get_story_rag().get_context_base(task)
+    context.update({
+        "atom_reasoning": task.results.get("atom_reasoning", ""),
+        "complex_reasons": task.results.get("complex_reasons") or ""
+    })
+    messages = get_llm_messages(proposer_system, proposer_user, None, context)
+    final_system_prompt = messages[0]["content"]
+    final_user_prompt = messages[1]["content"]
+
+    # 3. 调用 ReAct Agent
+    proposer_content = await hybrid_query_react(
+        run_id=task.run_id,
+        system_prompt=final_system_prompt,
+        user_prompt=final_user_prompt,
+    )
+    updated_task = task.model_copy(deep=True)
+    updated_task.results["plan_proposer"] = proposer_content
+    updated_task.results["plan_proposer_reasoning"] = "ReAct agent for plan_write_proposer executed."
     return updated_task
 
 
@@ -80,6 +108,33 @@ async def plan_design_proposer(task: Task) -> Task:
     updated_task = task.model_copy(deep=True)
     updated_task.results["plan_proposer"] = proposer_message.content
     updated_task.results["plan_proposer_reasoning"] = proposer_message.get("reasoning_content") or proposer_message.get("reasoning", "")
+    return updated_task
+
+
+async def plan_design_proposer_react(task: Task) -> Task:
+    """为 design 任务使用 ReAct 模式执行提议步骤"""
+    # 1. 加载为 ReAct Agent 专门设计的 Prompt
+    proposer_system, proposer_user = load_prompts(f"prompts.{task.category}.plan.plan_design_1_react", "system_prompt", "user_prompt")
+
+    # 2. 仅获取基础上下文信息
+    context = get_story_rag().get_context_base(task)
+    context.update({
+        "atom_reasoning": task.results.get("atom_reasoning", ""),
+        "complex_reasons": task.results.get("complex_reasons") or ""
+    })
+    messages = get_llm_messages(proposer_system, proposer_user, None, context)
+    final_system_prompt = messages[0]["content"]
+    final_user_prompt = messages[1]["content"]
+
+    # 3. 调用 ReAct Agent
+    proposer_content = await hybrid_query_react(
+        run_id=task.run_id,
+        system_prompt=final_system_prompt,
+        user_prompt=final_user_prompt,
+    )
+    updated_task = task.model_copy(deep=True)
+    updated_task.results["plan_proposer"] = proposer_content
+    updated_task.results["plan_proposer_reasoning"] = "ReAct agent for plan_design_proposer executed."
     return updated_task
 
 

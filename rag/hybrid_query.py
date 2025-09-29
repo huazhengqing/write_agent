@@ -1,12 +1,8 @@
-from functools import lru_cache
 from typing import List
 from loguru import logger
 from llama_index.core.base.base_query_engine import BaseQueryEngine
-from utils.llm import llm_temperatures, get_llm_params
-from utils.llm import get_llm_messages, llm_completion
-from utils.react_agent import call_react_agent, react_system_prompt
+from utils.llm import llm_temperatures, get_llm_params, get_llm_messages, llm_completion
 from rag.hybrid_prompts import synthesis_system_prompt, synthesis_user_prompt
-from rag.vector_query import index_query
 
 
 
@@ -22,6 +18,7 @@ async def hybrid_query(
         return ""
 
     logger.info(f"开始对问题 '{question}' 执行混合查询...")
+    from rag.vector_query import index_query
     vector_task = index_query(vector_query_engine, question)
     kg_task = index_query(kg_query_engine, question)
     import asyncio
@@ -81,37 +78,3 @@ async def hybrid_query_batch(
     return results
 
 
-
-###############################################################################
-
-
-
-async def hybrid_query_react(
-    vector_query_engine: BaseQueryEngine,
-    kg_query_engine: BaseQueryEngine,
-    query_str: str,
-    react_system_prompt: str = react_system_prompt,
-) -> str:
-    logger.info(f"开始对问题 '{query_str}' 执行基于ReAct的混合查询...")
-    from llama_index.core.tools import QueryEngineTool
-    vector_tool = QueryEngineTool.from_defaults(
-        query_engine=vector_query_engine,
-        name="vector_search",
-        description="用于查找设定、摘要等语义相似的内容 (例如: 角色背景, 世界观设定, 物品描述)。当问题比较复杂时, 你可以多次调用此工具来回答问题的不同部分, 然后综合答案。"
-    )
-    kg_tool = QueryEngineTool.from_defaults(
-        query_engine=kg_query_engine,
-        name="knowledge_graph_search",
-        description="用于探索实体及其关系 (例如: 角色A和角色B是什么关系? 事件C导致了什么后果?)。当问题比较复杂时, 你可以多次调用此工具来回答问题的不同部分, 然后综合答案。"
-    )
-    result = await call_react_agent(
-        system_prompt=react_system_prompt,
-        user_prompt=query_str,
-        tools=[vector_tool, kg_tool]
-    )
-    if not isinstance(result, str):
-        logger.warning(f"Agent 返回了非字符串类型, 将其强制转换为字符串: {type(result)}")
-        result = str(result)
-
-    logger.success(f"基于ReAct的混合查询完成。")
-    return result.strip()

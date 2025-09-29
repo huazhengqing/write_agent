@@ -9,7 +9,7 @@ from utils.file import get_text_file_path, text_file_append
 from utils.models import Task, get_sibling_ids_up_to_current
 from utils.loader import load_prompts
 from rag.kg import get_kg_query_engine, kg_add
-from rag.hybrid_query import hybrid_query_batch
+from rag.hybrid_query import hybrid_query_batch, hybrid_query
 from rag.vector_add import vector_add
 from rag.vector_query import get_vector_query_engine, index_query_batch
 from utils.llm import llm_temperatures, get_llm_messages, get_llm_params, llm_completion
@@ -17,7 +17,6 @@ from story.base import get_story_kg_store, get_story_vector_store
 
 
 class StoryRAG:
-
     def __init__(self):
         from utils.file import cache_dir
         cache_story_dir = cache_dir / "story"
@@ -34,75 +33,89 @@ class StoryRAG:
             'task_list': Cache(os.path.join(cache_story_dir, "task_list"), size_limit=int(32 * (1024**2))),
         }
 
+        self._save_handlers = {
+            "task_refine": self._save_refine,
+            "task_atom": self._save_atom,
+            "task_plan": self._save_plan_or_hierarchy,
+            "task_hierarchy": self._save_plan_or_hierarchy,
+            "task_design": self._save_design_content,
+            "task_aggregate_design": self._save_design_content,
+            "task_search": self._save_search_content,
+            "task_aggregate_search": self._save_search_content,
+            "task_write": self._save_write_content,
+            "task_write_review": self._save_design_content,
+            "task_summary": self._save_summary_content,
+            "task_aggregate_summary": self._save_summary_content,
+            "task_translation": self._save_translation,
+        }
+
+    def _save_refine(self, task: Task, task_db: Any):
+        if task.id == "1" or task.results.get("refine"):
+            self.caches['task_list'].evict(tag=task.run_id)
+            task_db.add_task(task)
+
+    def _save_atom(self, task: Task, task_db: Any):
+        task_db.add_result(task)
+
+    def _save_plan_or_hierarchy(self, task: Task, task_db: Any):
+        task_db.add_result(task)
+        if task.sub_tasks:
+            self.caches['task_list'].evict(tag=task.run_id)
+            self.caches['upper_design'].evict(tag=task.run_id)
+            self.caches['upper_search'].evict(tag=task.run_id)
+            task_db.add_sub_tasks(task)
+
+    def _save_design_content(self, task: Task, task_db: Any):
+        content_key = "write_review" if task.task_type == "task_write_review" else "design"
+        content = task.results.get(content_key)
+        if content:
+            self.caches['dependent_design'].evict(tag=task.run_id)
+            task_db.add_result(task)
+            self.save_design(task, content)
+
+    def _save_search_content(self, task: Task, task_db: Any):
+        if task.results.get("search"):
+            self.caches['dependent_search'].evict(tag=task.run_id)
+            task_db.add_result(task)
+            self.save_search(task, task.results.get("search"))
+
+    def _save_write_content(self, task: Task, task_db: Any):
+        final_content = task.results.get("write")
+        if final_content:
+            self.caches['text_latest'].evict(tag=task.run_id)
+            self.caches['text_length'].evict(tag=task.run_id)
+            task_db.add_result(task)
+            header_parts = [task.id, task.hierarchical_position, task.goal, task.length]
+            header = " ".join(filter(None, header_parts))
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            content = f"## 任务\n{header}\n{timestamp}\n\n{final_content}"
+            text_file_append(get_text_file_path(task), content)
+            self.save_write(task, final_content)
+
+    def _save_summary_content(self, task: Task, task_db: Any):
+        if task.results.get("summary"):
+            self.caches['text_summary'].evict(tag=task.run_id)
+            task_db.add_result(task)
+            self.save_summary(task, task.results.get("summary"))
+
+    def _save_translation(self, task: Task, task_db: Any):
+        final_content = task.results.get("translation")
+        if final_content:
+            task_db.add_result(task)
+            from utils.file import get_translation_file_path
+            header_parts = [task.id, task.hierarchical_position, task.goal, task.length]
+            header = " ".join(filter(None, header_parts))
+            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            content = f"## 翻译任务\n{header}\n{timestamp}\n\n{final_content}"
+            text_file_append(get_translation_file_path(task), content)
 
     def save_data(self, task: Task, task_type: str):
         task_db = get_task_db(run_id=task.run_id)
-        if task_type == "task_refine":
-            if task.id == "1" or task.results.get("refine"):
-                self.caches['task_list'].evict(tag=task.run_id)
-                task_db.add_task(task)
-        elif task_type == "task_atom":
-            task_db.add_result(task)
-        elif task_type in ["task_plan", "task_hierarchy"]:
-            task_db.add_result(task)
-            if task.sub_tasks:
-                self.caches['task_list'].evict(tag=task.run_id)
-                self.caches['upper_design'].evict(tag=task.run_id)
-                self.caches['upper_search'].evict(tag=task.run_id)
-                task_db.add_sub_tasks(task)
-        elif task_type == "task_write_review":
-            if task.results.get("write_review"):
-                self.caches['dependent_design'].evict(tag=task.run_id)
-                task_db.add_result(task)
-                self.save_design(task, task.results.get("write_review"))
-        elif task_type == "task_design":
-            if task.results.get("design"):
-                self.caches['dependent_design'].evict(tag=task.run_id)
-                task_db.add_result(task)
-                self.save_design(task, task.results.get("design"))
-        elif task_type == "task_search":
-            if task.results.get("search"):
-                self.caches['dependent_search'].evict(tag=task.run_id)
-                task_db.add_result(task)
-                self.save_search(task, task.results.get("search"))
-        elif task_type == "task_write":
-            final_content = task.results.get("write")
-            if final_content:
-                self.caches['text_latest'].evict(tag=task.run_id)
-                self.caches['text_length'].evict(tag=task.run_id)
-                task_db.add_result(task)
-                header_parts = [task.id, task.hierarchical_position, task.goal, task.length]
-                header = " ".join(filter(None, header_parts))
-                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                content = f"## 任务\n{header}\n{timestamp}\n\n{final_content}"
-                text_file_append(get_text_file_path(task), content)
-                self.save_write(task, final_content)
-        elif task_type == "task_summary":
-            if task.results.get("summary"):
-                self.caches['text_summary'].evict(tag=task.run_id)
-                task_db.add_result(task)
-                self.save_summary(task, task.results.get("summary"))
-        elif task_type == "task_translation":
-            if task.results.get("translation"):
-                task_db.add_result(task)
-        elif task_type == "task_aggregate_design":
-            if task.results.get("design"):
-                self.caches['dependent_design'].evict(tag=task.run_id)
-                task_db.add_result(task)
-                self.save_design(task, task.results.get("design"))
-        elif task_type == "task_aggregate_search":
-            if task.results.get("search"):
-                self.caches['dependent_search'].evict(tag=task.run_id)
-                task_db.add_result(task)
-                self.save_search(task, task.results.get("search"))
-        elif task_type == "task_aggregate_summary":
-            if task.results.get("summary"):
-                self.caches['text_summary'].evict(tag=task.run_id)
-                task_db.add_result(task)
-                self.save_summary(task, task.results.get("summary"))
+        handler = self._save_handlers.get(task_type)
+        if handler:
+            handler(task, task_db)
         else:
             raise ValueError(f"不支持的保存任务类型: {task_type}")
-
 
     def save_design(self, task: Task, content: str) -> None:
         logger.info(f"[{task.id}] 正在存储 design 内容 (向量索引与知识图谱)...")
@@ -456,36 +469,14 @@ class StoryRAG:
             logger.warning(f"[{task.id}] 生成的探询问题为空, 跳过上层设计检索。")
             return ""
 
-        vector_store = get_story_vector_store(task.run_id, "design")
-        kg_store = get_story_kg_store(task.run_id, "design")
-
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
         if preceding_sibling_ids:
             active_filters.append(MetadataFilter(key='task_id', value=preceding_sibling_ids, operator='nin'))
         vector_filters = MetadataFilters(filters=active_filters) if active_filters else None
 
-        # 创建向量查询引擎
-        vector_query_engine = get_vector_query_engine(
-            vector_store=vector_store,
-            filters=vector_filters,
-            similarity_top_k=150,
-            top_n=30,
-        )
-
-        # 创建知识图谱查询引擎
-        kg_query_engine = get_kg_query_engine(
-            kg_store=kg_store,
-            kg_similarity_top_k=600,
-            top_n=100,
-        )
-
-        results = await hybrid_query_batch(
-            vector_query_engine=vector_query_engine,
-            kg_query_engine=kg_query_engine,
-            questions=all_questions,
-        )
-        result = "\n\n---\n\n".join(results)
+        from story.base import hybrid_query_design
+        result = await hybrid_query_design(task.run_id, all_questions, vector_filters)
 
         self.caches['upper_design'].set(cache_key, result, tag=task.run_id)
         logger.info(f"[{task.id}] 获取上层设计(upper_design)上下文完成。")
@@ -506,36 +497,14 @@ class StoryRAG:
             logger.warning(f"[{task.id}] 生成的探询问题为空, 跳过历史情节概要检索。")
             return ""
 
-        summary_vector_store = get_story_vector_store(task.run_id, "summary")
-        kg_store = get_story_kg_store(task.run_id, "write")
-
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
         if preceding_sibling_ids:
             active_filters.append(MetadataFilter(key='task_id', value=preceding_sibling_ids, operator='nin'))
         vector_filters = MetadataFilters(filters=active_filters) if active_filters else None
 
-        # 创建摘要的向量查询引擎
-        vector_query_engine = get_vector_query_engine(
-            vector_store=summary_vector_store,
-            filters=vector_filters,
-            similarity_top_k=300,
-            top_n=50,
-        )
-
-        # 创建正文的知识图谱查询引擎
-        kg_query_engine = get_kg_query_engine(
-            kg_store=kg_store,
-            kg_similarity_top_k=600,
-            top_n=100,
-        )
-
-        results = await hybrid_query_batch(
-            vector_query_engine=vector_query_engine,
-            kg_query_engine=kg_query_engine,
-            questions=all_questions
-        )
-        result = "\n\n---\n\n".join(results)
+        from story.base import hybrid_query_write
+        result = await hybrid_query_write(task.run_id, all_questions, vector_filters)
 
         self.caches['text_summary'].set(cache_key, result, tag=task.run_id)
         logger.info(f"[{task.id}] 获取历史情节概要(text_summary)上下文完成。")

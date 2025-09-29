@@ -52,6 +52,12 @@ def get_text_file_path(task: Task) -> str:
 
 
 
+@lru_cache(maxsize=30)
+def get_translation_file_path(task: Task) -> str:
+    return os.path.join(output_dir, f"{task.run_id}_translation.txt")
+
+
+
 def text_file_append(file_path: str, content: str):
     dir_path = os.path.dirname(file_path)
     os.makedirs(dir_path, exist_ok=True)
@@ -67,7 +73,3 @@ def text_file_read(file_path: str) -> str:
         return ""
     with open(file_path, "r", encoding="utf-8") as f:
         return f.read()
-
-
-
-

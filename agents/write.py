@@ -2,6 +2,7 @@ from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures
 from utils.loader import load_prompts
 from story.story_rag import get_story_rag
+from story.base import hybrid_query_react
 from utils.sqlite_task import get_task_db
 
 
@@ -14,6 +15,29 @@ async def write_plan(task: Task) -> Task:
     updated_task = task.model_copy(deep=True)
     updated_task.results["write_plan"] = message.content
     updated_task.results["write_plan_reasoning"] = message.get("reasoning_content") or message.get("reasoning", "")
+    return updated_task
+
+
+async def write_plan_react(task: Task) -> Task:
+    """使用 ReAct 模式为写作任务制定计划"""
+    # 1. 加载为 ReAct Agent 专门设计的 Prompt
+    system_prompt, user_prompt = load_prompts(f"prompts.{task.category}.write.write_1_plan_react", "system_prompt", "user_prompt")
+
+    # 2. 仅获取基础上下文信息
+    context = get_story_rag().get_context_base(task)
+    messages = get_llm_messages(system_prompt, user_prompt, None, context)
+    final_system_prompt = messages[0]["content"]
+    final_user_prompt = messages[1]["content"]
+
+    # 3. 调用 ReAct Agent
+    plan_content = await hybrid_query_react(
+        run_id=task.run_id,
+        system_prompt=final_system_prompt,
+        user_prompt=final_user_prompt,
+    )
+    updated_task = task.model_copy(deep=True)
+    updated_task.results["write_plan"] = plan_content
+    updated_task.results["write_plan_reasoning"] = "ReAct agent for write_plan executed."
     return updated_task
 
 
@@ -85,8 +109,3 @@ async def write_review(task: Task) -> Task:
     updated_task.results["write_review"] = message.content
     updated_task.results["write_review_reasoning"] = message.get("reasoning_content") or message.get("reasoning", "")
     return updated_task
-
-
-
-
-
