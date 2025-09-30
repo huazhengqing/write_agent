@@ -225,10 +225,10 @@ litellm_settings:
   allowed_fails: 3
   set_verbose: false
   drop_params: false
-  default_fallbacks: ["reasoning2"]
-  fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
-  content_policy_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
-  context_window_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
+  # default_fallbacks: ["reasoning2"]
+  # fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
+  # content_policy_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
+  # context_window_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
   cache: true 
   cache_params:
     type: disk
@@ -259,10 +259,10 @@ router_settings:
     "ContentPolicyViolationErrorRetries": 0,
     "InternalServerErrorRetries": 3
   }
-  default_fallbacks: ["reasoning2"]
-  fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
-  content_policy_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
-  context_window_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
+  # default_fallbacks: ["reasoning2"]
+  # fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
+  # content_policy_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
+  # context_window_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
 
 
 environment_variables:

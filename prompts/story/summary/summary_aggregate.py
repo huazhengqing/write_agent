@@ -1,4 +1,5 @@
-#coding: utf8
+
+
 
 system_prompt = """
 # 角色
@@ -38,6 +39,7 @@ system_prompt = """
 - 与原格式保持一致, 无额外内容。
 - 若某部分信息不足, 明确注明`信息不足, 无法生成`。
 """.strip()
+
 
 
 user_prompt = """

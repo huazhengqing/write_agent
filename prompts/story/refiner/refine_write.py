@@ -1,3 +1,6 @@
+
+
+
 system_prompt = """
 # 角色
 小说写作任务分析师 (Task Refiner)。
@@ -35,6 +38,7 @@ system_prompt = """
     "refine_acceptance_criteria": ["成功塑造出对峙的紧张氛围。", "通过情节推动, 使[角色A]和[角色B]的关系进一步恶化。"]
 }
 """.strip()
+
 
 
 user_prompt = """

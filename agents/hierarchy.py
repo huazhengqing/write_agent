@@ -27,13 +27,13 @@ async def hierarchy_proposer_react(task: Task) -> Task:
     # 1. 加载为 ReAct Agent 专门设计的 Prompt
     proposer_system_prompt, proposer_user_prompt = load_prompts(f"prompts.{task.category}.hierarchy.hierarchy_1_react", "system_prompt", "user_prompt")
     
-    # 2. 仅获取基础上下文信息，用于填充初始的用户提示
+    # 2. 仅获取基础上下文信息, 用于填充初始的用户提示
     context = get_story_rag().get_context_base(task)
     messages = get_llm_messages(proposer_system_prompt, proposer_user_prompt, None, context)
     final_system_prompt = messages[0]["content"]
     final_user_prompt = messages[1]["content"]
 
-    # 3. 调用 ReAct Agent，它内部封装了工具和思考-行动循环
+    # 3. 调用 ReAct Agent, 它内部封装了工具和思考-行动循环
     proposer_content = await hybrid_query_react(
         run_id=task.run_id,
         system_prompt=final_system_prompt,
@@ -41,7 +41,7 @@ async def hierarchy_proposer_react(task: Task) -> Task:
     )
     updated_task = task.model_copy(deep=True)
     updated_task.results["hierarchy_proposer"] = proposer_content
-    # 注意: ReAct 的完整思考链目前未捕获为 reasoning，可以后续扩展 call_react_agent 函数来实现
+    # 注意: ReAct 的完整思考链目前未捕获为 reasoning, 可以后续扩展 call_react_agent 函数来实现
     updated_task.results["hierarchy_proposer_reasoning"] = "ReAct agent executed."
     return updated_task
 

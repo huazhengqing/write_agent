@@ -1,3 +1,6 @@
+
+
+
 system_prompt = """
 # 角色
 专注、细致的小说设计任务分析师 (Task Refiner)。
@@ -34,6 +37,7 @@ system_prompt = """
     "refine_acceptance_criteria": ["产出的[方面A]设计需包含[要素X]和[要素Y]。", "确保设计与[上层设计]保持一致。"]
 }
 """.strip()
+
 
 
 user_prompt = """

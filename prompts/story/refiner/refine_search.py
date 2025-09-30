@@ -1,3 +1,6 @@
+
+
+
 system_prompt = """
 # 角色
 专注、细致的搜索任务分析师 (Task Refiner)。
@@ -34,6 +37,7 @@ system_prompt = """
     "refine_acceptance_criteria": ["产出至少包含3个不同来源的关于[方面A]的信息。", "确保信息来源的权威性和多样性。"]
 }
 """.strip()
+
 
 
 user_prompt = """

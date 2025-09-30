@@ -43,7 +43,7 @@ class StoryRAG:
             "task_search": self._save_search_content,
             "task_aggregate_search": self._save_search_content,
             "task_write": self._save_write_content,
-            "task_write_review": self._save_design_content,
+            "task_write_review": self._save_write_review,
             "task_summary": self._save_summary_content,
             "task_aggregate_summary": self._save_summary_content,
             "task_translation": self._save_translation,
@@ -66,7 +66,15 @@ class StoryRAG:
             task_db.add_sub_tasks(task)
 
     def _save_design_content(self, task: Task, task_db: Any):
-        content_key = "write_review" if task.task_type == "task_write_review" else "design"
+        content_key = "design"
+        content = task.results.get(content_key)
+        if content:
+            self.caches['dependent_design'].evict(tag=task.run_id)
+            task_db.add_result(task)
+            self.save_design(task, content)
+
+    def _save_write_review(self, task: Task, task_db: Any):
+        content_key = "write_review"
         content = task.results.get(content_key)
         if content:
             self.caches['dependent_design'].evict(tag=task.run_id)

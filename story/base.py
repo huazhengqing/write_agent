@@ -48,7 +48,7 @@ async def _hybrid_query_base(
     kg_query_engine_params: dict,
     vector_filters: MetadataFilters | None = None
 ) -> str:
-    """混合查询的基础函数，结合了向量查询和知识图谱查询。"""
+    """混合查询的基础函数, 结合了向量查询和知识图谱查询。"""
     logger.info(f"开始在 '{vector_content_type}'(向量) 和 '{kg_content_type}'(图) 库中对 {len(questions)} 个问题执行混合查询...")
     vector_store = get_story_vector_store(run_id, vector_content_type)
     kg_store = get_story_kg_store(run_id, kg_content_type)

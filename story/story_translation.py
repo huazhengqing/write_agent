@@ -47,14 +47,14 @@ async def run_translation_for_task(task: Task):
 async def run_all_translations(root_task: Task):
     """
     循环获取并处理指定 run_id 下需要翻译的任务。
-    如果暂时没有任务，会等待一段时间后重试。
+    如果暂时没有任务, 会等待一段时间后重试。
     """
     ensure_task_logger(root_task.run_id)
     with logger.contextualize(run_id=root_task.run_id):
         logger.info(f"启动为 run_id='{root_task.run_id}' 的持续翻译流程...")        
         task_db = get_task_db(root_task.run_id)
         if not root_task:
-            logger.error(f"根任务信息不完整，无法继续翻译。")
+            logger.error(f"根任务信息不完整, 无法继续翻译。")
             return
 
         while True:
@@ -68,7 +68,7 @@ async def run_all_translations(root_task: Task):
                         try:
                             task_data[field] = json.loads(task_data[field])
                         except json.JSONDecodeError:
-                            logger.warning(f"任务 {task_data['id']} 的字段 {field} JSON解析失败，将使用原始字符串。")
+                            logger.warning(f"任务 {task_data['id']} 的字段 {field} JSON解析失败, 将使用原始字符串。")
                 
                 current_task = Task(**task_data)
                 await run_translation_for_task(current_task)
@@ -81,13 +81,13 @@ async def run_all_translations(root_task: Task):
 
 async def start_translation_services(tasks_data: list):
     """
-    根据任务数据，为每个任务启动一个独立的、持续运行的翻译服务。
+    根据任务数据, 为每个任务启动一个独立的、持续运行的翻译服务。
     """
     if not tasks_data:
-        logger.warning("任务列表为空，未启动任何翻译服务。")
+        logger.warning("任务列表为空, 未启动任何翻译服务。")
         return
 
-    logger.info(f"接收到 {len(tasks_data)} 个任务配置，准备并行启动翻译服务...")
+    logger.info(f"接收到 {len(tasks_data)} 个任务配置, 准备并行启动翻译服务...")
 
     tasks_to_run = []
     for task_info in tasks_data:

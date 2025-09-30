@@ -23,7 +23,7 @@ async def design_guideline(task: Task) -> Task:
 async def design_execute(task: Task) -> Task:
     design_guideline = task.results.get("design_guideline")
     if not design_guideline:
-        raise ValueError(f"任务 {task.id} 缺少 'design_guideline'，无法执行设计。")
+        raise ValueError(f"任务 {task.id} 缺少 'design_guideline', 无法执行设计。")
     system_prompt, user_prompt = load_prompts(f"prompts.{task.category}.design.design_2_execute", "system_prompt", "user_prompt")
     context = await get_story_rag().get_context(task)
     context["design_guideline"] = design_guideline

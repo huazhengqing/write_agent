@@ -1,5 +1,6 @@
 
 
+
 system_prompt = """
 # 角色
 顶尖文学分析师、摘要专家。
@@ -72,6 +73,7 @@ system_prompt = """
 - 格式: `- [名称]: [作用]`
 ```
 """.strip()
+
 
 
 user_prompt = """

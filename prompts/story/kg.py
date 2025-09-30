@@ -1,5 +1,6 @@
 
 
+
 kg_extraction_prompt_design = """
 # 角色
 知识图谱提取专家。
@@ -42,6 +43,7 @@ kg_extraction_prompt_design = """
 {text}
 ---
 """
+
 
 
 kg_extraction_prompt_write = """

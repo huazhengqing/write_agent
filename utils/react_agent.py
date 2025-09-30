@@ -51,7 +51,6 @@ async def call_react_agent(
     handler = agent.run(
         user_prompt, 
         ctx=ctx,
-        stepwise=False,
     )
 
     response_text = ""

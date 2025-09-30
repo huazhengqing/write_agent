@@ -481,8 +481,6 @@ async def run_review_flow(task: Task):
 async def flow_story_write(current_task: Task):
     ensure_task_logger(current_task.run_id)
     with logger.contextualize(run_id=current_task.run_id):
-        logger.info(f"开始处理任务: {current_task.run_id} {current_task.id} {current_task.task_type} {current_task.goal}")
-        
         if not current_task.id or not current_task.goal:
             raise ValueError("任务ID和目标不能为空。")
         if current_task.task_type == "write":
@@ -503,13 +501,30 @@ async def flow_story_write(current_task: Task):
         
         logger.info(f"判断原子任务='{task_result.id}' ")
         task_result.results["atom_result"] = ""
+        db = get_task_db(run_id=current_task.run_id)
         if current_task.task_type == "write":
-            db = get_task_db(run_id=current_task.run_id)
+            # 如果任务没有前置的design任务, 那么这个任务就是 complex
             if not db.has_preceding_sibling_design_tasks(current_task):
                 task_result.results["atom_result"] = "complex"
                 task_result.results["complex_reasons"] = ["design_insufficient"]
                 task_result.results["has_preceding_sibling_design_tasks"] = "false"
-        if task_result.results["atom_result"] != "complex":
+        elif current_task.task_type == "design":
+            # 如果父任务是design, 父任务的父任务是design, 那么这个任务就是 atom
+            parent_type = db.get_task_type(current_task.parent_id)
+            if parent_type == "design":
+                parent_task = db.get_task(current_task.parent_id) # 需要父任务信息来获取祖父ID
+                if parent_task:
+                    grandparent_type = db.get_task_type(parent_task.get("parent_id"))
+                    if grandparent_type == "design":
+                        task_result.results["atom_result"] = "atom"
+        elif current_task.task_type == "search":
+            # 如果父任务是search, 那么这个任务就是 atom
+            parent_type = db.get_task_type(current_task.parent_id)
+            if parent_type == "search":
+                task_result.results["atom_result"] = "atom"
+        else:
+            raise ValueError(f"未知的任务类型: {current_task.task_type}")
+        if task_result.results["atom_result"] == "":
             task_result = await task_atom(current_task)
         task_save_data(task_result, "task_atom")
 
@@ -549,13 +564,13 @@ async def flow_story_write(current_task: Task):
                 # complex_reasons = task_result.results.get("complex_reasons", [])
                 has_preceding_sibling_design_tasks = task_result.results.get("has_preceding_sibling_design_tasks", "")
                 if has_preceding_sibling_design_tasks == "false":
-                    logger.info(f"缺少设计方案，分解写作任务='{task_result.id}' ")
+                    logger.info(f"缺少设计方案, 分解写作任务='{task_result.id}' ")
                     task_result = await task_plan_write_proposer(task_result)
                     task_result = await task_plan_write_critic(task_result)
                     task_result = await task_plan_write_synthesizer(task_result)
                     task_save_data(task_result, "task_plan")
                 else:
-                    logger.info(f"划分层级结构，分解写作任务='{task_result.id}' ")
+                    logger.info(f"划分层级结构, 分解写作任务='{task_result.id}' ")
                     task_result = await task_hierarchy_proposer(task_result)
                     task_result = await task_hierarchy_critic(task_result)
                     task_result = await task_hierarchy_synthesizer(task_result)

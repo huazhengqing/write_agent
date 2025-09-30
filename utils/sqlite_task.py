@@ -230,7 +230,7 @@ class TaskDB:
                     parent_ids_to_query.add(".".join(id_parts[:i]))
 
             # 2. 构建查询
-            # 使用一个查询获取所有相关任务，提高效率
+            # 使用一个查询获取所有相关任务, 提高效率
             query_conditions = []
             params = []
             
@@ -283,9 +283,9 @@ class TaskDB:
             placeholders = ','.join(['?'] * len(dependent_ids))
             self.cursor.execute(
                 f"""
-                SELECT id, design
+                SELECT id, design, write_review
                 FROM t_tasks 
-                WHERE id IN ({placeholders})
+                WHERE id IN ({placeholders}) AND (design IS NOT NULL OR write_review IS NOT NULL)
                 """,
                 tuple(dependent_ids)
             )
@@ -296,9 +296,12 @@ class TaskDB:
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = []
         for row in sorted_rows:
-            design_content = row[1]  # design
+            design_content = row[1]
+            write_review_content = row[2]
             if design_content:
                 content_list.append(design_content)
+            if write_review_content:
+                content_list.append(write_review_content)
         return "\n\n".join(content_list)
 
 
@@ -519,7 +522,7 @@ class TaskDB:
         """
         获取最早一个需要翻译的任务。
         条件: 'write' 字段有内容, 但 'translation' 字段为空或NULL。
-        返回: 单个任务的字典，如果找不到则返回 None。
+        返回: 单个任务的字典, 如果找不到则返回 None。
         """
         with self._lock:
             import sqlite3
@@ -537,6 +540,22 @@ class TaskDB:
             row = self.cursor.fetchone()
             self.conn.row_factory = original_factory
         return dict(row) if row else None
+
+
+
+    def get_task_type(self, task_id: str) -> str | None:
+        """
+        根据 task_id 高效获取单个任务的类型。
+        """
+        if not task_id:
+            return None
+        with self._lock:
+            self.cursor.execute(
+                "SELECT task_type FROM t_tasks WHERE id = ?",
+                (task_id,)
+            )
+            row = self.cursor.fetchone()
+        return row[0] if row else None
 
 
 
