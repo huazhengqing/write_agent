@@ -33,7 +33,7 @@ system_prompt = """
 
 ## 结构与示例
 {
-    "reasoning": "[解释为何进行如此分解, 例如：根据优化后的规划, 将父任务分解为N个子任务, 分别对应N个单元。]",
+    "reasoning": "[解释为何进行如此分解, 例如: 根据优化后的规划, 将父任务分解为N个子任务, 分别对应N个单元。]",
     "id": "[父任务ID]",
     "task_type": "write",
     "hierarchical_position": "[上级单元]",

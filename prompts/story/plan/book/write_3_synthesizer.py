@@ -6,7 +6,7 @@ system_prompt = """
 全书级规划整合师 (Book-Level Plan Synthesizer)。
 
 # 任务
-将`任务清单草案`精确转换为结构化的JSON任务树。这个树包含两部分：
+将`任务清单草案`精确转换为结构化的JSON任务树。这个树包含两部分: 
 1.  `任务清单草案`中所有的`design`和`search`子任务。
 2.  一个最终的、占位的`write`子任务, 它继承父任务的目标和字数, 并依赖于前面所有的`design`和`search`任务。
 
