@@ -1,4 +1,4 @@
-from .base import search_task_principles
+from ..base import search_task_principles
 
 
 system_prompt = f"""

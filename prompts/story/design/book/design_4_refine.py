@@ -1,11 +1,10 @@
-from .design_book_1_guideline import absolute_taboos
-from .design_book_2_draft import market_anti_homogenization, human_writer_mindset_simulation
+from ..base import absolute_taboos, market_anti_homogenization, human_writer_mindset_simulation
 
 
 
 system_prompt = f"""
 # 角色
-战略精炼师 (Strategic Refiner)。你的任务是整合`设计指南`、`设计草稿`和`批判意见`, 生成最终的、具备艺术高度和商业潜力的战略设计方案。
+战略精炼师。你的任务是整合`设计指南`、`设计草稿`和`批判意见`, 生成最终的、具备艺术高度和商业潜力的战略设计方案。
 
 # 任务
 整合`设计指南`、`设计草稿`和`批判意见`, 生成最终的、无可挑剔的战略设计方案。

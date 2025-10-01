@@ -1,4 +1,4 @@
-from ..base import search_task_principles
+from prompts.story.base import search_task_principles
 
 
 comment = """

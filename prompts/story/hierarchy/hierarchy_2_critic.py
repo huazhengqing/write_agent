@@ -1,4 +1,4 @@
-from .base import hierarchy_division_rules, hierarchy_hard_constraints
+from .hierarchy_1 import hierarchy_division_rules, hierarchy_hard_constraints
 
 
 
