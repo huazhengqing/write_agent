@@ -1,4 +1,4 @@
-from prompts.story.refiner.refine_output import RefineOutput
+from prompts.story.refine_output import RefineOutput
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures
 from utils.loader import load_prompts

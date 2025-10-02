@@ -19,7 +19,6 @@ Table: t_tasks
 - constraints: TEXT - JSON 格式的、任务的限制和禁忌。
 - acceptance_criteria: TEXT - JSON 格式的、任务完成的验收标准。
 - length: TEXT - 预估产出字数 (用于 'write' 任务)。
-- dependency: TEXT - JSON 格式的、执行前必须完成的同级任务ID列表。
 - atom: TEXT - 判断原子任务的完整JSON结果
 - atom_reasoning: TEXT - 判断原子任务的推理过程
 - atom_result: TEXT - 判断原子任务的结果 ('atom' 或 'complex')
@@ -69,7 +68,6 @@ class TaskDB:
                 constraints TEXT,
                 acceptance_criteria TEXT,
                 length TEXT,
-                dependency TEXT,
                 atom TEXT,
                 atom_reasoning TEXT,
                 atom_result TEXT,
@@ -126,7 +124,6 @@ class TaskDB:
             "input_brief": json.dumps(task.input_brief, ensure_ascii=False),
             "constraints": json.dumps(task.constraints, ensure_ascii=False),
             "acceptance_criteria": json.dumps(task.acceptance_criteria, ensure_ascii=False),
-            "dependency": json.dumps(task.dependency, ensure_ascii=False),
         }
 
         columns = ", ".join(task_data.keys())

@@ -39,19 +39,19 @@ user_prompt = """
 - 当前任务的直接输入
 ### 设计方案
 ---
-{dependent_design}
+{design_dependent}
 ---
 
 ### 信息收集成果
 ---
-{dependent_search}
+{search_dependent}
 ---
 
 ## 小说当前状态
 ### 最新章节(续写起点)
 - 从此处无缝衔接
 ---
-{text_latest}
+{latest_text}
 ---
 
 ## 整体规划

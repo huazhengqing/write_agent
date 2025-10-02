@@ -78,7 +78,7 @@ user_prompt = """
 ### 最新章节(续写起点)
 - 从此处无缝衔接
 ---
-{text_latest}
+{latest_text}
 ---
 
 ### 历史情节概要
@@ -89,12 +89,12 @@ user_prompt = """
 ## 直接依赖项
 ### 设计方案
 ---
-{dependent_design}
+{design_dependent}
 ---
 
 ### 信息收集成果
 ---
-{dependent_search}
+{search_dependent}
 ---
 
 ## 整体规划
@@ -106,11 +106,11 @@ user_prompt = """
 ### 上层设计方案
 - 世界观、主线、风格
 ---
-{upper_design}
+{upper_level_design}
 ---
 
 ### 上层信息收集成果
 ---
-{upper_search}
+{upper_level_search}
 ---
 """

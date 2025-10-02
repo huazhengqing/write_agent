@@ -292,7 +292,7 @@ Tavily 和 Jina 都是外部服务, 如果我想换回本地部署的方案(比�
 
 提示词中的指令必须引用LLM能实际看到的上下文标题, 而不是开发者视角下的占位符变量名。
 system_prompt(系统提示词, 即给LLM的指令)必须与 user_prompt(用户提示词, 即提供给LLM的上下文)中的标题保持一致。
-将 system_prompt 中所有引用占位符变量名(如 task, dependent_design, text_latest 等)的地方, 都修改为 user_prompt 中对应的Markdown标题(如 当前任务, 设计方案, 最新章节(续写起点))。
+将 system_prompt 中所有引用占位符变量名(如 task, design_dependent, latest_text 等)的地方, 都修改为 user_prompt 中对应的Markdown标题(如 当前任务, 设计方案, 最新章节(续写起点))。
 
 
 

@@ -27,7 +27,7 @@ system_prompt_design = """
     - `questions`: [字符串列表] 按优先级降序排列的问题。
 - JSON转义: `"` 和 `\\` 等特殊字符必须正确转义。
 
-## 示例
+# 示例
 {
     "questions": [
         "全书或当前[卷/幕]的核心主题、价值主张和情感基调是什么?",
@@ -66,7 +66,7 @@ system_prompt_design_for_write = """
     - `questions`: [字符串列表] 按优先级降序排列的问题。
 - JSON转义: `"` 和 `\\` 等特殊字符必须正确转义。
 
-## 示例
+# 示例
 {
     "questions": [
         "故事的整体叙事风格(视角/时态)、美学基调、文笔基调和主题内核是什么?",
@@ -95,18 +95,18 @@ user_prompt_design = """
 
 ## 设计方案
 ---
-{dependent_design}
+{design_dependent}
 ---
 
 ## 信息收集成果
 ---
-{dependent_search}
+{search_dependent}
 ---
 
 ## 最新章节(续写起点)
 - 从此处无缝衔接
 ---
-{text_latest}
+{latest_text}
 ---
 """
 
@@ -137,7 +137,7 @@ system_prompt_write = """
     - `questions`: [字符串列表] 按优先级降序排列的问题。
 - JSON转义: `"` 和 `\\` 等特殊字符必须正确转义。
 
-## 示例
+# 示例
 {
     "questions": [
         "紧接在最新章节(续写起点)之前, 主角的心理状态、最后的动作以及场景的整体氛围是怎样的?",
@@ -167,18 +167,18 @@ user_prompt_write = """
 
 ## 设计方案
 ---
-{dependent_design}
+{design_dependent}
 ---
 
 ## 信息收集成果
 ---
-{dependent_search}
+{search_dependent}
 ---
 
 ## 最新章节(续写起点)
 - 从此处无缝衔接
 ---
-{text_latest}
+{latest_text}
 ---
 """
 
@@ -209,7 +209,7 @@ system_prompt_search = """
     - `questions`: [字符串列表] 按优先级降序排列的问题。
 - JSON转义: `"` 和 `\\` 等特殊字符必须正确转义。
 
-## 示例
+# 示例
 {
     "questions": [
         "关于[核心概念A]的[方面X]有哪些已知的设定或事实信息?",
@@ -236,17 +236,17 @@ user_prompt_search = """
 
 ## 设计方案
 ---
-{dependent_design}
+{design_dependent}
 ---
 
 ## 信息收集成果
 ---
-{dependent_search}
+{search_dependent}
 ---
 
 ## 最新章节(续写起点)
 - 从此处无缝衔接
 ---
-{text_latest}
+{latest_text}
 ---
 """

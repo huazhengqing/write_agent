@@ -49,13 +49,13 @@ design_phase_context = {
     "task": base_task.model_dump_json(indent=2),
     "complex_reasons": base_task.results["complex_reasons"],
     "atom_reasoning": base_task.results["atom_reasoning"],
-    "dependent_design": "", 
-    "dependent_search": "",
-    "text_latest": "",
+    "design_dependent": "", 
+    "search_dependent": "",
+    "latest_text": "",
     "text_summary": "",
     "task_list": "1 全书 write 写一部关于赛博朋克侦探在雨夜都市追查神秘芯片的小说 1000000",
-    "upper_design": "",
-    "upper_search": ""
+    "upper_level_design": "",
+    "upper_level_search": ""
 }
 
 

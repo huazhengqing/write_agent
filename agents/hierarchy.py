@@ -1,6 +1,6 @@
 import os
 from utils.models import Task
-from prompts.story.plan.plan_output import PlanOutput, convert_plan_to_tasks
+from prompts.story.plan_output import PlanOutput, convert_plan_to_tasks
 from utils.llm import get_llm_messages, get_llm_params, llm_completion, llm_temperatures
 from utils.loader import load_prompts
 from story.base import hybrid_query_react

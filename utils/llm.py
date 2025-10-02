@@ -19,9 +19,11 @@ llm_temperatures = {
 }
 
 
+llm_group_type = Literal['reasoning', 'fast', 'summary', 'formatter']
+
 
 def get_llm_params(
-    llm_group: Literal['reasoning', 'fast', 'summary'] = 'reasoning',
+    llm_group: llm_group_type = 'reasoning',
     messages: Optional[List[Dict[str, Any]]] = None,
     temperature: float = llm_temperatures["reasoning"],
     tools: Optional[List[Dict[str, Any]]] = None,

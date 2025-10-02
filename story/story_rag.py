@@ -23,12 +23,12 @@ class StoryRAG:
         os.makedirs(cache_story_dir, exist_ok=True)
         from diskcache import Cache
         self.caches: Dict[str, Cache] = {
-            'dependent_design': Cache(os.path.join(cache_story_dir, "dependent_design"), size_limit=int(32 * (1024**2))),
-            'dependent_search': Cache(os.path.join(cache_story_dir, "dependent_search"), size_limit=int(32 * (1024**2))),
-            'text_latest': Cache(os.path.join(cache_story_dir, "text_latest"), size_limit=int(32 * (1024**2))),
+            'design_dependent': Cache(os.path.join(cache_story_dir, "design_dependent"), size_limit=int(32 * (1024**2))),
+            'search_dependent': Cache(os.path.join(cache_story_dir, "search_dependent"), size_limit=int(32 * (1024**2))),
+            'latest_text': Cache(os.path.join(cache_story_dir, "latest_text"), size_limit=int(32 * (1024**2))),
             'text_length': Cache(os.path.join(cache_story_dir, "text_length"), size_limit=int(1 * (1024**2))),
-            'upper_design': Cache(os.path.join(cache_story_dir, "upper_design"), size_limit=int(128 * (1024**2))),
-            'upper_search': Cache(os.path.join(cache_story_dir, "upper_search"), size_limit=int(128 * (1024**2))),
+            'upper_level_design': Cache(os.path.join(cache_story_dir, "upper_level_design"), size_limit=int(128 * (1024**2))),
+            'upper_level_search': Cache(os.path.join(cache_story_dir, "upper_level_search"), size_limit=int(128 * (1024**2))),
             'text_summary': Cache(os.path.join(cache_story_dir, "text_summary"), size_limit=int(128 * (1024**2))),
             'task_list': Cache(os.path.join(cache_story_dir, "task_list"), size_limit=int(32 * (1024**2))),
         }
@@ -61,15 +61,15 @@ class StoryRAG:
         task_db.add_result(task)
         if task.sub_tasks:
             self.caches['task_list'].evict(tag=task.run_id)
-            self.caches['upper_design'].evict(tag=task.run_id)
-            self.caches['upper_search'].evict(tag=task.run_id)
+            self.caches['upper_level_design'].evict(tag=task.run_id)
+            self.caches['upper_level_search'].evict(tag=task.run_id)
             task_db.add_sub_tasks(task)
 
     def _save_design_content(self, task: Task, task_db: Any):
         content_key = "design"
         content = task.results.get(content_key)
         if content:
-            self.caches['dependent_design'].evict(tag=task.run_id)
+            self.caches['design_dependent'].evict(tag=task.run_id)
             task_db.add_result(task)
             self.save_design(task, content)
 
@@ -77,20 +77,20 @@ class StoryRAG:
         content_key = "write_review"
         content = task.results.get(content_key)
         if content:
-            self.caches['dependent_design'].evict(tag=task.run_id)
+            self.caches['design_dependent'].evict(tag=task.run_id)
             task_db.add_result(task)
             self.save_design(task, content)
 
     def _save_search_content(self, task: Task, task_db: Any):
         if task.results.get("search"):
-            self.caches['dependent_search'].evict(tag=task.run_id)
+            self.caches['search_dependent'].evict(tag=task.run_id)
             task_db.add_result(task)
             self.save_search(task, task.results.get("search"))
 
     def _save_write_content(self, task: Task, task_db: Any):
         final_content = task.results.get("write")
         if final_content:
-            self.caches['text_latest'].evict(tag=task.run_id)
+            self.caches['latest_text'].evict(tag=task.run_id)
             self.caches['text_length'].evict(tag=task.run_id)
             task_db.add_result(task)
             header_parts = [task.id, task.hierarchical_position, task.goal, task.length]
@@ -241,16 +241,16 @@ class StoryRAG:
         if not task.parent_id:
             return ret
         task_db = get_task_db(run_id=task.run_id)
-        dependent_design = self.get_dependent_design(task_db, task)
-        dependent_search = self.get_dependent_search(task_db, task)
-        text_latest = self.get_text_latest(task)
+        design_dependent = self.get_dependent_design(task_db, task)
+        search_dependent = self.get_dependent_search(task_db, task)
+        latest_text = self.get_text_latest(task)
         task_list = ""
         if len(task.id.split(".")) >= 2:
             task_list = self.get_task_list(task_db, task)
         ret.update({
-            "dependent_design": dependent_design,
-            "dependent_search": dependent_search,
-            "text_latest": text_latest,
+            "design_dependent": design_dependent,
+            "search_dependent": search_dependent,
+            "latest_text": latest_text,
             "task_list": task_list,
         })
         return ret
@@ -261,20 +261,20 @@ class StoryRAG:
         if not task.parent_id:
             return ret
     
-        dependent_design = ret.get("dependent_design", "")
-        dependent_search = ret.get("dependent_search", "")
-        text_latest = ret.get("text_latest", "")
+        design_dependent = ret.get("design_dependent", "")
+        search_dependent = ret.get("search_dependent", "")
+        latest_text = ret.get("latest_text", "")
         task_list = ret.get("task_list", "")
 
         tasks_to_run = {}
         current_level = len(task.id.split("."))
     
         if current_level >= 3:
-            tasks_to_run["upper_design"] = self.get_upper_design(task, dependent_design, dependent_search, text_latest, task_list)
-            tasks_to_run["upper_search"] = self.get_upper_search(task, dependent_design, dependent_search, text_latest, task_list)
+            tasks_to_run["upper_level_design"] = self.get_upper_design(task, design_dependent, search_dependent, latest_text, task_list)
+            tasks_to_run["upper_level_search"] = self.get_upper_search(task, design_dependent, search_dependent, latest_text, task_list)
     
-        if len(text_latest) > 500:
-            tasks_to_run["text_summary"] = self.get_text_summary(task, dependent_design, dependent_search, text_latest, task_list)
+        if len(latest_text) > 500:
+            tasks_to_run["text_summary"] = self.get_text_summary(task, design_dependent, search_dependent, latest_text, task_list)
     
         if tasks_to_run:
             import asyncio
@@ -286,22 +286,22 @@ class StoryRAG:
 
 
     def get_dependent_design(self, task_db: Any, task: Task) -> str:
-        cache_key = f"dependent_design:{task.run_id}:{task.id}"
-        cached_result = self.caches['dependent_design'].get(cache_key)
+        cache_key = f"design_dependent:{task.run_id}:{task.id}"
+        cached_result = self.caches['design_dependent'].get(cache_key)
         if cached_result is not None:
             return cached_result
         result = task_db.get_dependent_design(task)
-        self.caches['dependent_design'].set(cache_key, result, tag=task.run_id)
+        self.caches['design_dependent'].set(cache_key, result, tag=task.run_id)
         return result
 
 
     def get_dependent_search(self, task_db: Any, task: Task) -> str:
-        cache_key = f"dependent_search:{task.run_id}:{task.id}"
-        cached_result = self.caches['dependent_search'].get(cache_key)
+        cache_key = f"search_dependent:{task.run_id}:{task.id}"
+        cached_result = self.caches['search_dependent'].get(cache_key)
         if cached_result is not None:
             return cached_result
         result = task_db.get_dependent_search(task)
-        self.caches['dependent_search'].set(cache_key, result, tag=task.run_id)
+        self.caches['search_dependent'].set(cache_key, result, tag=task.run_id)
         return result
 
 
@@ -317,7 +317,7 @@ class StoryRAG:
 
     def get_text_latest(self, task: Task, length: int = 500) -> str:
         key = f"get_text_latest:{task.run_id}:{length}"
-        cached_result = self.caches['text_latest'].get(key)
+        cached_result = self.caches['latest_text'].get(key)
         if cached_result is not None:
             return cached_result
         task_db = get_task_db(run_id=task.run_id)
@@ -339,7 +339,7 @@ class StoryRAG:
                 else:
                     # 3. 如果全文都没有换行符, 或者只有一段很长的内容, 则直接硬截取
                     result = full_content[-length:]
-        self.caches['text_latest'].set(key, result, tag=task.run_id)
+        self.caches['latest_text'].set(key, result, tag=task.run_id)
         return result
 
 
@@ -389,9 +389,9 @@ class StoryRAG:
     async def get_inquiry(
         self,
         task: Task,
-        dependent_design: str,
-        dependent_search: str,
-        text_latest: str,
+        design_dependent: str,
+        search_dependent: str,
+        latest_text: str,
         task_list: str,
         inquiry_type: Literal['search', 'design', 'write']
     ) -> Dict[str, Any]:
@@ -411,9 +411,9 @@ class StoryRAG:
                 exclude_none=True,
                 include={'id', 'parent_id', 'task_type', 'hierarchical_position', 'goal', 'length', 'dependency', 'instructions', 'input_brief', 'constraints', 'acceptance_criteria'}
             ),
-            "dependent_design": dependent_design,
-            "dependent_search": dependent_search,
-            "text_latest": text_latest,
+            "design_dependent": design_dependent,
+            "search_dependent": search_dependent,
+            "latest_text": latest_text,
             "task_list": task_list
         }
         messages = get_llm_messages(system_prompt, user_prompt, None, context_dict_user)
@@ -422,19 +422,19 @@ class StoryRAG:
         return message.validated_data.model_dump()
     
     
-    async def get_upper_search(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
+    async def get_upper_search(self, task: Task, design_dependent: str, search_dependent: str, latest_text: str, task_list: str) -> str:
         cache_key = f"get_upper_search:{task.run_id}:{task.id}"
-        cached_result = self.caches['upper_search'].get(cache_key)
+        cached_result = self.caches['upper_level_search'].get(cache_key)
         if cached_result is not None:
             return cached_result
         
-        inquiry = await self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'search')
+        inquiry = await self.get_inquiry(task, design_dependent, search_dependent, latest_text, task_list, 'search')
         all_questions = inquiry.get("questions", [])
         if not all_questions:
             logger.warning(f"[{task.id}] 生成的探询问题为空, 跳过上层搜索。")
             return ""
         
-        logger.info(f"[{task.id}] 开始获取上层搜索(upper_search)上下文...")
+        logger.info(f"[{task.id}] 开始获取上层搜索(upper_level_search)上下文...")
 
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
@@ -452,26 +452,26 @@ class StoryRAG:
         results = await index_query_batch(query_engine, all_questions)
         result = "\n\n---\n\n".join(results)
         if not results:
-            logger.warning(f"[{task.id}] 上层搜索(upper_search)未能生成答案或找到相关文档。")
+            logger.warning(f"[{task.id}] 上层搜索(upper_level_search)未能生成答案或找到相关文档。")
 
-        self.caches['upper_search'].set(cache_key, result, tag=task.run_id)
-        logger.info(f"[{task.id}] 获取上层搜索(upper_search)上下文的流程已结束。")
+        self.caches['upper_level_search'].set(cache_key, result, tag=task.run_id)
+        logger.info(f"[{task.id}] 获取上层搜索(upper_level_search)上下文的流程已结束。")
         return result
 
 
-    async def get_upper_design(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
+    async def get_upper_design(self, task: Task, design_dependent: str, search_dependent: str, latest_text: str, task_list: str) -> str:
         cache_key = f"get_upper_design:{task.run_id}:{task.id}"
-        cached_result = self.caches['upper_design'].get(cache_key)
+        cached_result = self.caches['upper_level_design'].get(cache_key)
         if cached_result is not None:
             return cached_result
         
-        inquiry = await self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'design')
+        inquiry = await self.get_inquiry(task, design_dependent, search_dependent, latest_text, task_list, 'design')
         all_questions = inquiry.get("questions", [])
         if not all_questions:
             logger.warning(f"[{task.id}] 生成的探询问题为空, 跳过上层设计检索。")
             return ""
 
-        logger.info(f"[{task.id}] 开始获取上层设计(upper_design)上下文...")
+        logger.info(f"[{task.id}] 开始获取上层设计(upper_level_design)上下文...")
 
         active_filters = []
         preceding_sibling_ids = get_sibling_ids_up_to_current(task.id)
@@ -482,18 +482,18 @@ class StoryRAG:
         from story.base import hybrid_query_design
         result = await hybrid_query_design(task.run_id, all_questions, vector_filters)
 
-        self.caches['upper_design'].set(cache_key, result, tag=task.run_id)
-        logger.info(f"[{task.id}] 获取上层设计(upper_design)上下文完成。")
+        self.caches['upper_level_design'].set(cache_key, result, tag=task.run_id)
+        logger.info(f"[{task.id}] 获取上层设计(upper_level_design)上下文完成。")
         return result
  
 
-    async def get_text_summary(self, task: Task, dependent_design: str, dependent_search: str, text_latest: str, task_list: str) -> str:
+    async def get_text_summary(self, task: Task, design_dependent: str, search_dependent: str, latest_text: str, task_list: str) -> str:
         cache_key = f"get_text_summary:{task.run_id}:{task.id}"
         cached_result = self.caches['text_summary'].get(cache_key)
         if cached_result is not None:
             return cached_result
 
-        inquiry = await self.get_inquiry(task, dependent_design, dependent_search, text_latest, task_list, 'write')
+        inquiry = await self.get_inquiry(task, design_dependent, search_dependent, latest_text, task_list, 'write')
         all_questions = inquiry.get("questions", [])
         if not all_questions:
             logger.warning(f"[{task.id}] 生成的探询问题为空, 跳过历史情节概要检索。")
