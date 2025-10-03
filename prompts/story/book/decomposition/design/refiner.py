@@ -1,48 +1,58 @@
 
 
+
 comment = """
 # 说明
-- 分解流程的第3步, 对第2步(design_2_*)生成的任务清单转为json格式
 - 生成一系列 `design` 和 `search` 子任务
-
-# 要求
+- 步骤: 这是`Proposer -> Critic -> Refiner`三步工作流的第3步。
 - 这是规划, 不是创作。
 """
 
 
+
 system_prompt = """
 # 角色
-最终整合与校验工程师 (Synthesizer)。
+首席结构编辑, 负责综合提议与批判, 敲定最终的结构划分方案, 并将其转换为精确的JSON任务。
 
 # 任务
-智能解析`批判者`的Markdown任务清单, 结构化为JSON任务树。
+综合`任务分解草案`和`质询建议`, 更新`当前任务`的JSON表示, 将新规划的子单元作为`sub_tasks`嵌入其中。
 
 # 工作流程
-1.  分析与校验:
-    - 提取`批判者`的`### 审查与分析`内容至`reasoning`字段。
-    - 审查`### 任务清单`发现逻辑错误, 并在`reasoning`中记录修正方案。
-2.  修正与结构化: 逐项解析`### 任务清单`, 应用修正方案生成JSON。
-    - ID生成: 为每个任务生成`id` (父任务ID.子任务序号)。
-    - 智能填充: 将任务描述信息智能分配至JSON字段:
-        - `goal`: 提炼核心目标。
-        - `instructions`: 填充执行步骤、方法或要点。
-        - `input_brief`: 填充输入源参考建议。
-        - `constraints`: 填充限制、禁止项或规则。
-    - 依赖解析与修正: 解析`(依赖于: ...)`中的任务目标, 填入`dependency`。修正循环依赖。
-3.  构建JSON: 将修正后的任务对象放入`sub_tasks`。
+## 整合方案
+- 根据`质询建议`中的`优化指令`, 修改`任务分解草案`。
+- 处理合并、拆分或新增任务的指令, 形成最终任务清单。
+- 禁止超出`质询建议`范围的虚构或修改。
+
+## 转换为JSON
+- 将`当前任务`作为根对象, 在`reasoning`字段中说明决策依据。
+- 依据最终任务清单, 创建`sub_tasks`列表。
+- 严格按照`# 字段映射规则`填充每个子任务的JSON字段, 并预估`complexity_score`。
+- 最终输出只包含父子任务结构的纯JSON对象。
+
+# 输入
+- `任务分解草案`: Markdown格式, 包含`任务标题`, `核心目标`等字段。
+- `质询建议`: Markdown格式, 包含对草案的`核心问题`和`优化指令`。
+
+# 字段映射规则
+- `任务类型` -> `task_type`
+- `核心目标` -> `goal`
+- `具体指令` -> `instructions`
+- `输入指引` -> `input_brief`
+- `限制和禁忌` -> `constraints`
+- `验收标准` -> `acceptance_criteria`
 
 # JSON 字段
-- `reasoning`: 任务分解的思考过程。
-- `id`: 父任务ID.子任务序号。
-- `task_type`: 'design' 或 'search'。
-- `hierarchical_position`: 任务层级位置 (如: '全书', '第1卷'), 继承于父任务。
-- `goal`: 任务需要达成的核心目标 (一句话概括)。
-- `instructions`: (可选) 任务的具体指令 (HOW)。
-- `input_brief`: (可选) 任务的输入指引 (FROM WHERE), 指导应重点关注哪些依赖项信息。
-- `constraints`: (可选) 任务的限制和禁忌 (WHAT NOT)。
-- `acceptance_criteria`: (可选) 任务的验收标准 (VERIFY HOW)。
-- `dependency`: 同层级的前置任务ID列表。
-- `sub_tasks`: 子任务对象列表。
+- `reasoning`: 思考过程。
+- `id`: 父任务ID.子任务序号。根任务为"1"。
+- `task_type`: 'design', 'search'。
+- `hierarchical_position`: 任务层级位置 (如: '第1卷第1幕')。
+- `goal`: 任务的清晰、具体的核心目标。
+- `instructions`: (可选) 任务的具体指令: 明确指出需要执行的步骤、包含的关键要素或信息点。
+- `input_brief`: (可选) 任务的输入指引: 指导执行者应重点关注依赖项中的哪些关键信息。
+- `constraints`: (可选) 任务的限制和禁忌: 明确指出需要避免的内容或必须遵守的规则。
+- `acceptance_criteria`: (可选) 任务的验收标准: 定义任务完成的衡量标准, 用于后续评审。
+- `complexity_score`: (可选) 任务的复杂度预估(1-10), 1为最简单, 10为最复杂。用于辅助原子判断。
+- `sub_tasks`: (可选) 子任务列表。
 
 # 输出格式
 - 格式: 纯JSON对象, 无额外文本。
@@ -50,30 +60,33 @@ system_prompt = """
 
 # 示例
 {
-    "reasoning": "基于批判者的分析, 任务清单结构合理。经检查, 未发现逻辑冲突或循环依赖。现将任务清单结构化为JSON。",
-    "id": "1.x",
+    "reasoning": "基于Proposer的草案和Critic的建议, 我将[待分解的复杂设计任务]分解为以下几个正交的子任务, 以确保设计的完整性和独特性。",
+    "id": "N.M",
     "task_type": "design",
-    "hierarchical_position": "全书",
-    "goal": "设计[复杂实体]",
-    "dependency": [],
+    "hierarchical_position": "[任务的层级位置]",
+    "goal": "设计[待分解的复杂设计任务]",
     "sub_tasks": [
         {
-            "id": "1.x.1",
+            "id": "N.M.1",
             "task_type": "design",
-            "hierarchical_position": "全书",
-            "goal": "规划[复杂实体]的[方面A]: 明确其[核心要素]。",
+            "hierarchical_position": "[任务的层级位置]",
+            "goal": "设计[子任务1的核心方面]",
             "instructions": [
-                "定义其物理形态和基本属性。",
-                "设计其独特的能量循环机制。"
+                "明确该方面的具体设计要点。",
+                "确保该方面与[另一核心方面]的关联。"
+            ],
+            "input_brief": [
+                "参考`上层设计方案`中关于[关键概念]的描述。"
             ],
             "constraints": [
-                "必须遵循已设定的[世界观基础物理定律]。",
-                "禁止使用[某种已被滥用的设定]。"
+                "禁止[某种设计禁忌]。"
             ],
-            "acceptance_criteria": ["产出一份包含核心要素和能量循环机制的详细设定文档。"],
-            "dependency": [],
+            "acceptance_criteria": [
+                "产出必须包含对[核心要素]的清晰定义。"
+            ],
+            "complexity_score": 7,
             "sub_tasks": []
-        }, 
+        },
         "..."
     ]
 }
@@ -82,54 +95,72 @@ system_prompt = """
 
 
 user_prompt = """
-# 请将以下设计任务清单转换为最终的JSON任务树
+# 请整合以下任务分解草案和质询建议, 生成最终的JSON任务树
+## 任务分解草案
+{proposer}
+
+## 任务分解草案的质询建议
+{critic}
 
 ## 当前任务
----
+<current_task>
 {task}
----
+</current_task>
 
-## 设计任务清单 (批判者产出)
----
-{draft_plan}
----
+## 参考以下任务需要分解的原因
+{complex_reasons}: {atom_reasoning}
 
-# 上下文
-## 直接依赖项
-### 设计方案
----
-{design_dependent}
----
-
-### 信息收集成果
----
-{search_dependent}
----
-
-## 小说当前状态
-### 最新章节(续写起点)
----
-{latest_text}
----
-
-### 历史情节概要
----
-{text_summary}
----
-
-## 整体规划
-### 任务树
----
+## 整体规划(任务树)
+- 完整的任务层级结构, 展示当前任务在全局中的位置。
+<overall_planning>
 {task_list}
----
+</overall_planning>
 
-### 上层设计方案
----
+## 全书设计方案
+- 包含核心世界观、主题、角色弧光和情节框架的顶层设计摘要, 作为项目的最高指导原则。
+<book_level_design>
+{book_level_design}
+</book_level_design>
+
+## 相关设计方案
+- 与当前任务相关的指导性设计方案, 提供直接的、具有约束力的指令。
+<upper_level_design>
 {upper_level_design}
----
+</upper_level_design>
 
-### 上层信息收集成果
----
+## 依赖的设计方案
+- 当前任务执行所依赖的前置任务的产出。
+<design_dependent>
+{design_dependent}
+</design_dependent>
+
+## 正文全局状态摘要
+- 动态生成的全局故事快照, 包含主角的核心目标、最大矛盾、关键角色关系和待回收伏笔。
+<global_state_summary>
+{global_state_summary}
+</global_state_summary>
+
+## 正文历史情节摘要
+- 当前任务相关的历史情节或角色信息。
+<text_summary>
+{text_summary}
+</text_summary>
+
+## 依赖的正文最新章节(续写起点, 从此处无缝衔接)
+- 最近完成的写作单元的原文, 为写作任务提供无缝衔接的起点。
+<latest_text>
+{latest_text}
+</latest_text>
+
+## 相关的搜索信息
+- 收集的背景知识和研究成果。
+<upper_level_search>
 {upper_level_search}
----
+</upper_level_search>
+
+## 依赖的搜索信息
+- 当前任务依赖的事实材料
+<search_dependent>
+{search_dependent}
+</search_dependent>
 """
