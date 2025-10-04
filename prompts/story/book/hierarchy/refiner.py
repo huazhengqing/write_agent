@@ -71,7 +71,7 @@ system_prompt = """
             "id": "N.M.1",
             "task_type": "write",
             "hierarchical_position": "第N卷",
-            "goal": "撰写[子单元标题]：[子单元核心目标]",
+            "goal": "撰写[子单元标题]: [子单元核心目标]",
             "length": 150000,
             "instructions": [
                 "规划[关键事件A]的发生与[角色B]的关键转变。",

@@ -68,7 +68,7 @@ system_prompt = """
             "hierarchical_position": "[任务的层级位置]",
             "goal": "搜索赛博朋克的核心美学元素与视觉风格",
             "instructions": [
-                "搜索关键词：'cyberpunk aesthetics', 'neon noir', 'high tech low life', 'dystopian cityscapes'。"
+                "搜索关键词: 'cyberpunk aesthetics', 'neon noir', 'high tech low life', 'dystopian cityscapes'。"
             ],
             "constraints": [
                 "避免过于宽泛的文化分析, 聚焦于可被视觉化的具体元素。"
