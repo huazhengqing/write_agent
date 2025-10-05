@@ -42,7 +42,7 @@ system_prompt = """
 - `字数` -> `length`
 - `叙事层级与位置` -> `hierarchical_position`
 
-# JSON 字段
+# 输出JSON结构
 - `reasoning`: (字符串) 思考过程。
 - `id`: (字符串) 父任务ID.子任务序号。根任务为"1"。
 - `task_type`: (字符串) 'write'。

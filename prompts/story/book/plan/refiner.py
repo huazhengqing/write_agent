@@ -38,7 +38,7 @@ system_prompt = """
     - 为每个子任务预估`complexity_score`。
     - 将所有子任务列表嵌入父任务的`sub_tasks`字段, 并输出完整的纯JSON对象。
 
-# JSON 字段
+# 输出JSON结构
 - `reasoning`: 思考过程。
 - `id`: 父任务ID.子任务序号。根任务为"1"。
 - `task_type`: 'design', 'search'。
@@ -103,7 +103,7 @@ user_prompt = """
 </current_task>
 
 ## 继续规划的原因
-{DECISION_CONTINUE_PLANNING}
+{planning_reasons}
 
 ## 规划草案(任务列表)
 {proposer}

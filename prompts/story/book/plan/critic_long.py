@@ -62,7 +62,7 @@ user_prompt = """
 </current_task>
 
 ## 继续规划的原因
-{DECISION_CONTINUE_PLANNING}
+{planning_reasons}
 
 ## 规划草案(任务列表)
 {proposer}

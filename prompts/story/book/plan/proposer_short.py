@@ -75,7 +75,7 @@ user_prompt = """
 </current_task>
 
 ## 继续规划的原因
-{DECISION_CONTINUE_PLANNING}
+{planning_reasons}
 
 ## 整体规划(任务树)
 - 完整的任务层级结构, 展示当前任务在全局中的位置。
