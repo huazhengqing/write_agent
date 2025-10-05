@@ -49,53 +49,62 @@ system_prompt = """
 
 user_prompt = """
 # 请为当前写作任务制定一份详细的"分镜脚本"
-
 ## 当前任务
----
+<current_task>
 {task}
----
+</current_task>
 
-
-# 上下文
-## 直接依赖项
-### 设计方案
-- 本章设计、情节走向
----
+## 依赖的设计方案
+- 当前任务执行所依赖的前置任务的产出。本章设计、情节走向
+<design_dependent>
 {design_dependent}
----
+</design_dependent>
 
-### 信息收集成果
----
-{search_dependent}
----
-
-## 小说当前状态
-### 最新章节(续写起点)
-- 从此处无缝衔接
----
+## 依赖的正文最新章节(续写起点, 从此处无缝衔接)
+- 最近完成的写作单元的原文, 为写作任务提供无缝衔接的起点。
+<latest_text>
 {latest_text}
----
+</latest_text>
 
-### 历史情节概要
----
-{text_summary}
----
-
-## 整体规划
-### 任务树
----
+## 整体规划(任务树)
+- 完整的任务层级结构, 展示当前任务在全局中的位置。
+<overall_planning>
 {task_list}
----
+</overall_planning>
 
-### 上层设计方案
-- 世界观、主线、风格
----
+## 全书设计方案
+- 包含核心世界观、主题、角色弧光和情节框架的顶层设计摘要, 作为项目的最高指导原则。
+<book_level_design>
+{book_level_design}
+</book_level_design>
+
+## 正文全局状态摘要
+- 动态生成的全局故事快照, 包含主角的核心目标、最大矛盾、关键角色关系和待回收伏笔。
+<global_state_summary>
+{global_state_summary}
+</global_state_summary>
+
+## 相关设计方案
+- 与当前任务相关的指导性设计方案, 提供直接的、具有约束力的指令。
+<upper_level_design>
 {upper_level_design}
----
+</upper_level_design>
 
-### 上层信息收集成果
----
+## 正文历史情节摘要
+- 当前任务相关的历史情节或角色信息。
+<text_summary>
+{text_summary}
+</text_summary>
+
+## 相关的搜索信息
+- 收集的背景知识和研究成果。
+<upper_level_search>
 {upper_level_search}
----
+</upper_level_search>
 
+## 依赖的搜索信息
+- 当前任务依赖的事实材料
+<search_dependent>
+{search_dependent}
+</search_dependent>
 """

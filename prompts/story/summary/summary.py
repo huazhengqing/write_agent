@@ -77,13 +77,13 @@ system_prompt = """
 
 
 user_prompt = """
-# 任务信息
----
+# 当前任务
+<current_task>
 {task}
----
+</current_task>
 
 # 待摘要的文本
----
+<text>
 {text}
----
-""".strip()
+</text>
+"""

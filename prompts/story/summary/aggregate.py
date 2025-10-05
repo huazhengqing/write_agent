@@ -46,12 +46,12 @@ user_prompt = """
 # 根据你的聚合规则, 生成一份统一的、更高层级的Markdown摘要。
 
 ## 父任务信息 (用于生成新标题)
----
+<current_task>
 {task}
----
+</current_task>
 
 ## 待整合的子摘要
----
+<subtask_summary>
 {subtask_summary}
----
+</subtask_summary>
 """.strip()

@@ -52,7 +52,7 @@ system_prompt = """
 
 user_prompt = """
 ## 当前任务
----
+<current_task>
 {task}
----
+</current_task>
 """
