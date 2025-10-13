@@ -9,7 +9,7 @@ from llama_index.core.vector_stores import VectorStoreInfo
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo
-from utils.llm import llm_temperatures, get_llm_params
+from utils.llm import get_llm_params
 from rag.vector_prompts import vector_store_query_prompt
 from rag.vector import get_synthesizer
 
@@ -59,7 +59,7 @@ def _create_auto_retriever_engine(
     node_postprocessors: List,
 ) -> BaseQueryEngine:
     logger.info("正在创建 Auto-Retriever 查询引擎...")
-    reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=llm_temperatures["reasoning"])
+    reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=0.1)
     reasoning_llm = LiteLLM(**reasoning_llm_params)
     from llama_index.core.retrievers import VectorIndexAutoRetriever
     retriever = VectorIndexAutoRetriever(

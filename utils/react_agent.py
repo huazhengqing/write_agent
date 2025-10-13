@@ -34,8 +34,8 @@ async def call_react_agent(
     logger.info(f"tools=\n{','.join(tool_names_sorted)}")
     logger.info(f"response_model=\n{response_model_name}")
 
-    from utils.llm import llm_temperatures, get_llm_params
-    llm_params = get_llm_params(llm_group=llm_group, temperature=llm_temperatures["reasoning"])
+    from utils.llm import get_llm_params
+    llm_params = get_llm_params(llm_group=llm_group, temperature=0.1)
 
     from llama_index.core.agent.workflow import ReActAgent
     from llama_index.llms.litellm import LiteLLM

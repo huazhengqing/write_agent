@@ -8,7 +8,7 @@ from llama_index.core.prompts import PromptTemplate
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.core.indices.prompt_helper import PromptHelper
 from llama_index.core.response_synthesizers import TreeSummarize
-from utils.llm import llm_temperatures, get_llm_params
+from utils.llm import get_llm_params
 from rag.vector_prompts import tree_summary_prompt
 
 
@@ -22,7 +22,7 @@ if hasattr(ChromaVectorStore, 'model_rebuild'):
 
 @lru_cache(maxsize=None)
 def init_llama_settings():
-    llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["summarization"])
+    llm_params = get_llm_params(llm_group="summary", temperature=0.2)
     Settings.llm = LiteLLM(**llm_params)
 
     Settings.prompt_helper = PromptHelper(
@@ -62,7 +62,7 @@ def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
 
 @lru_cache(maxsize=None)
 def get_synthesizer():
-    synthesis_llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["synthesis"])
+    synthesis_llm_params = get_llm_params(llm_group="summary", temperature=0.4)
     synthesizer = TreeSummarize(
         llm=LiteLLM(**synthesis_llm_params),
         summary_template=PromptTemplate(tree_summary_prompt),

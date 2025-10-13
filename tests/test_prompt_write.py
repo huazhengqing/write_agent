@@ -6,7 +6,7 @@ from loguru import logger
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.models import Task
-from utils.llm import get_llm_messages, llm_completion, get_llm_params, llm_temperatures
+from utils.llm import get_llm_messages, llm_completion, get_llm_params
 from utils.loader import load_prompts
 
 
@@ -59,7 +59,7 @@ async def test_write_prompt():
     )
     llm_params = get_llm_params(
         llm_group="writing", 
-        temperature=llm_temperatures["creative"], 
+        temperature=0.75, 
         messages=messages
     )
     response = await llm_completion(llm_params)

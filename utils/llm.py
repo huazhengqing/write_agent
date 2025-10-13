@@ -25,7 +25,7 @@ llm_group_type = Literal['reasoning', 'fast', 'summary', 'formatter']
 def get_llm_params(
     llm_group: llm_group_type = 'reasoning',
     messages: Optional[List[Dict[str, Any]]] = None,
-    temperature: float = llm_temperatures["reasoning"],
+    temperature: float = 0.0,
     tools: Optional[List[Dict[str, Any]]] = None,
     **kwargs: Any
 ) -> Dict[str, Any]:
@@ -141,7 +141,7 @@ self_correction_prompt = """
 """
 
 
-def _clear_proxy_cache(cache_key: Optional[str]):
+def clear_llm_cache(cache_key: Optional[str]):
     if not cache_key:
         logger.debug("没有可用的 cache_key, 跳过缓存删除。")
         return
@@ -174,7 +174,7 @@ def _handle_llm_failure(
     response_model: Optional[Type[BaseModel]],
     raw_output_for_correction: Optional[str],
 ):
-    _clear_proxy_cache(cache_key)
+    clear_llm_cache(cache_key)
     from pydantic import ValidationError
     if response_model and isinstance(e, (ValidationError, json.JSONDecodeError)) and raw_output_for_correction:
         logger.info("检测到JSON错误, 下次尝试将进行自我修正...")
@@ -245,6 +245,7 @@ async def llm_completion(
 
             message = response.choices[0].message
             cache_key_from_response = response.get("x-litellm-cache-key")
+            message.cache_key = cache_key_from_response # 将 cache_key 直接附加到 message 对象上
 
             if response_model:
                 validated_data = None
@@ -324,18 +325,18 @@ async def txt_to_json(
     response_model: Type[BaseModel],
     max_retries: int = 6
 ):
-    logger.info(f"开始将文本转换为 JSON, 目标模型: {response_model.__name__}")
+    logger.info(f"开始将文本转换为 JSON, 任务模型: {response_model.__name__}")
     logger.debug(f"待转换的输入文本:\n{cleaned_output}")
 
     extraction_messages = get_llm_messages(
         system_prompt=extraction_system_prompt,
         user_prompt=extraction_user_prompt.format(cleaned_output=cleaned_output)
     )
-    from utils.llm import get_llm_params, llm_temperatures
+    from utils.llm import get_llm_params
     extraction_llm_params = get_llm_params(
         llm_group='reasoning',
         messages=extraction_messages,
-        temperature=llm_temperatures["classification"]
+        temperature=0.0
     )
     extraction_response = await llm_completion(
         llm_params=extraction_llm_params, 

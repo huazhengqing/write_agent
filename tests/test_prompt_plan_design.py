@@ -2,7 +2,7 @@ import pytest
 from loguru import logger
 
 from utils.models import Task, PlanOutput
-from utils.llm import get_llm_messages, llm_completion, get_llm_params, llm_temperatures
+from utils.llm import get_llm_messages, llm_completion, get_llm_params
 from utils.loader import load_prompts
 
 
@@ -63,7 +63,7 @@ async def test_plan_design_prompt():
     messages = get_llm_messages(system_prompt, user_prompt, None, design_phase_context)
     llm_params = get_llm_params(
         llm_group="reasoning",
-        temperature=llm_temperatures["reasoning"],
+        temperature=0.1,
         messages=messages
     )
     response_message = await llm_completion(

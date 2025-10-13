@@ -7,8 +7,8 @@ from loguru import logger
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.models import Task
-from utils.llm import get_llm_messages, llm_completion, get_llm_params, llm_temperatures
-from prompts.story.rag_query import (
+from utils.llm import get_llm_messages, llm_completion, get_llm_params
+from story.prompts.rag_query import (
     Inquiry,
     system_prompt_design,
     user_prompt_design,
@@ -48,7 +48,7 @@ async def test_rag_query_design_prompt():
     )
     llm_params = get_llm_params(
         llm_group="reasoning",
-        temperature=llm_temperatures["classification"],
+        temperature=0.0,
         messages=messages
     )
     response = await llm_completion(llm_params, response_model=Inquiry)
@@ -84,7 +84,7 @@ async def test_rag_query_design_for_write_prompt():
     )
     llm_params = get_llm_params(
         llm_group="reasoning",
-        temperature=llm_temperatures["classification"],
+        temperature=0.0,
         messages=messages
     )
     response = await llm_completion(llm_params, response_model=Inquiry)
@@ -120,7 +120,7 @@ async def test_rag_query_write_prompt():
     )
     llm_params = get_llm_params(
         llm_group="reasoning",
-        temperature=llm_temperatures["classification"],
+        temperature=0.0,
         messages=messages
     )
     response = await llm_completion(llm_params, response_model=Inquiry)
@@ -155,7 +155,7 @@ async def test_rag_query_search_prompt():
     )
     llm_params = get_llm_params(
         llm_group="reasoning",
-        temperature=llm_temperatures["classification"],
+        temperature=0.0,
         messages=messages
     )
     response = await llm_completion(llm_params, response_model=Inquiry)

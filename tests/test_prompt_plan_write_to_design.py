@@ -2,7 +2,7 @@ import pytest
 from loguru import logger
 
 from utils.models import Task, PlanOutput
-from utils.llm import get_llm_messages, llm_completion, get_llm_params, llm_temperatures
+from utils.llm import get_llm_messages, llm_completion, get_llm_params
 from utils.loader import load_prompts
 
 
@@ -45,8 +45,8 @@ base_task = Task(
 )
 
 
-design_phase_context = {
-    "task": base_task.model_dump_json(indent=2),
+design_phase_context = base_task.to_context_dict()
+design_phase_context.update({
     "complex_reasons": base_task.results["complex_reasons"],
     "atom_reasoning": base_task.results["atom_reasoning"],
     "design_dependent": "", 
@@ -56,7 +56,7 @@ design_phase_context = {
     "task_list": "1 全书 write 写一部关于赛博朋克侦探在雨夜都市追查神秘芯片的小说 1000000",
     "upper_level_design": "",
     "upper_level_search": ""
-}
+})
 
 
 @pytest.mark.asyncio
@@ -64,7 +64,7 @@ async def test_plan_write_to_design_prompt():
     messages = get_llm_messages(system_prompt, user_prompt, None, design_phase_context)
     llm_params = get_llm_params(
         llm_group="reasoning",
-        temperature=llm_temperatures["reasoning"],
+        temperature=0.1,
         messages=messages
     )
     response_message = await llm_completion(
@@ -73,4 +73,3 @@ async def test_plan_write_to_design_prompt():
     )
     result_plan = response_message.validated_data
     logger.info(f"LLM返回的规划结果:\n{result_plan.model_dump_json(indent=2, ensure_ascii=False)}")
-

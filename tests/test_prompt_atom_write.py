@@ -7,8 +7,8 @@ import json
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.models import Task, AtomOutput
-from utils.llm import get_llm_messages, llm_completion, get_llm_params, llm_temperatures
-from prompts.story.atom_write import system_prompt, user_prompt
+from utils.llm import get_llm_messages, llm_completion, get_llm_params
+from story.prompts.atom_write import system_prompt, user_prompt
 
 
 task = Task(
@@ -48,7 +48,7 @@ async def test_atom_write_prompt():
     )
     llm_params = get_llm_params(
         llm_group="reasoning",
-        temperature=llm_temperatures["classification"]
+        temperature=0.0
     )
     llm_params["messages"] = messages
     response = await llm_completion(llm_params, response_model=AtomOutput)

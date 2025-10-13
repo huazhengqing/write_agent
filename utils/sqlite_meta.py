@@ -1,6 +1,8 @@
+import hashlib
 from loguru import logger
 from typing import List, Optional, Dict, Any
 from functools import lru_cache
+from utils.file import sanitize_filename
 from utils.models import Task
 
 
@@ -20,6 +22,11 @@ Table: t_book_meta
 - input_brief: TEXT - 任务的[输入指引]。
 - constraints: TEXT - 任务的[限制和禁忌]。
 - acceptance_criteria: TEXT - 任务的[验收标准]。
+- title: TEXT - 书名
+- synopsis: TEXT - 简介。
+- style: TEXT - 叙事风格。
+- book_level_design: TEXT - 全书设计方案
+- global_state_summary: TEXT - 全局状态摘要
 - created_at: TIMESTAMP - 记录创建时的时间戳。
 - updated_at: TIMESTAMP - 记录最后更新时的时间戳。
 """
@@ -36,8 +43,6 @@ class BookMetaDB:
         self._lock = threading.Lock()
         self._create_table()
 
-
-
     def _create_table(self):
         with self._lock:
             self.cursor.execute("""
@@ -53,6 +58,11 @@ class BookMetaDB:
                 input_brief TEXT,
                 constraints TEXT,
                 acceptance_criteria TEXT,
+                title TEXT,
+                synopsis TEXT,
+                style TEXT,
+                book_level_design TEXT,
+                global_state_summary TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -70,9 +80,7 @@ class BookMetaDB:
             """)
             self.conn.commit()
 
-
-
-    def add_or_update_book_meta(self, task: Task):
+    def add_book_meta(self, task: Task):
         """
         根据根任务信息, 添加或更新书的元数据。
         """
@@ -89,11 +97,9 @@ class BookMetaDB:
             "constraints": "\n".join(task.constraints),
             "acceptance_criteria": "\n".join(task.acceptance_criteria),
         }
-
         columns = ", ".join(meta_data.keys())
         placeholders = ", ".join([f":{key}" for key in meta_data.keys()])
         update_clause = ", ".join([f"{key} = excluded.{key}" for key in meta_data if key != 'run_id'])
-
         with self._lock:
             self.cursor.execute(
                 f"""
@@ -108,6 +114,106 @@ class BookMetaDB:
 
 
 
+    def add_book(self, task_info):
+        category = task_info.get('category')
+        root_name = task_info.get("name")
+        language = task_info.get('language')
+        goal = task_info.get("goal")
+
+        sanitized_category = sanitize_filename(category)
+        sanitized_name = sanitize_filename(root_name)
+        sanitized_language = sanitize_filename(language)
+        stable_unique_id = hashlib.sha256(goal.encode('utf-8')).hexdigest()[:16]
+        run_id = f"{sanitized_category}_{sanitized_name}_{sanitized_language}_{stable_unique_id}"
+
+        task_params = {
+            "id": "1",
+            "parent_id": "",
+            "task_type": "write",
+            "hierarchical_position": "全书",
+            "goal": goal,
+            "instructions": [line.strip() for line in task_info.get("instructions", "").split('。') if line.strip()],
+            "input_brief": [line.strip() for line in task_info.get("input_brief", "").split('。') if line.strip()],
+            "constraints": [line.strip() for line in task_info.get("constraints", "").split('。') if line.strip()],
+            "acceptance_criteria": [line.strip() for line in task_info.get("acceptance_criteria", "").split('。') if line.strip()],
+            "length": task_info.get("length"),
+            "category": category,
+            "language": language,
+            "root_name": root_name,
+            "run_id": run_id,
+            "day_wordcount_goal": task_info.get("day_wordcount_goal", 0)
+        }
+        root_task = Task(**{k: v for k, v in task_params.items() if v is not None})
+        self.add_book_meta(task=root_task)
+        
+
+
+    def update_title(self, run_id: str, title: str):
+        """
+        更新指定 run_id 的书名。
+        """
+        with self._lock:
+            self.cursor.execute(
+                "UPDATE t_book_meta SET title = ? WHERE run_id = ?",
+                (title, run_id)
+            )
+            self.conn.commit()
+
+    def update_synopsis(self, run_id: str, synopsis: str):
+        """
+        更新指定 run_id 的简介。
+        """
+        with self._lock:
+            self.cursor.execute(
+                "UPDATE t_book_meta SET synopsis = ? WHERE run_id = ?",
+                (synopsis, run_id)
+            )
+            self.conn.commit()
+
+    def update_style(self, run_id: str, style: str):
+        """
+        更新指定 run_id 的叙事风格。
+        """
+        with self._lock:
+            self.cursor.execute(
+                "UPDATE t_book_meta SET style = ? WHERE run_id = ?",
+                (style, run_id)
+            )
+            self.conn.commit()
+
+    def update_book_level_design(self, run_id: str, book_level_design: str):
+        """
+        更新指定 run_id 的全书设计方案。
+        """
+        with self._lock:
+            self.cursor.execute(
+                "UPDATE t_book_meta SET book_level_design = ? WHERE run_id = ?",
+                (book_level_design, run_id)
+            )
+            self.conn.commit()
+
+    def update_global_state_summary(self, run_id: str, global_state_summary: str):
+        """
+        更新指定 run_id 的全局状态摘要。
+        """
+        with self._lock:
+            self.cursor.execute(
+                "UPDATE t_book_meta SET global_state_summary = ? WHERE run_id = ?",
+                (global_state_summary, run_id)
+            )
+            self.conn.commit()
+
+    def delete_book_meta(self, run_id: str):
+        """
+        根据 run_id 删除单本书的元数据。
+        """
+        with self._lock:
+            self.cursor.execute(
+                "DELETE FROM t_book_meta WHERE run_id = ?",
+                (run_id,)
+            )
+            self.conn.commit()
+
     def get_book_meta(self, run_id: str) -> Optional[Dict[str, Any]]:
         """
         根据 run_id 获取单本书的元数据。
@@ -120,8 +226,6 @@ class BookMetaDB:
             row = self.cursor.fetchone()
         return dict(row) if row else None
 
-
-
     def get_all_book_meta(self) -> List[Dict[str, Any]]:
         """
         获取所有书的元数据列表, 按最后更新时间降序排列。
@@ -132,8 +236,6 @@ class BookMetaDB:
             )
             rows = self.cursor.fetchall()
         return [dict(row) for row in rows]
-
-
 
     def close(self):
         with self._lock:

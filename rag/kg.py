@@ -5,7 +5,7 @@ from loguru import logger
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.llms.litellm import LiteLLM
 from llama_index.graph_stores.kuzu.kuzu_property_graph import KuzuPropertyGraphStore
-from utils.llm import llm_temperatures, get_llm_params
+from utils.llm import get_llm_params
 from rag.kg_prompts import kg_extraction_prompt
 
 
@@ -15,12 +15,12 @@ init_llama_settings()
 
 
 
-llm_params_for_extraction = get_llm_params(llm_group="summary", temperature=llm_temperatures["classification"])
+llm_params_for_extraction = get_llm_params(llm_group="summary", temperature=0.0)
 llm_for_extraction = LiteLLM(**llm_params_for_extraction)
 
 
 
-reasoning_llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["reasoning"])
+reasoning_llm_params = get_llm_params(llm_group="summary", temperature=0.1)
 llm_for_reasoning = LiteLLM(**reasoning_llm_params)
 
 

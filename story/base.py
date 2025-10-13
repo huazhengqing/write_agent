@@ -1,5 +1,7 @@
 from functools import lru_cache
 from loguru import logger
+from typing import List, Any, Literal, Optional, Type, Union
+from pydantic import BaseModel
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.vector_stores import MetadataFilters
 from llama_index.vector_stores.chroma import ChromaVectorStore
@@ -112,6 +114,7 @@ async def hybrid_query_react(
     run_id: str,
     system_prompt: str,
     user_prompt: str,
+    response_model: Optional[Type[BaseModel]] = None
 ) -> str:
 
     # 1. 设计库工具
@@ -140,7 +143,8 @@ async def hybrid_query_react(
     result = await call_react_agent(
         system_prompt=system_prompt,
         user_prompt=user_prompt,
-        tools=[design_tool, write_summary_tool, search_tool]
+        tools=[design_tool, write_summary_tool, search_tool],
+        response_model=response_model
     )
     if not isinstance(result, str):
         logger.warning(f"Agent 返回了非字符串类型, 将其强制转换为字符串: {type(result)}")

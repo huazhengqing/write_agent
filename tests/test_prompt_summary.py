@@ -7,7 +7,7 @@ import json
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from utils.models import Task
-from utils.llm import get_llm_messages, llm_completion, get_llm_params, llm_temperatures
+from utils.llm import get_llm_messages, llm_completion, get_llm_params
 from utils.loader import load_prompts
 
 
@@ -68,7 +68,7 @@ context = {
 @pytest.mark.asyncio
 async def test_summary_prompt():
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
-    llm_params = get_llm_params(llm_group="summary", temperature=llm_temperatures["summarization"], messages=messages)
+    llm_params = get_llm_params(llm_group="summary", temperature=0.2, messages=messages)
     response = await llm_completion(llm_params)
     summary_content = response.content
     logger.info(f"LLM 生成的结构化摘要:\n{summary_content}")

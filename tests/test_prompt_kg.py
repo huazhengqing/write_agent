@@ -7,8 +7,8 @@ from typing import List, Tuple
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..')))
 
-from utils.llm import get_llm_messages, llm_completion, get_llm_params, llm_temperatures
-from prompts.story.kg import kg_extraction_prompt_design, kg_extraction_prompt_write
+from utils.llm import get_llm_messages, llm_completion, get_llm_params
+from story.prompts.kg import kg_extraction_prompt_design, kg_extraction_prompt_write
 from tests.test_data import VECTOR_TEST_COMPLEX_MARKDOWN
 from tests.test_prompt_summary import LONG_TEXT_TO_SUMMARIZE
 
@@ -24,7 +24,7 @@ async def test_kg_extraction_design_prompt():
     ]
     llm_params = get_llm_params(
         llm_group="reasoning",
-        temperature=llm_temperatures["classification"],
+        temperature=0.0,
         messages=messages
     )
     response = await llm_completion(llm_params)
@@ -62,7 +62,7 @@ async def test_kg_extraction_write_prompt():
     ]
     llm_params = get_llm_params(
         llm_group="reasoning",
-        temperature=llm_temperatures["classification"],
+        temperature=0.0,
         messages=messages
     )
     response = await llm_completion(llm_params)

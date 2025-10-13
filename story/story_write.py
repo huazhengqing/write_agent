@@ -16,7 +16,7 @@ from agents.write import write_plan, write_draft, write_critic, write_refine, wr
 from agents.summary import summary, summary_aggregate
 from agents.hierarchy import hierarchy_proposer, hierarchy_critic, hierarchy_synthesizer
 from agents.refine import refine
-from story.story_rag import get_story_rag
+from story.save import get_story_rag
 from prefect import flow, task
 
 
