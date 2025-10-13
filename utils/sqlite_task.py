@@ -65,6 +65,7 @@ class TaskDB:
         self.db_path = db_path
         import sqlite3
         self.conn = sqlite3.connect(self.db_path, check_same_thread=False)
+        self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
         import threading
         self._lock = threading.Lock()
@@ -256,16 +257,12 @@ class TaskDB:
         """
         if not task_id:
             return None
+        
+        row = None
         with self._lock:
-            import sqlite3
-            original_factory = self.conn.row_factory
-            self.conn.row_factory = sqlite3.Row
-            self.cursor.execute(
-                "SELECT * FROM t_tasks WHERE id = ?",
-                (task_id,)
-            )
+            self.cursor.execute("SELECT * FROM t_tasks WHERE id = ?", (task_id,))
             row = self.cursor.fetchone()
-            self.conn.row_factory = original_factory
+
         if not row:
             return None
         task_data = dict(row)
@@ -285,13 +282,10 @@ class TaskDB:
         """
         获取数据库中的所有任务, 并返回一个字典列表。
         """
+        rows = []
         with self._lock:
-            import sqlite3
-            original_factory = self.conn.row_factory
-            self.conn.row_factory = sqlite3.Row
             self.cursor.execute("SELECT * FROM t_tasks")
             rows = self.cursor.fetchall()
-            self.conn.row_factory = original_factory
 
         if not rows:
             return []
@@ -679,9 +673,6 @@ class TaskDB:
         返回: 单个任务的字典, 如果找不到则返回 None。
         """
         with self._lock:
-            import sqlite3
-            original_factory = self.conn.row_factory
-            self.conn.row_factory = sqlite3.Row
             self.cursor.execute(
                 """
                 SELECT * FROM t_tasks 
@@ -692,7 +683,6 @@ class TaskDB:
                 """
             )
             row = self.cursor.fetchone()
-            self.conn.row_factory = original_factory
         return dict(row) if row else None
 
 
@@ -802,22 +792,15 @@ def dict_to_task(task_data: dict) -> Task | None:
                 else:
                     task_data[field] = {}
 
-    # 2. 准备 Task 模型的构造函数参数
-    task_args = {
-        'id': task_data.get('id'),
-        'parent_id': task_data.get('parent_id'),
-        'task_type': task_data.get('task_type'),
-        'status': task_data.get('status'),
-        'reasoning': task_data.get('reasoning'),
-        'hierarchical_position': task_data.get('hierarchical_position'),
-        'goal': task_data.get('goal'),
-        'length': task_data.get('length'),
-        'instructions': task_data.get('instructions', []),
-        'input_brief': task_data.get('input_brief', []),
-        'constraints': task_data.get('constraints', []),
-        'acceptance_criteria': task_data.get('acceptance_criteria', []),
-        'results': {k: v for k, v in task_data.items() if k not in Task.model_fields and v is not None}
-    }
+    # 2. 准备 Task 模型的构造函数参数，并处理 results 字段
+    task_args = {}
+    results = {}
+    for key, value in task_data.items():
+        if key in Task.model_fields:
+            task_args[key] = value
+        elif value is not None:
+            results[key] = value
+    task_args['results'] = results
     
     # 3. 创建 Task 实例
     return Task(**task_args)

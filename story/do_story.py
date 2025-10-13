@@ -25,18 +25,25 @@ def add_sample_story_task_to_meta_db():
     
 
 
-def sync_meta_to_task_db():
+def sync_meta_to_task_db(run_id_to_sync: str = None):
     """
     检查 BookMetaDB 中的所有书籍元数据，并为每本书在对应的 TaskDB 中创建或更新根任务。
+    如果提供了 run_id_to_sync, 则只同步指定的书籍。
     """
-    logger.info("开始同步 BookMetaDB 到各个 TaskDB...")
     book_meta_db = get_meta_db()
-    all_books_meta = book_meta_db.get_all_book_meta()
+    
+    if run_id_to_sync:
+        logger.info(f"开始为单个项目 {run_id_to_sync} 同步元数据到 TaskDB...")
+        book_meta = book_meta_db.get_book_meta(run_id_to_sync)
+        all_books_meta = [book_meta] if book_meta else []
+    else:
+        logger.info("开始同步所有项目的 BookMetaDB 到各自的 TaskDB...")
+        all_books_meta = book_meta_db.get_all_book_meta()
 
     if not all_books_meta:
         logger.warning("BookMetaDB 中没有找到任何书籍元数据，无需同步。")
         return
-
+    
     for book_meta in all_books_meta:
         run_id = book_meta.get("run_id")
         if not run_id:
