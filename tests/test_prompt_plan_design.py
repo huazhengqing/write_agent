@@ -33,7 +33,7 @@ base_task = Task(
     },
     category="story",
     language="cn",
-    root_name="赛博真仙",
+    name="赛博真仙",
     run_id="test_run_plan_design"
 )
 

@@ -20,7 +20,7 @@ task = Task(
     length="1500",
     category="story",
     language="cn",
-    root_name="赛博真仙",
+    name="赛博真仙",
     run_id="test_run_atom_write",
 )
 

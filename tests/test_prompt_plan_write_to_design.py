@@ -39,7 +39,7 @@ base_task = Task(
     },
     category="story",
     language="cn",
-    root_name="侦探小说",
+    name="侦探小说",
     day_wordcount_goal=3000,
     run_id="test_run_plan_to_design"
 )

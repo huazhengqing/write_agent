@@ -54,7 +54,7 @@ task = Task(
     length=str(len(LONG_TEXT_TO_SUMMARIZE)),
     category="story",
     language="cn",
-    root_name="赛博真仙",
+    name="赛博真仙",
     run_id="test_run_summary",
 )
 

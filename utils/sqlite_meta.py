@@ -16,7 +16,7 @@ Table: t_book_meta
 - category: TEXT - 任务类别 ('story', 'book', 'report')。
 - language: TEXT - 任务语言 ('cn', 'en')。
 - goal: TEXT - 任务的核心目标。
-- root_name: TEXT - 根任务的名字, 书名, 报告名。
+- name: TEXT - 根任务的名字, 书名, 报告名。
 - length: TEXT - 预估总字数。
 - day_wordcount_goal: INTEGER - 每日字数目标。
 - instructions: TEXT - 任务的[具体指令]。
@@ -52,7 +52,7 @@ class BookMetaDB:
                 category TEXT,
                 language TEXT,
                 goal TEXT,
-                root_name TEXT,
+                name TEXT,
                 length TEXT,
                 day_wordcount_goal INTEGER,
                 instructions TEXT,
@@ -81,33 +81,17 @@ class BookMetaDB:
             """)
             self.conn.commit()
 
-    def add_book(self, book_info: Dict[str, Any]):
-        """
-        根据传入的书籍信息，生成run_id，并添加或更新书的元数据。
-        """
+    def add_book(self, book_info: Dict[str, Any]) -> str:
         run_id = book_info.get("run_id")
+        name = book_info.get("name")
         if not run_id:
-            # --- 新增逻辑: run_id 不存在, 则生成一个新的 ---
-            category = book_info.get('category')
-            # UI层传入的是 'name', 在元数据中我们称之为 'root_name'
-            root_name = book_info.get("name")
-            language = book_info.get('language')
-            goal = book_info.get("goal")
-
-            sanitized_category = sanitize_filename(category)
-            sanitized_name = sanitize_filename(root_name)
-            sanitized_language = sanitize_filename(language)
-            stable_unique_id = hashlib.sha256(str(goal).encode('utf-8')).hexdigest()[:16]
-            run_id = f"{sanitized_category}_{sanitized_name}_{sanitized_language}_{stable_unique_id}"
-            logger.info(f"新项目, 生成 run_id: {run_id}")
-
-        # --- 准备要存入数据库的数据 ---
+            run_id = sanitize_filename(name)
         meta_data = {
             "run_id": run_id,
             "category": book_info.get("category"),
             "language": book_info.get("language"),
             "goal": book_info.get("goal"),
-            "root_name": book_info.get("name") or book_info.get("root_name"), # 兼容 'name' 和 'root_name'
+            "name": book_info.get("name"), 
             "length": book_info.get("length"),
             "day_wordcount_goal": book_info.get("day_wordcount_goal", 20000),
             "instructions": book_info.get("instructions", ""),
@@ -115,8 +99,6 @@ class BookMetaDB:
             "constraints": book_info.get("constraints", ""),
             "acceptance_criteria": book_info.get("acceptance_criteria", ""),
         }
-
-        # --- 执行数据库操作 ---
         columns = ", ".join(meta_data.keys())
         placeholders = ", ".join([f":{key}" for key in meta_data.keys()])
         update_clause = ", ".join([f"{key} = excluded.{key}" for key in meta_data if key != 'run_id'])
@@ -131,12 +113,10 @@ class BookMetaDB:
                 meta_data
             )
             self.conn.commit()
+        return run_id
 
 
     def update_title(self, run_id: str, title: str):
-        """
-        更新指定 run_id 的书名。
-        """
         with self._lock:
             self.cursor.execute(
                 "UPDATE t_book_meta SET title = ? WHERE run_id = ?",
@@ -145,9 +125,6 @@ class BookMetaDB:
             self.conn.commit()
 
     def update_synopsis(self, run_id: str, synopsis: str):
-        """
-        更新指定 run_id 的简介。
-        """
         with self._lock:
             self.cursor.execute(
                 "UPDATE t_book_meta SET synopsis = ? WHERE run_id = ?",
@@ -156,9 +133,6 @@ class BookMetaDB:
             self.conn.commit()
 
     def update_style(self, run_id: str, style: str):
-        """
-        更新指定 run_id 的叙事风格。
-        """
         with self._lock:
             self.cursor.execute(
                 "UPDATE t_book_meta SET style = ? WHERE run_id = ?",
@@ -167,9 +141,6 @@ class BookMetaDB:
             self.conn.commit()
 
     def update_book_level_design(self, run_id: str, book_level_design: str):
-        """
-        更新指定 run_id 的全书设计方案。
-        """
         with self._lock:
             self.cursor.execute(
                 "UPDATE t_book_meta SET book_level_design = ? WHERE run_id = ?",
@@ -178,9 +149,6 @@ class BookMetaDB:
             self.conn.commit()
 
     def update_global_state_summary(self, run_id: str, global_state_summary: str):
-        """
-        更新指定 run_id 的全局状态摘要。
-        """
         with self._lock:
             self.cursor.execute(
                 "UPDATE t_book_meta SET global_state_summary = ? WHERE run_id = ?",
@@ -189,9 +157,6 @@ class BookMetaDB:
             self.conn.commit()
 
     def delete_book_meta(self, run_id: str):
-        """
-        根据 run_id 删除单本书的元数据。
-        """
         with self._lock:
             self.cursor.execute(
                 "DELETE FROM t_book_meta WHERE run_id = ?",
@@ -200,9 +165,6 @@ class BookMetaDB:
             self.conn.commit()
 
     def get_book_meta(self, run_id: str) -> Optional[Dict[str, Any]]:
-        """
-        根据 run_id 获取单本书的元数据。
-        """
         with self._lock:
             self.cursor.execute(
                 "SELECT * FROM t_book_meta WHERE run_id = ?",
@@ -212,9 +174,6 @@ class BookMetaDB:
         return dict(row) if row else None
 
     def get_all_book_meta(self) -> List[Dict[str, Any]]:
-        """
-        获取所有书的元数据列表, 按最后更新时间降序排列。
-        """
         with self._lock:
             self.cursor.execute(
                 "SELECT * FROM t_book_meta ORDER BY updated_at DESC"

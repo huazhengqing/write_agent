@@ -18,10 +18,10 @@ Table: t_tasks
 - status: TEXT - 任务状态 ('pending', 'running', 'completed', 'failed', 'cancelled', 'paused')。
 - hierarchical_position: TEXT - 任务的层级和位置。例如: '全书', '第1卷', '第2幕', '第3章'。
 - goal: TEXT - 任务的具体目标。
-- instructions: TEXT - JSON 格式的、任务的具体指令和要求。
-- input_brief: TEXT - JSON 格式的、任务执行时需要参考的关键上下文摘要。
-- constraints: TEXT - JSON 格式的、任务的限制和禁忌。
-- acceptance_criteria: TEXT - JSON 格式的、任务完成的验收标准。
+- instructions: TEXT - 任务的具体指令和要求。
+- input_brief: TEXT - 任务执行时需要参考的关键上下文摘要。
+- constraints: TEXT - 任务的限制和禁忌。
+- acceptance_criteria: TEXT - 格式的、任务完成的验收标准。
 - length: TEXT - 预估产出字数 (用于 'write' 任务)。
 - results: TEXT - JSON格式, 存储未被提取到独立字段的其他结果数据。
 - expert: TEXT - 路由到哪个专家
@@ -53,7 +53,6 @@ Table: t_tasks
 - inquiry_design TEXT - 检索词,
 - inquiry_summary TEXT - 检索词,
 - inquiry_search TEXT - 检索词,
-- x-litellm-cache-key TEXT - llm 缓存 key,
 - created_at: TIMESTAMP - 记录创建时的时间戳。
 - updated_at: TIMESTAMP - 记录最后更新时的时间戳。
 """
@@ -264,7 +263,7 @@ class TaskDB:
 
 
 
-    def get_task_by_id(self, task_id: str) -> dict | None:
+    def get_task_by_id(self, task_id: str) -> Optional[Dict[str, Any]]:
         """
         根据 task_id 获取单个任务的完整信息, 并返回一个字典。
         """

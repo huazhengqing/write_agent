@@ -1,9 +1,11 @@
+import asyncio
 from utils.log import ensure_task_logger
 from loguru import logger
 from utils.models import Task
 from utils.sqlite_meta import get_meta_db
 from utils.sqlite_task import get_task_db
 from story.agent import design, hierarchy, plan, search, summary, write
+from contextlib import asynccontextmanager
 
 
 
@@ -37,6 +39,41 @@ def create_root_task(run_id: str):
             run_id=run_id,
         )
         task_db.add_task(root_task)
+
+
+
+###############################################################################
+
+
+
+RUNNING_RUN_IDS = set()
+
+
+@asynccontextmanager
+async def run_id_lock(run_id: str):
+    """一个异步上下文管理器，用于防止同一 run_id 的任务重入。"""
+    if run_id in RUNNING_RUN_IDS:
+        raise RuntimeError(f"项目 '{run_id}' 已有任务在执行中，无法开始新任务。")
+    
+    RUNNING_RUN_IDS.add(run_id)
+    logger.info(f"项目 '{run_id}' 开始执行任务，已加锁。")
+    try:
+        yield
+    finally:
+        RUNNING_RUN_IDS.remove(run_id)
+        logger.info(f"项目 '{run_id}' 任务执行完毕，已解锁。")
+
+
+async def do_task(task: Task):
+    async with run_id_lock(task.run_id):
+        if task.task_type == "write":
+            await do_write(task)
+        elif task.task_type == "design":
+            await do_design(task)
+        elif task.task_type == "search":
+            await do_search(task)
+        else:
+            raise ValueError(f"不支持的任务类型: {task.task_type}")
 
 
 
@@ -84,9 +121,8 @@ async def do_write(current_task: Task):
         if current_task.status == "completed":
             return
         
-        if current_task.status == "pending":
-            current_task.status = "running"
-            get_task_db(current_task.run_id).update_task_status(current_task.id, "running")
+        current_task.status = "running"
+        get_task_db(current_task.run_id).update_task_status(current_task.id, "running")
 
         await do_plan(current_task)
         task_result = design.aggregate(current_task)
@@ -155,9 +191,8 @@ async def do_design(current_task: Task):
         if current_task.status == "completed":
             return
         
-        if current_task.status == "pending":
-            current_task.status = "running"
-            get_task_db(current_task.run_id).update_task_status(current_task.id, "running")
+        current_task.status = "running"
+        get_task_db(current_task.run_id).update_task_status(current_task.id, "running")
 
         task_result = design.atom(current_task)
         if task_result.results["atom"] == "atom":
@@ -203,9 +238,8 @@ async def do_search(current_task: Task):
         if current_task.status == "completed":
             return
         
-        if current_task.status == "pending":
-            current_task.status = "running"
-            get_task_db(current_task.run_id).update_task_status(current_task.id, "running")
+        current_task.status = "running"
+        get_task_db(current_task.run_id).update_task_status(current_task.id, "running")
 
         task_result = search.atom(current_task)
         if task_result.results["atom"] == "atom":

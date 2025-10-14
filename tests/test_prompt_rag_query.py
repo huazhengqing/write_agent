@@ -31,7 +31,7 @@ async def test_rag_query_design_prompt():
         goal="设计主角'龙傲天'的背景故事、核心动机与成长弧光。",
         category="story",
         language="cn",
-        root_name="赛博真仙",
+        name="赛博真仙",
         run_id="test_run_rag_query_design",
     )
     context = {
@@ -67,7 +67,7 @@ async def test_rag_query_design_for_write_prompt():
         length="1500",
         category="story",
         language="cn",
-        root_name="赛博真仙",
+        name="赛博真仙",
         run_id="test_run_rag_query_design_for_write",
     )
     context = {
@@ -103,7 +103,7 @@ async def test_rag_query_write_prompt():
         length="1500",
         category="story",
         language="cn",
-        root_name="赛博真仙",
+        name="赛博真仙",
         run_id="test_run_rag_query_write",
     )
     context = {
@@ -138,7 +138,7 @@ async def test_rag_query_search_prompt():
         goal="研究中世纪海战的战术与船只类型。",
         category="story",
         language="cn",
-        root_name="航海霸业",
+        name="航海霸业",
         run_id="test_run_rag_query_search",
     )
     context = {

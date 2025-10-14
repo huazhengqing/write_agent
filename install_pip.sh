@@ -9,10 +9,9 @@ if [ ! -d "venv" ]; then
     fi
 fi
 
-echo "激活虚拟环境..."
+
 source venv/bin/activate
 
-echo "升级 pip..."
 pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/
 
 # echo "📦 正在安装/更新 pip-tools..."
@@ -31,14 +30,14 @@ pip install --upgrade pip -i https://mirrors.aliyun.com/pypi/simple/
 #     echo "❌ 错误: 升级依赖失败。"
 #     exit 1
 # fi
-# echo "✅ requirements.txt 已更新为最新版本。"
 
-echo "从 requirements.txt 安装依赖..."
+
+
 pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
 
-echo "安装 Playwright 浏览器及其系统依赖..."
 python -m playwright install-deps
 python -m playwright install chromium
+
 
 # 访问 PyTorch 官网 (https://pytorch.org/) 获取最适合您 CUDA 版本的安装命令
 # pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu126
