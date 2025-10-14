@@ -33,6 +33,10 @@ system_prompt = """
     - **信息完备性检查**: 完成任务是否需要查询**模型知识库中不包含的**外部客观事实？（例如：查询特定领域的最新研究论文、某个不著名地点的真实地图、或实时数据）。常规的背景知识不在此列，因为模型已有储备。若是，则为`complex`，原因为`need_search`。
 2.  **输出结论**: 如果未发现任何复杂性特征，则判定为`atom`。然后，根据裁定结果，严格按照`#输出格式`生成JSON。
 
+# 特殊规则 (Special Rules)
+- **特定原子任务**: 任何**单一**的、旨在“生成书名”、“生成简介”或“设计写作风格”的任务，都应被视为`atom`。
+- **复合任务**: 如果一个任务同时要求“生成书名”和“生成简介”，则它是一个`complex`任务，因为其目标是复合的 (`composite_goal`)。
+
 # `complex` 原因枚举
 - `composite_goal`: 目标复合, 包含多个独立设计点。
 - `exploratory_path`: 路径模糊, 需要探索性思考才能完成。
@@ -57,10 +61,10 @@ user_prompt = """
 {task}
 </current_task>
 
-## 整体规划(任务树)
-- 完整的任务层级结构, 展示当前任务在全局中的位置。
+## 全书已完成的整体任务规划(任务树)
+- 项目进展, 当前任务的层级位置
 <overall_planning>
-{task_list}
+{overall_planning}
 </overall_planning>
 
 ## 全书设计方案
@@ -71,9 +75,9 @@ user_prompt = """
 
 ## 相关设计方案
 - 与当前任务相关的指导性设计方案, 提供直接的、具有约束力的指令。
-<upper_level_design>
-{upper_level_design}
-</upper_level_design>
+<outside_design>
+{outside_design}
+</outside_design>
 
 ## 依赖的设计方案
 - 当前任务执行所依赖的前置任务的产出。
@@ -101,9 +105,9 @@ user_prompt = """
 
 ## 相关的搜索信息
 - 收集的背景知识和研究成果。
-<upper_level_search>
-{upper_level_search}
-</upper_level_search>
+<outside_search>
+{outside_search}
+</outside_search>
 
 ## 依赖的搜索信息
 - 当前任务依赖的事实材料

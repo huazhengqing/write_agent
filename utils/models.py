@@ -37,13 +37,6 @@ class Task(BaseModel):
     sub_tasks: List['Task'] = Field(default_factory=list, description="所有子任务的列表")
     results: Dict[str, Any] = Field(default_factory=dict, description="任务执行后的产出结果, 可以是文本或结构化数据")
     status: TaskStatusType = Field("pending", description="任务状态: 'pending', 'running', 'completed', 'failed', 'cancelled', 'paused'")
-    reasoning: Optional[str] = Field(None, description="关于任务的推理过程。")
-    
-    category: CategoryType = Field(..., description="任务类别 (例如 'story', 'book', 'report')")
-    language: LanguageType = Field(..., description="任务语言 (例如 'cn', 'en')")
-    root_name: str = Field(..., description="根任务的名字, 书名, 报告名")
-    day_wordcount_goal: Optional[int] = Field(0, description="每日字数目标, 0表示无限制")
-
     run_id: str = Field(..., description="整个流程运行的唯一ID, 用于隔离不同任务的记忆")
 
     def to_context(self) -> str:

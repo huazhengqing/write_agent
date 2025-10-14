@@ -16,29 +16,39 @@ async def atom(task: Task) -> Task:
     db_task_data = task_db.get_task_by_id(task.id)
     if db_task_data and db_task_data.get("atom_result") in ["atom", "complex"]:
         return dict_to_task(db_task_data)
+
+    if task.parent_id:
+        parent_task_data = task_db.get_task_by_id(task.parent_id)
+        if parent_task_data and parent_task_data.get("task_type") == "search":
+            updated_task = task.model_copy(deep=True)
+            updated_task.results["atom"] = "atom"
+            updated_task.results["atom_reasoning"] = "父任务是 search 类型，为防止无限分解，此任务被强制设为原子任务。"
+            task_db.add_result(updated_task)
+            return updated_task
     
     book_meta = get_meta_db().get_book_meta(task.run_id) or {}
     book_level_design = book_meta.get("book_level_design", "")
     global_state_summary = book_meta.get("global_state_summary", "")
     
-    task_list = task_db.get_task_list(task)
+    overall_planning = task_db.get_overall_planning(task)
 
     context = {
         "task": task.to_context(),
         "book_level_design": book_level_design,
         "global_state_summary": global_state_summary,
-        "task_list": task_list,
+        "overall_planning": overall_planning,
     }
 
-    system_prompt, user_prompt = load_prompts(f"{task.category}.prompts.search.atom", "system_prompt", "user_prompt")
+    from story.prompts.search.atom import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.0)
-    message = await llm_completion(llm_params, response_model=AtomOutput)
-    data = message.validated_data
-    reasoning = message.get("reasoning_content") or message.get("reasoning", "")
+    llm_message = await llm_completion(llm_params, response_model=AtomOutput)
+
+    data = llm_message.validated_data
+    reasoning = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
     updated_task = task.model_copy(deep=True)
+    updated_task.results["atom"] = data.atom_result
     updated_task.results["atom_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
-    updated_task.results["atom_result"] = data.atom_result
     if data.complex_reasons:
         updated_task.results["complex_reasons"] = data.complex_reasons
 
@@ -70,7 +80,7 @@ async def decomposition(task: Task) -> Task:
     design_dependent = task_db.get_dependent_design(task)
     search_dependent = task_db.get_dependent_search(task)
     latest_text = task_db.get_text_latest()
-    task_list = task_db.get_task_list(task)
+    overall_planning = task_db.get_overall_planning(task)
 
     context = {
         "task": task.to_context(),
@@ -79,18 +89,19 @@ async def decomposition(task: Task) -> Task:
         "design_dependent": design_dependent,
         "search_dependent": search_dependent,
         "latest_text": latest_text,
-        "task_list": task_list,
+        "overall_planning": overall_planning,
     }
 
-    system_prompt, user_prompt = load_prompts(f"{task.category}.prompts.search.decomposition", "system_prompt", "user_prompt")
+    from story.prompts.search.decomposition import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.1)
     llm_message = await llm_completion(llm_params, response_model=PlanOutput)
-    plan_output = llm_message.validated_data
 
+    plan_output = llm_message.validated_data
     updated_task = task.model_copy(deep=True)
     sub_tasks = convert_plan_to_tasks(plan_output.sub_tasks, parent_task=updated_task)
     updated_task.sub_tasks = sub_tasks
+    updated_task.results["decomposition_reasoning"] = plan_output.reasoning
 
     task_db.add_sub_tasks(updated_task)
     return updated_task
@@ -112,7 +123,7 @@ async def search(task: Task) -> Task:
     design_dependent = task_db.get_dependent_design(task)
     search_dependent = task_db.get_dependent_search(task)
     latest_text = task_db.get_text_latest()
-    task_list = task_db.get_task_list(task)
+    overall_planning = task_db.get_overall_planning(task)
     
     context = {
         "task": task.to_context(),
@@ -121,10 +132,10 @@ async def search(task: Task) -> Task:
         "design_dependent": design_dependent,
         "search_dependent": search_dependent,
         "latest_text": latest_text,
-        "task_list": task_list,
+        "overall_planning": overall_planning,
     }
     
-    system_prompt, user_prompt = load_prompts(f"{task.category}.prompts.search.search", "system_prompt", "user_prompt")
+    from story.prompts.search.search import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     final_system_prompt = messages[0]["content"]
     final_user_prompt = messages[1]["content"]
@@ -158,26 +169,25 @@ async def aggregate(task: Task) -> Task:
     book_level_design = book_meta.get("book_level_design", "")
     global_state_summary = book_meta.get("global_state_summary", "")
     
-    task_list = task_db.get_task_list(task)
+    overall_planning = task_db.get_overall_planning(task)
 
     context = {
         "task": task.to_context(),
         "book_level_design": book_level_design,
         "global_state_summary": global_state_summary,
-        "task_list": task_list,
+        "overall_planning": overall_planning,
         "subtask_search": task_db.get_subtask_search(task.id),
     }
 
-    system_prompt, user_prompt = load_prompts(f"{task.category}.prompts.search.aggregate", "system_prompt", "user_prompt")
+    from story.prompts.search.aggregate import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.4)
-    message = await llm_completion(llm_params)
+    llm_message = await llm_completion(llm_params)
     updated_task = task.model_copy(deep=True)
-    updated_task.results["search"] = message.content
-    updated_task.results["search_reasoning"] = message.get("reasoning_content") or message.get("reasoning", "")
+    updated_task.results["search"] = llm_message.content
+    updated_task.results["search_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
     
     task_db.add_result(updated_task)
 
-    save.search(task, message.content)
+    save.search(task, llm_message.content)
     return updated_task
-

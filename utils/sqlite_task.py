@@ -16,7 +16,6 @@ Table: t_tasks
 - parent_id: TEXT - 父任务的ID (已索引, 用于快速查找子任务)。
 - task_type: TEXT - 任务类型 ('write', 'design', 'search')。
 - status: TEXT - 任务状态 ('pending', 'running', 'completed', 'failed', 'cancelled', 'paused')。
-- reasoning: TEXT = 关于任务的推理过程。
 - hierarchical_position: TEXT - 任务的层级和位置。例如: '全书', '第1卷', '第2幕', '第3章'。
 - goal: TEXT - 任务的具体目标。
 - instructions: TEXT - JSON 格式的、任务的具体指令和要求。
@@ -24,10 +23,10 @@ Table: t_tasks
 - constraints: TEXT - JSON 格式的、任务的限制和禁忌。
 - acceptance_criteria: TEXT - JSON 格式的、任务完成的验收标准。
 - length: TEXT - 预估产出字数 (用于 'write' 任务)。
+- results: TEXT - JSON格式, 存储未被提取到独立字段的其他结果数据。
 - expert: TEXT - 路由到哪个专家
-- atom: TEXT - 判断原子任务的完整JSON结果
+- atom: TEXT - 判断原子任务的结果 ('atom' 或 'complex')
 - atom_reasoning: TEXT - 判断原子任务的推理过程
-- atom_result: TEXT - 判断原子任务的结果 ('atom' 或 'complex')
 - plan: TEXT - 任务分解结果
 - plan_reasoning: TEXT - 任务分解的推理过程
 - design: TEXT - 设计方案
@@ -48,12 +47,12 @@ Table: t_tasks
 - translation_reasoning: TEXT - 翻译的推理过程
 - context_design TEXT - 上下文,
 - context_summary TEXT - 上下文,
-- context_task TEXT - 上下文,
 - context_search TEXT - 上下文,
 - kg_design TEXT - 知识图谱提取,
 - kg_write TEXT - 知识图谱提取,
-- rag_design TEXT - 检索词,
-- rag_summary TEXT - 检索词,
+- inquiry_design TEXT - 检索词,
+- inquiry_summary TEXT - 检索词,
+- inquiry_search TEXT - 检索词,
 - x-litellm-cache-key TEXT - llm 缓存 key,
 - created_at: TIMESTAMP - 记录创建时的时间戳。
 - updated_at: TIMESTAMP - 记录最后更新时的时间戳。
@@ -79,18 +78,17 @@ class TaskDB:
                 parent_id TEXT,
                 task_type TEXT,
                 status TEXT,
-                reasoning TEXT,
                 hierarchical_position TEXT,
                 goal TEXT,
                 instructions TEXT,
                 input_brief TEXT,
                 constraints TEXT,
                 acceptance_criteria TEXT,
+                results TEXT,
                 length TEXT,
                 expert TEXT,
                 atom TEXT,
                 atom_reasoning TEXT,
-                atom_result TEXT,
                 plan TEXT,
                 plan_reasoning TEXT,
                 design TEXT,
@@ -111,13 +109,12 @@ class TaskDB:
                 translation_reasoning TEXT,
                 context_design TEXT,
                 context_summary TEXT,
-                context_task TEXT,
                 context_search TEXT,
                 kg_design TEXT,
                 kg_write TEXT,
-                rag_design TEXT,
-                rag_summary TEXT,
-                x_litellm_cache_key TEXT,
+                inquiry_design TEXT,
+                inquiry_summary TEXT,
+                inquiry_search TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -141,21 +138,43 @@ class TaskDB:
             """)
             self.conn.commit()
 
+    def _get_dedicated_result_columns(self) -> List[str]:
+        """获取在t_tasks表中作为独立列存在的结果字段名"""
+        # 这些字段存在于 t_tasks 表中，但其数据源于 Task.results
+        return [
+            "expert", "atom", "atom_reasoning", "plan", "plan_reasoning",
+            "design", "design_reasoning", "search", "search_reasoning",
+            "hierarchy", "hierarchy_reasoning", "write", "write_reasoning",
+            "summary", "summary_reasoning", "book_level_design", "global_state",
+            "write_review", "write_review_reasoning", "translation",
+            "translation_reasoning", "context_design", "context_summary",
+            "context_search", "kg_design", "kg_write",
+            "inquiry_design", "inquiry_summary", "inquiry_search"
+        ]
+
+    def _prepare_remaining_results(self, task_results: Dict[str, Any]) -> str:
+        """从任务结果中分离出需要存入JSON字段的数据"""
+        dedicated_cols = self._get_dedicated_result_columns()
+        remaining_results = {
+            k: v for k, v in task_results.items()
+            if k not in dedicated_cols and v is not None
+        }
+        return json.dumps(remaining_results, ensure_ascii=False, indent=2) if remaining_results else "{}"
+
     def add_task(self, task: Task):
         task_data = {
             "id": task.id,
             "parent_id": task.parent_id,
             "task_type": task.task_type,
             "status": task.status,
-            "reasoning": task.reasoning,
             "hierarchical_position": task.hierarchical_position,
             "goal": task.goal,
             "length": task.length,
-            "instructions": json.dumps(task.instructions, ensure_ascii=False),
-            "input_brief": json.dumps(task.input_brief, ensure_ascii=False),
-            "constraints": json.dumps(task.constraints, ensure_ascii=False),
-            "acceptance_criteria": json.dumps(task.acceptance_criteria, ensure_ascii=False),
-            "x_litellm_cache_key": task.results.get("cache_key"),
+            "instructions": "\n".join(task.instructions),
+            "input_brief": "\n".join(task.input_brief),
+            "constraints": "\n".join(task.constraints),
+            "acceptance_criteria": "\n".join(task.acceptance_criteria),
+            "results": self._prepare_remaining_results(task.results),
         }
         columns = ", ".join(task_data.keys())
         placeholders = ", ".join(["?"] * len(task_data))
@@ -173,8 +192,6 @@ class TaskDB:
             )
             self.conn.commit()
 
-
-
     def add_sub_tasks(self, task: Task):
         import collections
         tasks_to_process = collections.deque(task.sub_tasks or [])
@@ -184,44 +201,40 @@ class TaskDB:
             if current_task.sub_tasks:
                 tasks_to_process.extend(current_task.sub_tasks)
 
-
-
     def add_result(self, task: Task):
+        # 1. 准备要更新到独立列的字段
         update_fields = {
+            "atom": task.results.get("atom"),
             "atom_reasoning": task.results.get("atom_reasoning"),
-            "atom_result": task.results.get("atom_result"),
+            "plan": task.results.get("plan"),
             "plan_reasoning": task.results.get("plan_reasoning"),
             "design": task.results.get("design"),
             "design_reasoning": task.results.get("design_reasoning"),
             "search": task.results.get("search"),
             "search_reasoning": task.results.get("search_reasoning"),
+            "hierarchy": task.results.get("hierarchy"),
             "hierarchy_reasoning": task.results.get("hierarchy_reasoning"),
             "write": task.results.get("write"),
             "write_reasoning": task.results.get("write_reasoning"),
-            "translation": task.results.get("translation"),
-            "translation_reasoning": task.results.get("translation_reasoning"),
             "summary": task.results.get("summary"),
             "summary_reasoning": task.results.get("summary_reasoning"),
+            "translation": task.results.get("translation"),
+            "translation_reasoning": task.results.get("translation_reasoning"),
             "book_level_design": task.results.get("book_level_design"),
             "global_state": task.results.get("global_state"),
             "write_review": task.results.get("write_review"),
             "write_review_reasoning": task.results.get("write_review_reasoning"),
-            "x-litellm-cache-key": task.results.get("cache_key"), 
         }
-        # 统一处理可能需要序列化的字段 (plan, hierarchy, atom)
-        for field_name in ["plan", "hierarchy", "atom"]:
-            data = task.results.get(field_name)
-            if isinstance(data, dict):
-                update_fields[field_name] = json.dumps(data, ensure_ascii=False)
-            else:
-                update_fields[field_name] = data
+        # 过滤掉None值
+        fields_to_update = {k: v for k, v in update_fields.items() if v is not None}
 
-        # 过滤掉None值和空字符串
-        fields_to_update = {k: v for k, v in update_fields.items() if v}
+        # 2. 准备要更新到 'results' JSON列的剩余数据
+        fields_to_update["results"] = self._prepare_remaining_results(task.results)
+
         if not fields_to_update:
             return
 
-        set_clause = ", ".join([f"{key} = ?" for key in fields_to_update.keys()])
+        set_clause = ", ".join([f"{key} = ?" for key in fields_to_update])
         values = list(fields_to_update.values())
         values.append(task.id)
         with self._lock:
@@ -270,10 +283,18 @@ class TaskDB:
         for field in ['instructions', 'input_brief', 'constraints', 'acceptance_criteria']:
             if task_data.get(field):
                 try:
-                    task_data[field] = json.loads(task_data[field])
-                except (json.JSONDecodeError, TypeError):
+                    task_data[field] = [line.strip() for line in task_data[field].split('\n') if line.strip()]
+                except Exception:
                     logger.warning(f"无法解析任务 {task_id} 的字段 {field}: {task_data[field]}")
-                    task_data[field] = []
+                    task_data[field] = [] # 出错时返回空列表
+        
+        # 将存储在 'results' 字段的JSON字符串解码并合并
+        if task_data.get('results'):
+            try:
+                remaining_results = json.loads(task_data['results'])
+                task_data.update(remaining_results)
+            except (json.JSONDecodeError, TypeError):
+                logger.warning(f"无法解析任务 {task_id} 的 'results' JSON 字段: {task_data['results']}")
         return task_data
 
 
@@ -296,24 +317,41 @@ class TaskDB:
             for field in ['instructions', 'input_brief', 'constraints', 'acceptance_criteria']:
                 if task_data.get(field) and isinstance(task_data[field], str):
                     try:
-                        task_data[field] = json.loads(task_data[field])
-                    except (json.JSONDecodeError, TypeError):
-                        task_data[field] = []
+                        task_data[field] = [line.strip() for line in task_data[field].split('\n') if line.strip()]
+                    except Exception:
+                        task_data[field] = [] # 出错时返回空列表
+            
+            # 将存储在 'results' 字段的JSON字符串解码并合并
+            if task_data.get('results'):
+                try:
+                    remaining_results = json.loads(task_data['results'])
+                    task_data.update(remaining_results)
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning(f"无法解析任务 {task_data['id']} 的 'results' JSON 字段: {task_data['results']}")
         return tasks_data
 
 
 
-    def get_subtask_ids(self, parent_id: str) -> list[str]:
+    def get_subtask_ids(self, parent_id: str, task_type: Optional[str] = None) -> list[str]:
         """
         获取指定父任务的所有直接子任务的ID列表, 并按自然顺序排序。
         例如, 对于 parent_id '1.3', 返回 ['1.3.1', '1.3.2', '1.3.3', ...]。
+        如果提供了 task_type, 则只返回该类型的子任务ID。
         """
         if not parent_id:
             return []
+        
+        query = "SELECT id FROM t_tasks WHERE parent_id = ?"
+        params = [parent_id]
+
+        if task_type:
+            query += " AND task_type = ?"
+            params.append(task_type)
+
         with self._lock:
             self.cursor.execute(
-                "SELECT id FROM t_tasks WHERE parent_id = ?",
-                (parent_id,)
+                query,
+                tuple(params)
             )
             rows = self.cursor.fetchall()
         if not rows:
@@ -323,7 +361,7 @@ class TaskDB:
 
 
 
-    def get_task_list(self, task: Task) -> str:
+    def get_overall_planning(self, task: Task) -> str:
         """
         高效获取任务上下文列表 (父任务链 + 每个父任务的所有兄弟任务 + 当前任务的兄弟任务), 仅查询必要的字段。
         """
@@ -471,7 +509,9 @@ class TaskDB:
             current_seq = int(id_parts[-1])
         except ValueError:
             return ""
-        dependent_ids = [f"{task.parent_id}.{i}" for i in range(1, current_seq)]
+        # 生成需要查询的兄弟任务及当前任务自身的ID列表
+        # 例如, 当前是 1.5, 则查询 1.1, 1.2, 1.3, 1.4, 1.5
+        dependent_ids = [f"{task.parent_id}.{i}" for i in range(1, current_seq + 1)]
         if not dependent_ids:
             return ""
         
@@ -616,15 +656,6 @@ class TaskDB:
         return result
 
 
-    def get_text_length(self, task: Task) -> int:
-        from utils.file import get_text_file_path
-        file_path = get_text_file_path(task)
-        from utils.file import text_file_read
-        full_content = text_file_read(file_path)
-        length = len(full_content)
-        return length
-
-
     def get_word_count_last_24h(self) -> int:
         """
         获取最近24小时内 'write' 字段的总字数。
@@ -643,6 +674,23 @@ class TaskDB:
                 return 0
             total_words = sum(len(row[0]) for row in rows)
             return total_words
+
+    def get_total_write_word_count(self) -> int:
+        """
+        获取所有 'write' 字段的总字数。
+        """
+        with self._lock:
+            self.cursor.execute(
+                """
+                SELECT SUM(LENGTH(write)) 
+                FROM t_tasks 
+                WHERE write IS NOT NULL AND write != ''
+                """
+            )
+            row = self.cursor.fetchone()
+            if not row or row[0] is None:
+                return 0
+            return int(row[0])
 
 
 
@@ -737,6 +785,50 @@ class TaskDB:
             )
             self.conn.commit()
 
+    def update_task_inquiry(self, task_id: str, inquiry_type: str, inquiry_content: str):
+        """
+        更新指定任务的 inquiry 字段。
+        """
+        if not task_id or not inquiry_type or inquiry_content is None:
+            return
+        
+        field_name = f"inquiry_{inquiry_type}"
+        # 简单的白名单校验，防止SQL注入
+        if field_name not in ["inquiry_design", "inquiry_summary", "inquiry_search"]:
+            logger.error(f"无效的 inquiry_type: {inquiry_type}")
+            return
+
+        with self._lock:
+            self.cursor.execute(
+                f"UPDATE t_tasks SET {field_name} = ? WHERE id = ?",
+                (inquiry_content, task_id)
+            )
+            self.conn.commit()
+
+
+
+    def update_task_context(self, task_id: str, context_type: str, context_content: str):
+        """
+        更新指定任务的 context 字段。
+        """
+        if not task_id or not context_type or context_content is None:
+            return
+
+        field_name = f"context_{context_type}"
+        # 简单的白名单校验，防止SQL注入
+        if field_name not in ["context_design", "context_summary", "context_search"]:
+            logger.error(f"无效的 context_type: {context_type}")
+            return
+
+        with self._lock:
+            self.cursor.execute(
+                f"UPDATE t_tasks SET {field_name} = ? WHERE id = ?",
+                (context_content, task_id)
+            )
+            self.conn.commit()
+
+
+
     def delete_task_and_subtasks(self, task_id: str):
         """
         删除指定任务及其所有子任务（级联删除）。
@@ -783,14 +875,22 @@ def dict_to_task(task_data: dict) -> Task | None:
     for field in ['instructions', 'input_brief', 'constraints', 'acceptance_criteria']:
         if task_data.get(field) and isinstance(task_data[field], str):
             try:
-                task_data[field] = json.loads(task_data[field])
-            except (json.JSONDecodeError, TypeError):
+                # 将换行符分隔的字符串转换为列表
+                task_data[field] = [line.strip() for line in task_data[field].split('\n') if line.strip()]
+            except Exception:
                 logger.warning(f"无法解析任务 {task_data.get('id')} 的字段 {field}: {task_data[field]}")
                 # 根据字段类型设置默认值
                 if field in ['instructions', 'input_brief', 'constraints', 'acceptance_criteria']:
                     task_data[field] = []
-                else:
-                    task_data[field] = {}
+
+    # 将存储在 'results' 字段的JSON字符串解码并合并到主字典中
+    if task_data.get('results') and isinstance(task_data['results'], str):
+        try:
+            remaining_results = json.loads(task_data['results'])
+            # 合并时，数据库中的独立列数据优先级更高
+            task_data = {**remaining_results, **task_data}
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(f"无法解析任务 {task_data.get('id')} 的 'results' JSON 字段: {task_data['results']}")
 
     # 2. 准备 Task 模型的构造函数参数，并处理 results 字段
     task_args = {}

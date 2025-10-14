@@ -1,9 +1,13 @@
+import nest_asyncio
+nest_asyncio.apply()
+
 import streamlit as st
 import os
 import sys
 
-# --- 项目根目录设置 ---
-# 确保在 Home.py 中也进行路径设置，因为Streamlit可能从任何页面启动
+from utils.log import init_logger_by_runid
+init_logger_by_runid("write_agent")
+
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)

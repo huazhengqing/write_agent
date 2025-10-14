@@ -36,7 +36,7 @@ def design(task: Task, content: str) -> None:
         metadata=doc_metadata,
         doc_id=task.id,
         content_format="md",
-        kg_extraction_prompt=load_prompts(f"{task.category}.prompts.kg.design", "kg_extraction_prompt")[0]
+        kg_extraction_prompt=load_prompts(f"story.prompts.kg.design", "kg_extraction_prompt")[0]
     )
 
 
@@ -73,7 +73,7 @@ def write(task: Task, content: str) -> None:
         metadata=doc_metadata,
         doc_id=task.id,
         content_format="txt",
-        kg_extraction_prompt=load_prompts(f"{task.category}.prompts.kg.write", "kg_extraction_prompt")[0]
+        kg_extraction_prompt=load_prompts(f"story.prompts.kg.write", "kg_extraction_prompt")[0]
     )
 
 

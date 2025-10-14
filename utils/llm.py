@@ -143,7 +143,6 @@ self_correction_prompt = """
 
 def clear_llm_cache(cache_key: Optional[str]):
     if not cache_key:
-        logger.debug("没有可用的 cache_key, 跳过缓存删除。")
         return
 
     proxy_base_url = os.getenv("LITELLM_PROXY_URL")
@@ -235,8 +234,8 @@ async def llm_completion(
         
         logger.info(f"开始 LLM 调用 (尝试 {attempt + 1}/{max_retries})...")
 
-        raw_output_for_correction = None
         cache_key_from_response = None
+        raw_output_for_correction = None
         try:
             response = await litellm.acompletion(**llm_params_for_api)
             # logger.debug(f"LLM 原始响应: {response}")
@@ -245,7 +244,6 @@ async def llm_completion(
 
             message = response.choices[0].message
             cache_key_from_response = response.get("x-litellm-cache-key")
-            message.cache_key = cache_key_from_response # 将 cache_key 直接附加到 message 对象上
 
             if response_model:
                 validated_data = None

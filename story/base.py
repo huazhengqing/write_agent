@@ -115,14 +115,14 @@ async def hybrid_query_react(
     system_prompt: str,
     user_prompt: str,
     response_model: Optional[Type[BaseModel]] = None
-) -> str:
+) -> Optional[Union[BaseModel, str]]:
 
     # 1. 设计库工具
     from llama_index.core.tools import AsyncFunctionTool
     design_tool = AsyncFunctionTool.from_defaults(
         fn=lambda q: hybrid_query_design(run_id, [q]),
         name="design_library_search",
-        description="用于查询故事的核心设定, 如角色背景、世界观、物品道具、关键概念定义等。当你需要了解 '是什么' 或 '设定是怎样' 时使用。"
+        description="用于查询故事的核心设定，如角色背景、世界观、物品道具、关键概念定义等。当你需要了解 '是什么' 或 '设定是怎样' 时使用。"
     )
 
     # 2. 正文与摘要库工具
@@ -146,9 +146,6 @@ async def hybrid_query_react(
         tools=[design_tool, write_summary_tool, search_tool],
         response_model=response_model
     )
-    if not isinstance(result, str):
-        logger.warning(f"Agent 返回了非字符串类型, 将其强制转换为字符串: {type(result)}")
-        result = str(result)
 
     logger.success(f"基于 ReAct 的混合查询完成。")
-    return result.strip()
+    return result

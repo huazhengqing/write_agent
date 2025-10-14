@@ -12,7 +12,7 @@ comment = """
 
 
 
-class ExpertOutput(BaseModel):
+class RouteExpertOutput(BaseModel):
     reasoning: Optional[str] = Field(None, description="推理过程。")
     expert: Literal['strategist', 'headwriter', 'system', 'character', 'style', 'title', 'synopsis', 'generalist'] = Field(description="最终决策指派的专家名称。")
 

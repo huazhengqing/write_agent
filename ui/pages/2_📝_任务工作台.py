@@ -41,6 +41,15 @@ def render_task_tree(tasks: List[Task], run_id: str, book_name: str):
     for task in root_tasks:
         _render_tree_node(task, children_by_parent_id, run_id, level=0)
 
+def toggle_expand(node_id):
+    """切换节点的展开/折叠状态"""
+    st.session_state.expanded_nodes.symmetric_difference_update([node_id])
+
+def select_task(composite_id):
+    """选中任务的回调函数"""
+    st.session_state.selected_composite_id = composite_id
+
+
 def render_task_workspace_page():
     """渲染任务工作台页面"""
     st.header("📝 任务工作台")
@@ -49,6 +58,14 @@ def render_task_workspace_page():
     if not all_books:
         st.info("没有可用的项目。请先在'项目管理'页面创建项目。")
         return
+
+    # 初始化 session_state 来存储展开的节点
+    if "expanded_nodes" not in st.session_state:
+        st.session_state.expanded_nodes = set()
+    # 初始化 session_state 来存储选中的任务
+    if "selected_composite_id" not in st.session_state:
+        st.session_state.selected_composite_id = None
+
 
     # --- 布局定义 ---
     # 调整列宽比例，为右侧详情区域分配更多空间
@@ -80,28 +97,46 @@ def render_task_workspace_page():
         # 注入自定义CSS以实现紧凑和左对齐的布局
         # 通过设置 gap: 0 !important; 来移除垂直元素间的默认间距，使行高更紧凑
         st.markdown("""
-            <style>
-                /* 定位到包含按钮的垂直块，并移除其内部元素的间距 */
-                div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
-                    gap: 0 !important;
-                }
-                /* 针对任务树按钮的样式 */
-                div[data-testid="stVerticalBlock"] div[data-testid="stButton"] > button {
-                    justify-content: flex-start; /* 文字左对齐 */
-                    padding: 0.2rem 0.5rem;      /* 调整内边距 */
-                    margin: 0;                   /* 移除外边距 */
-                    font-size: 0.9rem;           /* 略微减小字体大小 */
-                    border: none;                /* 移除边框，看起来更像列表项 */
-                    background-color: transparent; /* 透明背景 */
-                    width: 100%;                 /* 确保按钮填满容器宽度 */
-                }
-                /* 优化 expander 的样式 */
-                div[data-testid="stExpander"] > details {
-                    border: none !important;
-                    box-shadow: none !important;
-                    padding: 0 !important;
-                }
-            </style>
+        <style>
+            .st-emotion-cache-1r4qj8v { /* 主容器 */
+                gap: 0rem !important;
+            }
+            /* 任务项容器 */
+            .task-item-container {
+                display: flex;
+                align-items: center;
+                padding: 0.15rem 0.2rem;
+                border-radius: 0.25rem;
+                transition: background-color 0.2s;
+            }
+            .task-item-container:hover {
+                background-color: #f0f2f6;
+            }
+            .task-item-container.selected {
+                background-color: #e0e7ff;
+            }
+            .task-item-container button {
+                justify-content: flex-start;
+                padding: 0.1rem 0.3rem;
+                margin: 0;
+                font-size: 0.9rem;
+                border: none;
+                background-color: transparent;
+                width: 100%;
+                text-align: left;
+                line-height: 1.4;
+            }
+            .expand-icon {
+                cursor: pointer;
+                font-size: 0.8rem;
+                width: 1.2rem;
+                text-align: center;
+                color: #555;
+            }
+            .expand-icon.placeholder {
+                color: transparent; /* Make placeholder invisible but take space */
+            }
+        </style>
         """, unsafe_allow_html=True)
 
         st.subheader("任务树状图")
@@ -145,27 +180,39 @@ def _render_tree_node(task: Task, children_map: Dict[str, List[Task]], run_id: s
     
     # 使用任务状态来决定图标
     status_icon_map = {"completed": "✅", "running": "⏳", "failed": "❌", "pending": "📄", "cancelled": "⏹️", "paused": "⏸️"}
-    icon = status_icon_map.get(task.status, "📝") 
-    label = f"{icon} {task.id} {task.hierarchical_position} - {task.goal or '未命名任务'}"
+    icon = status_icon_map.get(task.status, "📝")
+    # 根据你的要求，加入字数信息
+    length_str = f"({task.length}字)" if task.length else ""
+    label_text = f"{icon} {task.id} [{task.task_type}] {length_str} - {task.goal or '未命名任务'}"
     
     has_children = task.id in children_map and children_map[task.id]
+    is_expanded = task.id in st.session_state.expanded_nodes
+    is_selected = st.session_state.selected_composite_id == composite_id
 
-    if has_children:
-        # 对于有子节点的任务，使用 expander
-        with st.expander(label):
-            # 在 expander 内部，提供一个按钮来选中父任务本身
-            if st.button(f"查看/编辑 '{task.hierarchical_position}' 详情", key=f"select_{composite_id}", use_container_width=True):
-                st.session_state.selected_composite_id = composite_id
-                st.rerun() # 立即刷新右侧详情
-            
-            # 递归渲染子节点
-            for child in children_map.get(task.id, []):
-                _render_tree_node(child, children_map, run_id, level + 1)
-    else:
-        # 对于没有子节点的叶子任务，直接使用按钮
-        if st.button(label, key=composite_id, use_container_width=True):
-            st.session_state.selected_composite_id = composite_id
-            st.rerun() # 立即刷新右侧详情
+    # 使用列来布局：缩进、展开图标、任务按钮
+    cols = st.columns([level * 0.05 + 0.01, 0.1, 2]) # 动态缩进, 图标, 按钮
+    cols[0].write("") # 仅用于占位实现缩进
+
+    with cols[1]:
+        if has_children:
+            expand_icon = "▼" if is_expanded else "▶"
+            if st.button(expand_icon, key=f"expand_{composite_id}", use_container_width=True):
+                toggle_expand(task.id)
+                st.rerun()
+        else:
+            st.write('<div class="expand-icon placeholder"></div>', unsafe_allow_html=True)
+
+    with cols[2]:
+        container_class = "task-item-container selected" if is_selected else "task-item-container"
+        st.markdown(f'<div class="{container_class}">', unsafe_allow_html=True)
+        if st.button(label_text, key=f"btn_{composite_id}", use_container_width=True):
+            select_task(composite_id)
+            st.rerun()
+        st.markdown('</div>', unsafe_allow_html=True)
+
+    if has_children and is_expanded:
+        for child in children_map.get(task.id, []):
+            _render_tree_node(child, children_map, run_id, level + 1)
 
 st.set_page_config(layout="wide", page_title="任务工作台")
 render_task_workspace_page()

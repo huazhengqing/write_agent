@@ -4,6 +4,7 @@ from story.agent import inquiry
 from utils.models import Task, get_sibling_ids_up_to_current
 from rag.vector_query import get_vector_query_engine, index_query_batch
 from story.base import get_story_vector_store
+from utils.sqlite_task import get_task_db
 
 
 
@@ -14,8 +15,17 @@ async def get_outside_search(
     design_dependent: str, 
     search_dependent: str, 
     latest_text: str, 
-    task_list: str
+    overall_planning: str
 ) -> str:
+    task_db = get_task_db(task.run_id)
+    task_data = task_db.get_task_by_id(task.id)
+    if task_data and (existing_context := task_data.get("context_search")):
+        return existing_context
+
+    current_level = len(task.id.split("."))
+    if current_level <= 2:
+        return ""
+    
     inquiry_result = await inquiry(
         'search', 
         task,
@@ -24,7 +34,7 @@ async def get_outside_search(
         design_dependent,
         search_dependent,
         latest_text,
-        task_list,
+        overall_planning,
     )
     all_questions = (
         inquiry_result.causality_probing +
@@ -50,6 +60,9 @@ async def get_outside_search(
 
     results = await index_query_batch(query_engine, all_questions)
     result = "\n\n---\n\n".join(results)
+
+    if result:
+        task_db.update_task_context(task.id, "search", result)
     return result
 
 
@@ -60,8 +73,17 @@ async def get_outside_design(
     design_dependent: str, 
     search_dependent: str, 
     latest_text: str, 
-    task_list: str
+    overall_planning: str
 ) -> str:
+    task_db = get_task_db(task.run_id)
+    task_data = task_db.get_task_by_id(task.id)
+    if task_data and (existing_context := task_data.get("context_design")):
+        return existing_context
+
+    current_level = len(task.id.split("."))
+    if current_level <= 2:
+        return ""
+    
     inquiry_result = await inquiry(
         'design', 
         task,
@@ -70,7 +92,7 @@ async def get_outside_design(
         design_dependent,
         search_dependent,
         latest_text,
-        task_list,
+        overall_planning,
     )
     all_questions = (
         inquiry_result.causality_probing +
@@ -89,6 +111,9 @@ async def get_outside_design(
 
     from story.base import hybrid_query_design
     result = await hybrid_query_design(task.run_id, all_questions, vector_filters)
+
+    if result:
+        task_db.update_task_context(task.id, "design", result)
     return result
 
 
@@ -99,8 +124,21 @@ async def get_summary(
     design_dependent: str, 
     search_dependent: str, 
     latest_text: str, 
-    task_list: str
+    overall_planning: str
 ) -> str:
+    task_db = get_task_db(task.run_id)
+    task_data = task_db.get_task_by_id(task.id)
+    if task_data and (existing_context := task_data.get("context_summary")):
+        return existing_context
+
+    current_level = len(task.id.split("."))
+    if current_level <= 2:
+        return ""
+
+    total_word_count = task_db.get_total_write_word_count()
+    if total_word_count < 200:
+        return ""
+    
     inquiry_result = await inquiry(
         'summary', 
         task,
@@ -109,7 +147,7 @@ async def get_summary(
         design_dependent,
         search_dependent,
         latest_text,
-        task_list,
+        overall_planning,
     )
     all_questions = (
         inquiry_result.causality_probing +
@@ -128,4 +166,7 @@ async def get_summary(
 
     from story.base import hybrid_query_write
     result = await hybrid_query_write(task.run_id, all_questions, vector_filters)
+
+    if result:
+        task_db.update_task_context(task.id, "summary", result)
     return result

@@ -39,22 +39,22 @@ base_task = Task(
 
 
 design_phase_context = {
-    "task": base_task.model_dump_json(indent=2),
+    "task": base_task.to_context_dict(),
     "complex_reasons": base_task.results["complex_reasons"],
     "atom_reasoning": base_task.results["atom_reasoning"],
     "design_dependent": "", 
     "search_dependent": "",
     "latest_text": "",
     "text_summary": "",
-    "task_list": """1. 全书 write 写一部关于赛博修仙的小说
+    "overall_planning": """1. 全书 write 写一部关于赛博修仙的小说
   1.1. design 核心概念与世界观设计
   1.2. design 设计主角'龙傲天'""",
-    "upper_level_design": """
+    "outside_design": """
 # 核心概念与世界观设计
 - 核心概念: 在一个高度发达的赛博朋克世界中, 人类通过植入'灵根芯片'来修炼古老的真气, 实现了科技与修仙的结合。
 - 世界观钩子: 修炼的尽头不是飞升, 而是将意识上传到宇宙尺度的量子网络'道'。
 """,
-    "upper_level_search": ""
+    "outside_search": ""
 }
 
 

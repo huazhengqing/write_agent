@@ -36,7 +36,7 @@ async def test_rag_query_design_prompt():
     )
     context = {
         "task": task.model_dump_json(indent=2),
-        "task_list": "1. 全书 write -> 1.1 design 世界观 -> 1.2 design 主角",
+        "overall_planning": "1. 全书 write -> 1.1 design 世界观 -> 1.2 design 主角",
         "design_dependent": "",
         "search_dependent": "",
         "latest_text": "",
@@ -72,7 +72,7 @@ async def test_rag_query_design_for_write_prompt():
     )
     context = {
         "task": task.model_dump_json(indent=2),
-        "task_list": "1. 全书 write -> 1.1 第一卷 write -> 1.1.1 第一章 write",
+        "overall_planning": "1. 全书 write -> 1.1 第一卷 write -> 1.1.1 第一章 write",
         "design_dependent": "# 章节设计: 黑松林之变后续\n- 核心事件: 龙傲天检查敌人留下的令牌, 发现了一个神秘符号, 决心查明真相。",
         "search_dependent": "",
         "latest_text": "黑衣人头领见状, 眼中闪过一丝惊异, 随即果断下令: "撤！"",
@@ -108,7 +108,7 @@ async def test_rag_query_write_prompt():
     )
     context = {
         "task": task.model_dump_json(indent=2),
-        "task_list": "1. 全书 write -> 1.1 第一卷 write -> 1.1.1 第一章 write",
+        "overall_planning": "1. 全书 write -> 1.1 第一卷 write -> 1.1.1 第一章 write",
         "design_dependent": "# 章节设计: 黑松林之变后续\n- 核心事件: 龙傲天检查敌人留下的令牌, 发现了一个神秘符号, 决心查明真相。",
         "search_dependent": "",
         "latest_text": "黑衣人头领见状, 眼中闪过一丝惊异, 随即果断下令: "撤！"",
@@ -143,7 +143,7 @@ async def test_rag_query_search_prompt():
     )
     context = {
         "task": task.model_dump_json(indent=2),
-        "task_list": "1. 全书 write -> 1.3 search 研究海战",
+        "overall_planning": "1. 全书 write -> 1.3 search 研究海战",
         "design_dependent": "# 故事背景\n- 时代设定在15世纪的大航海时代前期。",
         "search_dependent": "",
         "latest_text": "",

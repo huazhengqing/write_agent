@@ -62,10 +62,10 @@ user_prompt = """
 {subtask_design}
 </subtask_design>
 
-## 整体规划(任务树)
-- 完整的任务层级结构, 展示当前任务在全局中的位置。
+## 全书已完成的整体任务规划(任务树)
+- 项目进展, 当前任务的层级位置
 <overall_planning>
-{task_list}
+{overall_planning}
 </overall_planning>
 
 ## 全书设计方案
@@ -76,9 +76,9 @@ user_prompt = """
 
 ## 相关设计方案
 - 与当前任务相关的指导性设计方案, 提供直接的、具有约束力的指令。
-<upper_level_design>
-{upper_level_design}
-</upper_level_design>
+<outside_design>
+{outside_design}
+</outside_design>
 
 ## 依赖的设计方案
 - 当前任务执行所依赖的前置任务的产出。
@@ -106,9 +106,9 @@ user_prompt = """
 
 ## 相关的搜索信息
 - 收集的背景知识和研究成果。
-<upper_level_search>
-{upper_level_search}
-</upper_level_search>
+<outside_search>
+{outside_search}
+</outside_search>
 
 ## 依赖的搜索信息
 - 当前任务依赖的事实材料

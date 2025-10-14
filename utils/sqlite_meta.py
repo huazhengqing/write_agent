@@ -1,4 +1,5 @@
 import hashlib
+import re
 from loguru import logger
 from typing import List, Optional, Dict, Any
 from functools import lru_cache
@@ -80,23 +81,43 @@ class BookMetaDB:
             """)
             self.conn.commit()
 
-    def add_book_meta(self, task: Task):
+    def add_book(self, book_info: Dict[str, Any]):
         """
-        根据根任务信息, 添加或更新书的元数据。
+        根据传入的书籍信息，生成run_id，并添加或更新书的元数据。
         """
+        run_id = book_info.get("run_id")
+        if not run_id:
+            # --- 新增逻辑: run_id 不存在, 则生成一个新的 ---
+            category = book_info.get('category')
+            # UI层传入的是 'name', 在元数据中我们称之为 'root_name'
+            root_name = book_info.get("name")
+            language = book_info.get('language')
+            goal = book_info.get("goal")
+
+            sanitized_category = sanitize_filename(category)
+            sanitized_name = sanitize_filename(root_name)
+            sanitized_language = sanitize_filename(language)
+            stable_unique_id = hashlib.sha256(str(goal).encode('utf-8')).hexdigest()[:16]
+            run_id = f"{sanitized_category}_{sanitized_name}_{sanitized_language}_{stable_unique_id}"
+            logger.info(f"新项目, 生成 run_id: {run_id}")
+
+        # --- 准备要存入数据库的数据 ---
         meta_data = {
-            "run_id": task.run_id,
-            "category": task.category,
-            "language": task.language,
-            "goal": task.goal,
-            "root_name": task.root_name,
-            "length": task.length,
-            "day_wordcount_goal": task.day_wordcount_goal,
-            "instructions": "\n".join(task.instructions),
-            "input_brief": "\n".join(task.input_brief),
-            "constraints": "\n".join(task.constraints),
-            "acceptance_criteria": "\n".join(task.acceptance_criteria),
+            "run_id": run_id,
+            "category": book_info.get("category"),
+            "language": book_info.get("language"),
+            "goal": book_info.get("goal"),
+            "root_name": book_info.get("name") or book_info.get("root_name"), # 兼容 'name' 和 'root_name'
+            "length": book_info.get("length"),
+            "day_wordcount_goal": book_info.get("day_wordcount_goal", 20000),
+            # 将文本分割为列表后，再用换行符连接，以确保存储格式统一
+            "instructions": "\n".join([line.strip() for line in re.split(r'[。\n]', book_info.get("instructions", "")) if line.strip()]),
+            "input_brief": "\n".join([line.strip() for line in re.split(r'[。\n]', book_info.get("input_brief", "")) if line.strip()]),
+            "constraints": "\n".join([line.strip() for line in re.split(r'[。\n]', book_info.get("constraints", "")) if line.strip()]),
+            "acceptance_criteria": "\n".join([line.strip() for line in re.split(r'[。\n]', book_info.get("acceptance_criteria", "")) if line.strip()]),
         }
+
+        # --- 执行数据库操作 ---
         columns = ", ".join(meta_data.keys())
         placeholders = ", ".join([f":{key}" for key in meta_data.keys()])
         update_clause = ", ".join([f"{key} = excluded.{key}" for key in meta_data if key != 'run_id'])
@@ -111,41 +132,6 @@ class BookMetaDB:
                 meta_data
             )
             self.conn.commit()
-
-
-
-    def add_book(self, task_info):
-        category = task_info.get('category')
-        root_name = task_info.get("name")
-        language = task_info.get('language')
-        goal = task_info.get("goal")
-
-        sanitized_category = sanitize_filename(category)
-        sanitized_name = sanitize_filename(root_name)
-        sanitized_language = sanitize_filename(language)
-        stable_unique_id = hashlib.sha256(goal.encode('utf-8')).hexdigest()[:16]
-        run_id = f"{sanitized_category}_{sanitized_name}_{sanitized_language}_{stable_unique_id}"
-
-        task_params = {
-            "id": "1",
-            "parent_id": "",
-            "task_type": "write",
-            "hierarchical_position": "全书",
-            "goal": goal,
-            "instructions": [line.strip() for line in task_info.get("instructions", "").split('。') if line.strip()],
-            "input_brief": [line.strip() for line in task_info.get("input_brief", "").split('。') if line.strip()],
-            "constraints": [line.strip() for line in task_info.get("constraints", "").split('。') if line.strip()],
-            "acceptance_criteria": [line.strip() for line in task_info.get("acceptance_criteria", "").split('。') if line.strip()],
-            "length": task_info.get("length"),
-            "category": category,
-            "language": language,
-            "root_name": root_name,
-            "run_id": run_id,
-            "day_wordcount_goal": task_info.get("day_wordcount_goal", 0)
-        }
-        root_task = Task(**{k: v for k, v in task_params.items() if v is not None})
-        self.add_book_meta(task=root_task)
-        
 
 
     def update_title(self, run_id: str, title: str):

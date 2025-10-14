@@ -1,9 +1,11 @@
+import json
 from typing import Literal
+from loguru import logger
 from story.prompts.models.inquiry import InquiryOutput
 from utils.llm import get_llm_messages, get_llm_params, llm_completion
 from utils.loader import load_prompts
 from utils.models import Task
-
+from utils.sqlite_task import get_task_db
 
 
 async def inquiry(
@@ -14,8 +16,17 @@ async def inquiry(
     design_dependent: str,
     search_dependent: str,
     latest_text: str,
-    task_list: str,
+    overall_planning: str,
 ) -> InquiryOutput:
+    task_db = get_task_db(task.run_id)
+    field_name = f"inquiry_{inquiry_type}"
+    task_data = task_db.get_task_by_id(task.id)
+    if task_data and (existing_inquiry := task_data.get(field_name)):
+        try:
+            return InquiryOutput.model_validate_json(existing_inquiry)
+        except Exception as e:
+            logger.warning(f"解析任务 {task.id} 的 {field_name} 失败: {e}。将重新调用 LLM。")
+
     context = {
         "task": task.to_context(),
         "book_level_design": book_level_design,
@@ -23,10 +34,16 @@ async def inquiry(
         "design_dependent": design_dependent,
         "search_dependent": search_dependent,
         "latest_text": latest_text,
-        "task_list": task_list,
+        "overall_planning": overall_planning,
     }
-    system_prompt, user_prompt = load_prompts(f"{task.category}.prompts.inquiry.{inquiry_type}", "system_prompt", "user_prompt")
+    system_prompt, user_prompt = load_prompts(f"story.prompts.inquiry.{inquiry_type}", "system_prompt", "user_prompt")
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.1)
     llm_message = await llm_completion(llm_params, response_model=InquiryOutput)
-    return llm_message.validated_data
+    
+    inquiry_result = llm_message.validated_data
+    if inquiry_result:
+        inquiry_content = inquiry_result.model_dump_json(indent=2, ensure_ascii=False)
+        task_db.update_task_inquiry(task.id, inquiry_type, inquiry_content)
+
+    return inquiry_result

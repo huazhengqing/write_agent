@@ -275,9 +275,7 @@ litellm_settings:
   # fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
   # content_policy_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
   # context_window_fallbacks: [{"reasoning": ["reasoning2"]}, {"fast": ["fast2"]}, {"summary": ["summary2"]}]
-  cache: true 
-  cache_params:
-    type: disk
+  cache: false
   respect_retry_after: true
   disable_moderation: true
   disable_safety_check: true
@@ -296,7 +294,7 @@ router_settings:
   cooldown_time: 30
   enable_pre_call_checks: false
   max_fallbacks: 5
-  cache_responses: true
+  cache_responses: false
   retry_policy: {
     "BadRequestErrorRetries": 3,
     "AuthenticationErrorRetries": 0,

@@ -75,10 +75,10 @@ user_prompt = """
 {task}
 </current_task>
 
-## 整体规划(任务树)
-- 完整的任务层级结构, 展示当前任务在全局中的位置。
+## 全书已完成的整体任务规划(任务树)
+- 项目进展, 当前任务的层级位置
 <overall_planning>
-{task_list}
+{overall_planning}
 </overall_planning>
 
 ## 全书设计方案

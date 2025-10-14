@@ -1,10 +1,6 @@
 services:
   litellm:
-    build:
-      context: .
-      dockerfile_inline: |
-        FROM ghcr.io/berriai/litellm:main-stable
-        RUN pip install "litellm[caching]"
+    image: ghcr.io/berriai/litellm:main-stable
     container_name: litellm
     volumes:
       - ./litellm_config.yaml:/app/config.yaml
@@ -14,18 +10,6 @@ services:
       - "4000:4000"
     env_file:
       - .env
-
-  prefect:
-    image: prefecthq/prefect:3-latest
-    container_name: prefect
-    restart: unless-stopped
-    command: prefect server start --host 0.0.0.0
-    ports:
-      - "4200:4200"
-    environment:
-      - PREFECT_HOME=/root/.prefect
-    volumes:
-      - prefect-data:/root/.prefect
 
   searxng:
     image: searxng/searxng:latest
@@ -39,11 +23,5 @@ services:
 
 
 volumes:
-  prefect-data:
   searxng-config:
   searxng-data:
-
-
-
-
- 

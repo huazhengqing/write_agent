@@ -15,8 +15,8 @@ if project_root not in sys.path:
 from utils.models import Task, natural_sort_key
 from utils.sqlite_meta import get_meta_db
 from utils.sqlite_task import get_task_db, dict_to_task
-from story.do_story import sync_meta_to_task_db
-from story.do_task import do_write, do_design, do_search
+from story.task import do_write, do_design, do_search, create_root_task
+from story.project import generate_idea
 
 
 # --- 数据获取函数 ---
@@ -45,7 +45,7 @@ def get_all_tasks_for_book(run_id: str) -> List[Task]:
     tasks_data = task_db.get_all_tasks()
     
     # 3. 将书籍元数据与每个任务数据合并，然后创建Task对象
-    return [dict_to_task({**book_meta, **t}) for t in tasks_data if t] # type: ignore
+    return [dict_to_task({**t, "run_id": run_id}) for t in tasks_data if t] # type: ignore
 
 # --- 任务执行相关 ---
 
@@ -75,68 +75,6 @@ def list_to_text(data: List[str]) -> str:
 def text_to_list(text: str) -> List[str]:
     return [line.strip() for line in text.split("\n") if line.strip()]
 
-# --- 项目操作函数 ---
-
-def create_cyberpunk_test_data():
-    """
-    在UI中直接创建一套完整的赛博朋克小说测试数据。
-    """
-    st.toast("开始创建《赛博朋克：迷雾之城》测试数据...")
-    logger.info("开始创建《赛博朋克：迷雾之城》测试数据...")
-
-    book_info = {
-        'category': "story", 'language': "cn", 'name': "赛博朋克：迷雾之城",
-        'goal': "创作一部赛博朋克侦探小说，主角在反乌托邦的未来城市中调查一宗神秘的失踪案。",
-        'instructions': "故事应充满霓虹灯、雨夜、高科技与社会底层挣扎的元素。主角需要有鲜明的个性和过去。",
-        'input_brief': "城市名为“夜之城”，被巨型企业“荒坂公司”所控制。主角是一名被解雇的前企业特工。",
-        'constraints': "避免魔法或超自然元素，所有科技都应有合理的解释。",
-        'acceptance_criteria': "完成开篇三章，揭示案件的初步线索，并塑造主角的困境。",
-        'length': "约2万字", 'day_wordcount_goal': 500
-    }
-
-    meta_db = get_meta_db()
-    meta_db.add_book(book_info)
-    
-    all_books = meta_db.get_all_book_meta()
-    cyberpunk_book = next((b for b in all_books if b['root_name'] == book_info['name']), None)
-    if not cyberpunk_book:
-        st.error("创建书籍元数据后未能找到，测试数据生成失败！")
-        return
-
-    run_id = cyberpunk_book['run_id']
-    logger.info(f"获取到书籍的 run_id: {run_id}")
-    
-    meta_db.update_book_level_design(run_id, "全书设计：采用三幕式结构，第一幕引入主角和案件，第二幕深入调查并遭遇挫折，第三幕揭开真相并与反派对决。")
-    meta_db.update_global_state_summary(run_id, "全局状态：主角“杰克”已被“荒坂公司”解雇，身无分文。他刚接手寻找失踪数据分析师“伊芙”的委托。")
-
-    task_db = get_task_db(run_id)
-    
-    def create_task(task_id, parent_id, task_type, goal, hierarchical_pos, status="pending", results=None):
-        return Task(
-            id=task_id, parent_id=parent_id, task_type=task_type, goal=goal,
-            hierarchical_position=hierarchical_pos, status=status, results=results or {},
-            category=book_info['category'], language=book_info['language'],
-            root_name=book_info['name'], run_id=run_id
-        )
-
-    tasks_to_add = [
-        create_task("1", "", "write", book_info['goal'], "全书", status="pending"),
-        create_task("1.1", "1", "design", "设计小说第一章的详细情节", "第一章", status="completed", results={"design": "第一章情节：杰克在破旧的公寓中被神秘客户联系，接下寻找伊芙的委托。他前往伊芙最后出现的酒吧进行调查。"}),
-        create_task("1.2", "1", "write", "撰写第一章的全部内容", "第一章", status="running"),
-        create_task("1.3", "1", "design", "设计第二章的核心悬念", "第二章", status="pending"),
-        create_task("1.2.1", "1.2", "search", "搜索关于“未来城市酒吧”的描写和氛围资料", "第一章-场景1", status="completed", results={"search": "参考资料：银翼杀手、攻壳机动队中的酒吧场景，特点是全息广告、合成酒精、各类改造人顾客。"}),
-        create_task("1.2.2", "1.2", "write", "撰写杰克进入酒吧并与酒保交谈的场景", "第一章-场景1", "pending"),
-        create_task("1.2.3", "1.2", "write", "撰写杰克发现伊芙留下的加密数据棒的场景", "第一章-场景2", status="pending"),
-    ]
-
-    for task in tasks_to_add:
-        task_db.add_task(task)
-        if task.results:
-            task_db.add_result(task)
-
-    st.success("《赛博朋克：迷雾之城》测试数据创建成功！")
-    logger.success("测试数据创建完成！")
-
 def delete_project(run_id: str, root_name: str):
     """删除整个项目，包括元数据和相关文件。"""
     st.toast(f"正在删除项目: {root_name}...")
@@ -157,7 +95,7 @@ def delete_project(run_id: str, root_name: str):
 def sync_book_to_task_db(run_id: str):
     """将单个书籍元数据同步到其 TaskDB 创建根任务"""
     st.toast(f"正在同步项目 {run_id}...")
-    sync_meta_to_task_db(run_id)
+    create_root_task(run_id)
     st.success(f"项目 {run_id} 已同步到任务库！")
 
 # --- 通用UI渲染函数 ---
@@ -165,18 +103,17 @@ def sync_book_to_task_db(run_id: str):
 def _get_all_db_fields() -> List[str]:
     """从 TaskDB 定义中获取所有字段名，用于动态生成表单"""
     # 这些是 Task 模型的核心字段
-    task_model_fields = list(Task.model_fields.keys())
-    # 移除 results，因为它是一个容器
-    task_model_fields.remove('results')
-    
+    task_model_fields = list(Task.model_fields.keys())    
+    # 'results' 字段本身是一个容器，但在UI上我们希望它作为一个可编辑的JSON文本区
+
     # 这些是存储在 results 字典中，但在数据库里是独立列的字段
     result_fields_in_db = [
         "reasoning", 
         "expert", 
         "atom", 
         "atom_reasoning", 
-        "atom_result",
-        "plan", "plan_reasoning", 
+        "plan", 
+        "plan_reasoning", 
         "design", 
         "design_reasoning", 
         "search",
@@ -195,13 +132,12 @@ def _get_all_db_fields() -> List[str]:
         "translation_reasoning", 
         "context_design", 
         "context_summary",
-        "context_task", 
         "context_search", 
         "kg_design", 
         "kg_write",
-        "rag_design", 
-        "rag_summary", 
-        "x_litellm_cache_key"
+        "inquiry_design", 
+        "inquiry_summary", 
+        "inquiry_search", 
     ]
     
     # 排除一些不应在UI中直接编辑的字段
@@ -209,16 +145,20 @@ def _get_all_db_fields() -> List[str]:
     
     # 定义希望优先显示在表单顶部的核心字段
     primary_fields_order = [
-        'goal',
-        'hierarchical_position',
-        'task_type',
-        'status',
-        'parent_id',
-        'length',
-        'instructions',
-        'input_brief',
-        'constraints',
-        'acceptance_criteria',
+        'id',                     # 任务ID
+        'parent_id',              # 父任务ID
+        'hierarchical_position',  # 层级位置
+        'task_type',              # 任务类型
+        'status',                 # 状态
+        'goal',                   # 核心目标
+        'length',                 # 预估长度
+        'instructions',           # 具体指令
+        'input_brief',            # 输入指引
+        'constraints',            # 限制和禁忌
+        'acceptance_criteria',    # 验收标准
+        'reasoning',              # 推理过程
+        'expert',                 # 执行专家
+        'results',                # 剩余结果 (JSON)
     ]
     
     # 1. 获取所有不应被排除的字段，并去重
@@ -234,12 +174,16 @@ def _get_all_db_fields() -> List[str]:
     return ordered_fields + remaining_fields
 
 def render_task_details_and_actions(task_obj: Task):
+    meta_db = get_meta_db()
+    book_meta = meta_db.get_book_meta(task_obj.run_id)
+    root_name = book_meta.get('root_name', '未知项目') if book_meta else '未知项目'
+
     st.header("任务详情")
     run_id = task_obj.run_id
     selected_id = task_obj.id
 
     st.subheader(f"编辑任务: {task_obj.id} ({task_obj.hierarchical_position})")
-    st.caption(f"项目: {task_obj.root_name}")
+    st.caption(f"项目: {root_name}")
 
     # 将操作按钮移动到顶部
     action_cols = st.columns(2)
@@ -264,17 +208,31 @@ def render_task_details_and_actions(task_obj: Task):
         for field in all_fields:
             value = full_task_data.get(field)
             
-            if field == 'status':
+            if field == 'id':
+                st.text_input(f"任务ID (Id)", value=str(value or ''), key=f"form_{run_id}_{selected_id}_{field}", disabled=True)
+            elif field == 'status':
                 status_options = ["pending", "running", "completed", "failed", "cancelled", "paused"]
-                form_inputs[field] = st.selectbox(f"状态 (Status)", options=status_options, index=status_options.index(value or "pending"), key=f"form_{run_id}_{selected_id}_{field}")
-            elif isinstance(value, list):
-                form_inputs[field] = st.text_area(f"{field.replace('_', ' ').title()}", value=list_to_text(value), height=100, key=f"form_{run_id}_{selected_id}_{field}")
-            elif isinstance(value, dict):
-                 form_inputs[field] = st.text_area(f"{field.replace('_', ' ').title()} (JSON)", value=json.dumps(value, indent=2, ensure_ascii=False), height=150, key=f"form_{run_id}_{selected_id}_{field}")
-            elif field in ['design', 'write', 'summary', 'search', 'plan', 'hierarchy', 'atom', 'reasoning'] or 'reasoning' in field:
+                current_status = value if value in status_options else "pending"
+                form_inputs[field] = st.selectbox(f"状态 (Status)", options=status_options, index=status_options.index(current_status), key=f"form_{run_id}_{selected_id}_{field}")
+            elif field == 'results':
+                # 将非独立列的 results 字典转换为格式化的 JSON 字符串进行显示和编辑
+                dedicated_cols = [f for f in _get_all_db_fields() if f != 'results']
+                remaining_results = {k: v for k, v in task_obj.results.items() if k not in dedicated_cols}
+                json_text = json.dumps(remaining_results, indent=2, ensure_ascii=False)
+                form_inputs[field] = st.text_area("剩余结果 (Results JSON)", value=json_text, height=200, key=f"form_{run_id}_{selected_id}_{field}")
+            # 优先按字段名判断类型，确保即使值为None也能正确处理
+            elif field in ['instructions', 'input_brief', 'constraints', 'acceptance_criteria']:
+                text_value = list_to_text(value or [])
+                form_inputs[field] = st.text_area(f"{field.replace('_', ' ').title()}", value=text_value, height=100, key=f"form_{run_id}_{selected_id}_{field}")
+            elif field in ['plan', 'hierarchy', 'design', 'write', 'summary', 'search', 'reasoning', 'expert',
+                           'atom', 'atom_reasoning', 'plan_reasoning', 'design_reasoning', 'search_reasoning',
+                           'hierarchy_reasoning', 'write_reasoning', 'summary_reasoning', 'book_level_design',
+                           'global_state', 'write_review', 'write_review_reasoning', 'translation', 'translation_reasoning']:
                 # 为较长的文本字段提供更大的输入框
-                form_inputs[field] = st.text_area(f"{field.replace('_', ' ').title()}", value=str(value or ''), height=200, key=f"form_{run_id}_{selected_id}_{field}")
+                text_value = str(value or '')
+                form_inputs[field] = st.text_area(f"{field.replace('_', ' ').title()}", value=text_value, height=200, key=f"form_{run_id}_{selected_id}_{field}")
             else:
+                # 默认使用单行输入框
                 form_inputs[field] = st.text_input(f"{field.replace('_', ' ').title()}", value=str(value or ''), key=f"form_{run_id}_{selected_id}_{field}")
 
         submitted = st.form_submit_button("💾 保存修改")
@@ -283,13 +241,23 @@ def render_task_details_and_actions(task_obj: Task):
                 # 从表单回填数据到 Task 对象
                 for field, new_value in form_inputs.items():
                     original_value = full_task_data.get(field)
+
+                    if field == 'id': # id 是只读的，跳过
+                        continue
                     
                     # 根据原始数据类型转换新值
-                    if isinstance(original_value, list):
-                        setattr(task_obj, field, text_to_list(new_value))
-                    elif isinstance(original_value, dict):
-                        setattr(task_obj, field, json.loads(new_value))
+                    if field in ['instructions', 'input_brief', 'constraints', 'acceptance_criteria']:
+                        setattr(task_obj, field, text_to_list(new_value)) # type: ignore
+                    elif field == 'results':
+                        # 对于 'results' 字段，我们需要解析JSON并更新到 task_obj.results
+                        try:
+                            updated_remaining_results = json.loads(new_value)
+                            task_obj.results.update(updated_remaining_results)
+                        except json.JSONDecodeError:
+                            st.error("“剩余结果 (Results JSON)” 字段中的JSON格式无效，请检查。")
+                            return # 阻止保存
                     elif field in Task.model_fields:
+                        # 确保将表单输入作为字符串处理
                         # 处理 Task 模型的直接字段
                         setattr(task_obj, field, new_value)
                     else:

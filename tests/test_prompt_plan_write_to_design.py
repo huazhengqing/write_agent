@@ -53,9 +53,9 @@ design_phase_context.update({
     "search_dependent": "",
     "latest_text": "",
     "text_summary": "",
-    "task_list": "1 全书 write 写一部关于赛博朋克侦探在雨夜都市追查神秘芯片的小说 1000000",
-    "upper_level_design": "",
-    "upper_level_search": ""
+    "overall_planning": "1 全书 write 写一部关于赛博朋克侦探在雨夜都市追查神秘芯片的小说 1000000",
+    "outside_design": "",
+    "outside_search": ""
 })
 
 

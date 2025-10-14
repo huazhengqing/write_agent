@@ -55,9 +55,9 @@ user_prompt = """
 {task}
 </current_task>
 
-## 整体规划(任务树)
+## 全书已完成的整体任务规划(任务树)
 <overall_planning>
-{task_list}
+{overall_planning}
 </overall_planning>
 
 ## 全书设计方案

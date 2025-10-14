@@ -7,10 +7,6 @@ from utils.search import web_search_tools
 from utils.file import cache_dir
 
 
-cache_agent_dir = cache_dir / "react_agent"
-cache_agent_dir.mkdir(parents=True, exist_ok=True)
-cache_query = Cache(str(cache_agent_dir), size_limit=int(32 * (1024**2)))
-
 
 async def call_react_agent(
     llm_group: Literal['reasoning', 'fast', 'summary'] = 'reasoning',
@@ -21,13 +17,6 @@ async def call_react_agent(
 ) -> Optional[Union[BaseModel, str]]:
     tool_names_sorted = sorted([tool.metadata.name for tool in tools])
     response_model_name = response_model.__name__ if response_model else "None"
-
-    cache_key_str = f"react_agent:{user_prompt}:{system_prompt}:{','.join(tool_names_sorted)}:{response_model_name}"
-    import hashlib
-    cache_key = hashlib.sha256(cache_key_str.encode()).hexdigest()
-    cached_result = cache_query.get(cache_key)
-    if cached_result is not None:
-        return cached_result
 
     logger.info(f"system_prompt=\n{system_prompt}")
     logger.info(f"user_prompt=\n{user_prompt}")
@@ -81,6 +70,10 @@ async def call_react_agent(
 
     final_result = None
     if response_model:
+        if cleaned_output.strip().lower() == "null":
+            logger.info("LLM 返回 'null', 表示任务完成或无可用输出。")
+            return None
+
         from utils.llm import txt_to_json
         final_result = await txt_to_json(cleaned_output, response_model)
         logger.info(f"解析后的 JSON 对象: \n{final_result}")
@@ -88,9 +81,6 @@ async def call_react_agent(
         from utils.llm import text_validator_default
         text_validator_default(cleaned_output)
         final_result = cleaned_output
-
-    if final_result is not None:
-        cache_query.set(cache_key, final_result)
 
     import asyncio
     await asyncio.sleep(0.1)

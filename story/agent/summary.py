@@ -18,10 +18,11 @@ async def summary(task: Task) -> Task:
         "text": task.results.get("write"),
     }
 
-    system_prompt, user_prompt = load_prompts(f"{task.category}.prompts.summary.summary", "system_prompt", "user_prompt")
+    from story.prompts.summary.summary import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.2)
     llm_message = await llm_completion(llm_params)
+
     content = llm_message.content
     updated_task = task.model_copy(deep=True)
     updated_task.results["summary"] = content
@@ -50,18 +51,18 @@ async def aggregate(task: Task) -> Task:
         "subtask_summary": task_db.get_subtask_summary(task.id),
     }
 
-    system_prompt, user_prompt = load_prompts(f"{task.category}.prompts.summary.aggregate", "system_prompt", "user_prompt")
+    from story.prompts.summary.aggregate import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.2)
     llm_message = await llm_completion(llm_params)
-    content = llm_message.content
+
     updated_task = task.model_copy(deep=True)
-    updated_task.results["summary"] = content
+    updated_task.results["summary"] = llm_message.content
     updated_task.results["summary_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
     
     task_db.add_result(updated_task)
     
-    save.summary(task, content)
+    save.summary(task, llm_message.content)
     return updated_task
 
 
@@ -90,17 +91,17 @@ async def global_state(task: Task) -> Task:
         "summary": summary,
     }
 
-    system_prompt, user_prompt = load_prompts(f"{task.category}.prompts.summary.global_state", "system_prompt", "user_prompt")
+    from story.prompts.summary.global_state import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.2)
     llm_message = await llm_completion(llm_params)
-    content = llm_message.content
+
     updated_task = task.model_copy(deep=True)
-    updated_task.results["global_state"] = content
+    updated_task.results["global_state"] = llm_message.content
     updated_task.results["global_state_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
     
     task_db.add_result(updated_task)
-    meta_db.update_global_state_summary(task.run_id, content)
+    meta_db.update_global_state_summary(task.run_id, llm_message.content)
     return updated_task
 
 

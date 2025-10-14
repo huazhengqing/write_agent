@@ -11,6 +11,9 @@ from utils.sqlite_meta import get_meta_db
 
 
 async def all(task: Task) -> Task:
+    if task.task_type != "write":
+        raise ValueError(f"plan.all 只能处理 'write' 类型的任务, 但收到了 '{task.task_type}' 类型。")
+
     task_db = get_task_db(run_id=task.run_id)
     db_task_data = task_db.get_task_by_id(task.id)
     if db_task_data and db_task_data.get("plan"):
@@ -23,27 +26,22 @@ async def all(task: Task) -> Task:
     design_dependent = task_db.get_dependent_design(task)
     search_dependent = task_db.get_dependent_search(task)
     latest_text = task_db.get_text_latest()
-    task_list = task_db.get_task_list(task)
-    current_level = len(task.id.split("."))
+    overall_planning = task_db.get_overall_planning(task)
     
     context = {
         "task": task.to_context(),
         "book_level_design": book_level_design,
         "global_state_summary": global_state_summary,
-        "style": book_meta.get("style", ""),
         "design_dependent": design_dependent,
         "search_dependent": search_dependent,
         "latest_text": latest_text,
-        "task_list": task_list,
-        "subtask_design": task_db.get_subtask_design(task.id),
-        "subtask_search": task_db.get_subtask_search(task.id),
-        "subtask_summary": task_db.get_subtask_summary(task.id),
-        "upper_level_design": await get_outside_design(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, task_list),
-        "upper_level_search": await get_outside_search(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, task_list),
-        "text_summary": await get_summary(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, task_list),
+        "overall_planning": overall_planning,
+        "outside_design": await get_outside_design(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
+        "outside_search": await get_outside_search(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
+        "text_summary": await get_summary(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
     }
 
-    system_prompt, user_prompt = load_prompts(f"{task.category}.prompts.plan.all", "system_prompt", "user_prompt")
+    from story.prompts.plan.all import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.75)
     llm_message = await llm_completion(llm_params)
@@ -61,15 +59,20 @@ async def all(task: Task) -> Task:
 
 
 async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
+    if parent_task.task_type != "write":
+        raise ValueError(f"plan.next 只能处理 'write' 类型的任务, 但收到了 '{parent_task.task_type}' 类型。")
+
     task_db = get_task_db(run_id=parent_task.run_id)
+    subtask_ids = task_db.get_subtask_ids(parent_task.id)
+    if len(subtask_ids) > 30:
+        raise ValueError(f"父任务 '{parent_task.id}' 的 子任务数量已超过30个的限制。")
+
     # 如果 pre_task 为空, 尝试从数据库中查找父任务的最后一个子任务
     if not pre_task:
-        subtask_ids = task_db.get_subtask_ids(parent_task.id)
         if subtask_ids:
             last_subtask_id = subtask_ids[-1]
             pre_task_data = task_db.get_task_by_id(last_subtask_id)
             if pre_task_data:
-                from utils.sqlite_task import dict_to_task
                 pre_task = dict_to_task(pre_task_data)
 
     book_meta = get_meta_db().get_book_meta(parent_task.run_id) or {}
@@ -79,13 +82,13 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
     design_dependent = task_db.get_dependent_design(pre_task)
     search_dependent = task_db.get_dependent_search(pre_task)
     latest_text = task_db.get_text_latest()
-    task_list = task_db.get_task_list(pre_task or parent_task)
+    overall_planning = task_db.get_overall_planning(pre_task or parent_task)
     
     context = {
         "parent_task": parent_task.to_context(),
         "pre_task": pre_task.to_context if pre_task else "",
         "plan": parent_task.results.get("plan", ""),
-        "task_list": task_list,
+        "overall_planning": overall_planning,
         "book_level_design": book_level_design,
         "global_state_summary": global_state_summary,
         "design_dependent": design_dependent,
@@ -93,7 +96,7 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
         "latest_text": latest_text,
     }
 
-    system_prompt, user_prompt = load_prompts(f"prompts.{parent_task.category}.plan.next", "system_prompt", "user_prompt")
+    from story.prompts.plan.next import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     final_system_prompt = messages[0]["content"]
     final_user_prompt = messages[1]["content"]
@@ -103,29 +106,23 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
         user_prompt=final_user_prompt,
         response_model=PlanOutput
     )
-    plan_next = llm_message.validated_data
+    if not llm_message:
+        return None
+
+    plan_next = llm_message.validated_data if hasattr(llm_message, 'validated_data') else None
     if not plan_next or not plan_next.goal:
         return None
 
     task_next = plan_to_task(plan_next)
 
-    # 根据 pre_task 和 parent_task 补全 task_next 的字段
     if pre_task:
-        # 如果有前一个任务, ID 在其基础上加1
         parts = pre_task.id.split('.')
         parts[-1] = str(int(parts[-1]) + 1)
         task_next.id = ".".join(parts)
     else:
-        # 如果没有前一个任务, 这是第一个子任务
         task_next.id = f"{parent_task.id}.1"
     task_next.parent_id = parent_task.id
-    task_next.category = parent_task.category
-    task_next.language = parent_task.language
-    task_next.root_name = parent_task.root_name
     task_next.run_id = parent_task.run_id
-    task_next.day_wordcount_goal = parent_task.day_wordcount_goal
-    task_next.status = "pending"
-    task_next.results["cache_key"] = llm_message.cache_key
 
     task_db.add_task(task_next)
     return task_next
