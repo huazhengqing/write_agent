@@ -170,10 +170,10 @@ class TaskDB:
             "hierarchical_position": task.hierarchical_position,
             "goal": task.goal,
             "length": task.length,
-            "instructions": "\n".join(task.instructions),
-            "input_brief": "\n".join(task.input_brief),
-            "constraints": "\n".join(task.constraints),
-            "acceptance_criteria": "\n".join(task.acceptance_criteria),
+            "instructions": task.instructions,
+            "input_brief": task.input_brief,
+            "constraints": task.constraints,
+            "acceptance_criteria": task.acceptance_criteria,
             "results": self._prepare_remaining_results(task.results),
         }
         columns = ", ".join(task_data.keys())
@@ -279,14 +279,6 @@ class TaskDB:
         if not row:
             return None
         task_data = dict(row)
-        # 将 JSON 字符串字段解码回 Python 对象
-        for field in ['instructions', 'input_brief', 'constraints', 'acceptance_criteria']:
-            if task_data.get(field):
-                try:
-                    task_data[field] = [line.strip() for line in task_data[field].split('\n') if line.strip()]
-                except Exception:
-                    logger.warning(f"无法解析任务 {task_id} 的字段 {field}: {task_data[field]}")
-                    task_data[field] = [] # 出错时返回空列表
         
         # 将存储在 'results' 字段的JSON字符串解码并合并
         if task_data.get('results'):
@@ -312,22 +304,14 @@ class TaskDB:
             return []
 
         tasks_data = [dict(row) for row in rows]
-        # 将 JSON 字符串字段解码回 Python 对象
         for task_data in tasks_data:
-            for field in ['instructions', 'input_brief', 'constraints', 'acceptance_criteria']:
-                if task_data.get(field) and isinstance(task_data[field], str):
-                    try:
-                        task_data[field] = [line.strip() for line in task_data[field].split('\n') if line.strip()]
-                    except Exception:
-                        task_data[field] = [] # 出错时返回空列表
-            
             # 将存储在 'results' 字段的JSON字符串解码并合并
             if task_data.get('results'):
                 try:
                     remaining_results = json.loads(task_data['results'])
                     task_data.update(remaining_results)
                 except (json.JSONDecodeError, TypeError):
-                    logger.warning(f"无法解析任务 {task_data['id']} 的 'results' JSON 字段: {task_data['results']}")
+                    logger.warning(f"无法解析任务 {task_data.get('id', '未知ID')} 的 'results' JSON 字段: {task_data['results']}")
         return tasks_data
 
 
@@ -870,18 +854,6 @@ def dict_to_task(task_data: dict) -> Task | None:
     """将从数据库查询出的字典转换为 Task 模型对象"""
     if not task_data:
         return None
-
-    # 1. 反序列化 JSON 字符串字段
-    for field in ['instructions', 'input_brief', 'constraints', 'acceptance_criteria']:
-        if task_data.get(field) and isinstance(task_data[field], str):
-            try:
-                # 将换行符分隔的字符串转换为列表
-                task_data[field] = [line.strip() for line in task_data[field].split('\n') if line.strip()]
-            except Exception:
-                logger.warning(f"无法解析任务 {task_data.get('id')} 的字段 {field}: {task_data[field]}")
-                # 根据字段类型设置默认值
-                if field in ['instructions', 'input_brief', 'constraints', 'acceptance_criteria']:
-                    task_data[field] = []
 
     # 将存储在 'results' 字段的JSON字符串解码并合并到主字典中
     if task_data.get('results') and isinstance(task_data['results'], str):

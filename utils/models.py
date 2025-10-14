@@ -27,11 +27,11 @@ class Task(BaseModel):
     parent_id: str = Field(..., description="父任务的ID")
     task_type: TaskType = Field(..., description="任务类型: 'write'写作, 'design'设计, 'search'搜索") 
     hierarchical_position: Optional[str] = Field(None, description="任务在书/故事结构中的层级和位置。例如: '全书', '第1卷', '第2幕', '第3章'。")
-    goal: str = Field(..., description="任务需要达成的[核心目标](一句话概括)。")
-    instructions: List[str] = Field(default_factory=list, description="任务的[具体指令](HOW): 明确指出需要执行的步骤、包含的关键要素或信息点。")
-    input_brief: List[str] = Field(default_factory=list, description="任务的[输入指引](FROM WHERE): 指导执行者应重点关注依赖项中的哪些关键信息。")
-    constraints: List[str] = Field(default_factory=list, description="任务的[限制和禁忌](WHAT NOT): 明确指出需要避免的内容或必须遵守的规则。")
-    acceptance_criteria: List[str] = Field(default_factory=list, description="任务的[验收标准](VERIFY HOW): 定义任务完成的衡量标准, 用于后续评审。")
+    goal: str = Field("", description="任务需要达成的[核心目标](一句话概括)。")
+    instructions: str = Field("", description="任务的[具体指令](HOW): 明确指出需要执行的步骤、包含的关键要素或信息点。")
+    input_brief: str = Field("", description="任务的[输入指引](FROM WHERE): 指导执行者应重点关注依赖项中的哪些关键信息。")
+    constraints: str = Field("", description="任务的[限制和禁忌](WHAT NOT): 明确指出需要避免的内容或必须遵守的规则。")
+    acceptance_criteria: str = Field("", description="任务的[验收标准](VERIFY HOW): 定义任务完成的衡量标准, 用于后续评审。")
     length: Optional[str] = Field(None, description="预估产出字数 (仅 'write' 任务)")
     dependency: List[str] = Field(default_factory=list, description="执行前必须完成的同级任务ID列表")
     sub_tasks: List['Task'] = Field(default_factory=list, description="所有子任务的列表")
@@ -40,12 +40,23 @@ class Task(BaseModel):
     run_id: str = Field(..., description="整个流程运行的唯一ID, 用于隔离不同任务的记忆")
 
     def to_context(self) -> str:
-        """将Task对象转换为用于LLM上下文的JSON字符串。"""
-        return self.model_dump_json(
-            indent=2,
-            exclude_none=True,
-            include={'id', 'parent_id', 'task_type', 'hierarchical_position', 'goal', 'length', 'instructions', 'input_brief', 'constraints', 'acceptance_criteria'}
-        )
+        """将Task对象转换为用于LLM上下文的Markdown格式字符串。"""
+        context_parts = []
+        context_parts.append(f"## 任务: {self.id} - {self.hierarchical_position}")
+        context_parts.append(f"**类型**: {self.task_type}")
+        if self.length:
+            context_parts.append(f"**预估长度**: {self.length}")
+        if self.goal and self.goal.strip():
+            context_parts.append(f"### 核心目标\n{self.goal}")
+        if self.instructions and self.instructions.strip():
+            context_parts.append(f"### 具体指令\n{self.instructions}")
+        if self.input_brief and self.input_brief.strip():
+            context_parts.append(f"### 输入指引\n{self.input_brief}")
+        if self.constraints and self.constraints.strip():
+            context_parts.append(f"### 限制和禁忌\n{self.constraints}")
+        if self.acceptance_criteria and self.acceptance_criteria.strip():
+            context_parts.append(f"### 验收标准\n{self.acceptance_criteria}")
+        return "\n\n".join(context_parts)
 
 
 

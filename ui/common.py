@@ -3,7 +3,8 @@ import json
 import os
 import sys
 import asyncio # type: ignore
-from typing import List, Dict, Any, Callable, Coroutine
+import uuid
+from typing import List, Dict, Any, Callable, Coroutine, Optional
 from loguru import logger
 import shutil
 
@@ -17,6 +18,79 @@ from utils.sqlite_meta import get_meta_db
 from utils.sqlite_task import get_task_db, dict_to_task
 from story.task import do_write, do_design, do_search, create_root_task
 from story.project import generate_idea
+import streamlit.components.v1 as components
+
+
+def _inject_autoresize_script():
+    """
+    注入一个全局的JavaScript脚本，用于处理所有带有'autoresize-textarea'类的文本框。
+    使用session_state确保脚本只被注入一次。
+    """
+    if "autoresize_script_injected" in st.session_state:
+        return
+
+    js_script = """
+<script>
+function autoResize(textarea) {
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const style = window.getComputedStyle(textarea);
+    const verticalBorders = parseFloat(style.borderTopWidth) + parseFloat(style.borderBottomWidth);
+    let newHeight = textarea.scrollHeight + verticalBorders;
+    textarea.style.height = newHeight + 'px';
+}
+
+function initializeAutoResize() {
+    document.querySelectorAll('textarea.autoresize-textarea').forEach(textarea => {
+        if (textarea.dataset.autoresizeInitialized) return;
+        textarea.dataset.autoresizeInitialized = 'true';
+        autoResize(textarea);
+        textarea.addEventListener('input', () => autoResize(textarea));
+        // 确保在值通过Streamlit外部更改时也能调整
+        new MutationObserver(() => autoResize(textarea)).observe(textarea, { attributes: true, attributeFilter: ['value'] });
+    });
+}
+
+const observer = new MutationObserver(initializeAutoResize);
+observer.observe(document.body, { childList: true, subtree: true });
+
+window.addEventListener('load', initializeAutoResize);
+document.addEventListener('DOMContentLoaded', initializeAutoResize);
+</script>
+"""
+    components.html(js_script, height=0)
+    st.session_state.autoresize_script_injected = True
+
+def st_autoresize_text_area(label: str, value: str, key: Optional[str] = None, **kwargs):
+    """
+    创建一个能够根据内容自动调整高度的 st.text_area。
+    它会添加一个CSS类，并由一个全局脚本来处理高度调整。
+    """
+    _inject_autoresize_script()
+    # 通过 st.markdown 注入一个带有特定类的 div 容器
+    # 然后让 st.text_area 在这个容器内渲染
+    container = st.container()
+    # 这个CSS选择器有点tricky，它选择了紧跟在我们的markdown之后的那个textarea
+    st.markdown(f"""<style>
+        div[data-testid="stVerticalBlock"] [data-testid="stTextArea"] textarea[key="{key}"] {{
+            --autoresize-key: "{key}"; /* Just for targeting */
+        }}
+    </style>""", unsafe_allow_html=True)
+    # 在新版Streamlit中，我们可以直接操作父容器，但目前这种方式兼容性更好
+    # 我们将通过JS给它加上class
+    text_area_output = st.text_area(label, value=value, key=key, **kwargs)
+    # 这是一个更可靠的技巧，用JS找到对应的textarea并添加class
+    components.html(f"""
+        <script>
+            (function() {{
+                const ta = parent.document.querySelector('textarea[key="{key}"]');
+                if (ta && !ta.classList.contains('autoresize-textarea')) {{
+                    ta.classList.add('autoresize-textarea');
+                }}
+            }})();
+        </script>
+    """, height=0)
+    return text_area_output
 
 
 # --- 数据获取函数 ---
@@ -66,14 +140,6 @@ async def do_task(task: Task):
     await executor(task) # type: ignore
     st.success(f"任务 {task.id} 执行完成！")
     st.rerun() # 刷新页面以显示最新状态
-
-# --- 文本处理工具 ---
-
-def list_to_text(data: List[str]) -> str:
-    return "\n".join(data)
-
-def text_to_list(text: str) -> List[str]:
-    return [line.strip() for line in text.split("\n") if line.strip()]
 
 def delete_project(run_id: str, root_name: str):
     """删除整个项目，包括元数据和相关文件。"""
@@ -219,18 +285,17 @@ def render_task_details_and_actions(task_obj: Task):
                 dedicated_cols = [f for f in _get_all_db_fields() if f != 'results']
                 remaining_results = {k: v for k, v in task_obj.results.items() if k not in dedicated_cols}
                 json_text = json.dumps(remaining_results, indent=2, ensure_ascii=False)
-                form_inputs[field] = st.text_area("剩余结果 (Results JSON)", value=json_text, height=200, key=f"form_{run_id}_{selected_id}_{field}")
+                form_inputs[field] = st_autoresize_text_area("剩余结果 (Results JSON)", value=json_text, key=f"form_{run_id}_{selected_id}_{field}")
             # 优先按字段名判断类型，确保即使值为None也能正确处理
             elif field in ['instructions', 'input_brief', 'constraints', 'acceptance_criteria']:
-                text_value = list_to_text(value or [])
-                form_inputs[field] = st.text_area(f"{field.replace('_', ' ').title()}", value=text_value, height=100, key=f"form_{run_id}_{selected_id}_{field}")
+                form_inputs[field] = st_autoresize_text_area(f"{field.replace('_', ' ').title()}", value=(value or ""), key=f"form_{run_id}_{selected_id}_{field}")
             elif field in ['plan', 'hierarchy', 'design', 'write', 'summary', 'search', 'reasoning', 'expert',
                            'atom', 'atom_reasoning', 'plan_reasoning', 'design_reasoning', 'search_reasoning',
                            'hierarchy_reasoning', 'write_reasoning', 'summary_reasoning', 'book_level_design',
                            'global_state', 'write_review', 'write_review_reasoning', 'translation', 'translation_reasoning']:
                 # 为较长的文本字段提供更大的输入框
                 text_value = str(value or '')
-                form_inputs[field] = st.text_area(f"{field.replace('_', ' ').title()}", value=text_value, height=200, key=f"form_{run_id}_{selected_id}_{field}")
+                form_inputs[field] = st_autoresize_text_area(f"{field.replace('_', ' ').title()}", value=text_value, key=f"form_{run_id}_{selected_id}_{field}")
             else:
                 # 默认使用单行输入框
                 form_inputs[field] = st.text_input(f"{field.replace('_', ' ').title()}", value=str(value or ''), key=f"form_{run_id}_{selected_id}_{field}")
@@ -245,24 +310,22 @@ def render_task_details_and_actions(task_obj: Task):
                     if field == 'id': # id 是只读的，跳过
                         continue
                     
-                    # 根据原始数据类型转换新值
-                    if field in ['instructions', 'input_brief', 'constraints', 'acceptance_criteria']:
-                        setattr(task_obj, field, text_to_list(new_value)) # type: ignore
-                    elif field == 'results':
-                        # 对于 'results' 字段，我们需要解析JSON并更新到 task_obj.results
-                        try:
-                            updated_remaining_results = json.loads(new_value)
-                            task_obj.results.update(updated_remaining_results)
-                        except json.JSONDecodeError:
-                            st.error("“剩余结果 (Results JSON)” 字段中的JSON格式无效，请检查。")
-                            return # 阻止保存
-                    elif field in Task.model_fields:
+                    if field in Task.model_fields:
                         # 确保将表单输入作为字符串处理
                         # 处理 Task 模型的直接字段
                         setattr(task_obj, field, new_value)
                     else:
                         # 处理存储在 results 中的字段
                         task_obj.results[field] = new_value
+
+                # 单独处理 'results' JSON 字段
+                results_json_str = form_inputs.get('results', '{}')
+                try:
+                    updated_remaining_results = json.loads(results_json_str)
+                    task_obj.results.update(updated_remaining_results)
+                except json.JSONDecodeError:
+                    st.error("“剩余结果 (Results JSON)” 字段中的JSON格式无效，请检查。")
+                    return # 阻止保存
 
                 task_db = get_task_db(run_id)
                 task_db.add_task(task_obj)

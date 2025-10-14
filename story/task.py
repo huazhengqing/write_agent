@@ -29,10 +29,10 @@ def create_root_task(run_id: str):
             status="pending",
             hierarchical_position="全书",
             goal=book_meta.get("goal", ""),
-            instructions=book_meta.get("instructions", "").split("\n"),
-            input_brief=book_meta.get("input_brief", "").split("\n"),
-            constraints=book_meta.get("constraints", "").split("\n"),
-            acceptance_criteria=book_meta.get("acceptance_criteria", "").split("\n"),
+            instructions=book_meta.get("instructions", ""),
+            input_brief=book_meta.get("input_brief", ""),
+            constraints=book_meta.get("constraints", ""),
+            acceptance_criteria=book_meta.get("acceptance_criteria", ""),
             length=book_meta.get("length", "根据任务要求确定"),
             run_id=run_id,
         )
@@ -89,8 +89,8 @@ async def do_write(current_task: Task):
             get_task_db(current_task.run_id).update_task_status(current_task.id, "running")
 
         await do_plan(current_task)
-        design.aggregate(current_task)
-        task_result = write.atom(current_task)
+        task_result = design.aggregate(current_task)
+        task_result = write.atom(task_result)
         if task_result.results["atom"] == "atom":
             task_result = write.write(task_result)
             task_result = summary.summary(task_result)

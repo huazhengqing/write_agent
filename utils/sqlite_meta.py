@@ -110,11 +110,10 @@ class BookMetaDB:
             "root_name": book_info.get("name") or book_info.get("root_name"), # 兼容 'name' 和 'root_name'
             "length": book_info.get("length"),
             "day_wordcount_goal": book_info.get("day_wordcount_goal", 20000),
-            # 将文本分割为列表后，再用换行符连接，以确保存储格式统一
-            "instructions": "\n".join([line.strip() for line in re.split(r'[。\n]', book_info.get("instructions", "")) if line.strip()]),
-            "input_brief": "\n".join([line.strip() for line in re.split(r'[。\n]', book_info.get("input_brief", "")) if line.strip()]),
-            "constraints": "\n".join([line.strip() for line in re.split(r'[。\n]', book_info.get("constraints", "")) if line.strip()]),
-            "acceptance_criteria": "\n".join([line.strip() for line in re.split(r'[。\n]', book_info.get("acceptance_criteria", "")) if line.strip()]),
+            "instructions": book_info.get("instructions", ""),
+            "input_brief": book_info.get("input_brief", ""),
+            "constraints": book_info.get("constraints", ""),
+            "acceptance_criteria": book_info.get("acceptance_criteria", ""),
         }
 
         # --- 执行数据库操作 ---

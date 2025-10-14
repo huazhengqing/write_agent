@@ -188,7 +188,6 @@ async def design(task: Task, expert: str) -> Task:
     updated_task.results["design_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
     
     task_db.add_result(updated_task)
-
     meta_db = get_meta_db()
     if expert == "style":
         meta_db.update_style(task.run_id, llm_message.content)
@@ -236,7 +235,7 @@ async def aggregate(task: Task) -> Task:
     updated_task.results["design_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
     
     task_db.add_result(updated_task)
-
+    
     save.design(task, llm_message.content)
     return updated_task
 
