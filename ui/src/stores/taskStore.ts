@@ -90,8 +90,6 @@ export const useTaskStore = defineStore('tasks', () => {
 
     async function updateTask(taskId: string, taskUpdate: TaskUpdate) {
         if (!currentRunId.value) return;
-        isLoading.value = true;
-        error.value = null;
         try {
             const response = await apiUpdateTask(currentRunId.value, taskId, taskUpdate);
             const updatedTaskData = response.data;
@@ -101,11 +99,8 @@ export const useTaskStore = defineStore('tasks', () => {
                 Object.assign(taskToUpdate, updatedTaskData);
             }
         } catch (err) {
-            error.value = `更新任务 ${taskId} 失败`;
-            console.error(error.value, err);
+            console.error(`更新任务 ${taskId} 失败`, err);
             throw err;
-        } finally {
-            isLoading.value = false;
         }
     }
 
@@ -143,18 +138,13 @@ export const useTaskStore = defineStore('tasks', () => {
 
     async function deleteTask(taskId: string) {
         if (!currentRunId.value) return;
-        isLoading.value = true;
-        error.value = null;
         try {
             await apiDeleteTask(currentRunId.value, taskId);
             // 优化：直接从本地树中移除，而不是重新获取所有
             findAndRemoveTask(taskId, tasks.value);
         } catch (err) {
-            error.value = `删除任务 ${taskId} 失败`;
-            console.error(error.value, err);
+            console.error(`删除任务 ${taskId} 失败`, err);
             throw err;
-        } finally {
-            isLoading.value = false;
         }
     }
 

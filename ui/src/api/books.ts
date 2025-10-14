@@ -32,6 +32,7 @@ export interface BookCreate {
   constraints?: string;
   acceptance_criteria?: string;
   length?: string;
+  day_wordcount_goal?: number;
 }
 
 // 对应后端的 IdeaOutput 模型
@@ -39,6 +40,9 @@ export interface IdeaOutput {
   name: string;
   goal: string;
   instructions: string;
+  input_brief: string;
+  constraints: string;
+  acceptance_criteria: string;
 }
 
 export const getAllBooks = () => apiClient.get<BookMeta[]>('/books');

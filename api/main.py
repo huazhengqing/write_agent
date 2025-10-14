@@ -73,6 +73,7 @@ class BookCreate(BaseModel):
     constraints: Optional[str] = ""
     acceptance_criteria: Optional[str] = ""
     length: Optional[str] = ""
+    day_wordcount_goal: Optional[int] = 20000
 
 
 class TaskUpdate(BaseModel):
@@ -189,7 +190,7 @@ def update_book_api(run_id: str, book_update: BookMeta):
         raise HTTPException(status_code=404, detail=f"未找到 run_id 为 '{run_id}' 的书籍。")
     
     # Pydantic 的 model_dump 可以方便地将模型转为字典
-    meta_db.update_book(run_id, book_update.model_dump())
+    meta_db.add_book(book_update.model_dump())
     updated_book = meta_db.get_book_meta(run_id)
     if not updated_book:
          raise HTTPException(status_code=500, detail="更新书籍后无法立即找到，请检查数据库。")

@@ -82,35 +82,26 @@ class BookMetaDB:
             self.conn.commit()
 
     def add_book(self, book_info: Dict[str, Any]) -> str:
-        run_id = book_info.get("run_id")
-        name = book_info.get("name")
-        if not run_id:
-            run_id = sanitize_filename(name)
-        meta_data = {
-            "run_id": run_id,
-            "category": book_info.get("category"),
-            "language": book_info.get("language"),
-            "goal": book_info.get("goal"),
-            "name": book_info.get("name"), 
-            "length": book_info.get("length"),
-            "day_wordcount_goal": book_info.get("day_wordcount_goal", 20000),
-            "instructions": book_info.get("instructions", ""),
-            "input_brief": book_info.get("input_brief", ""),
-            "constraints": book_info.get("constraints", ""),
-            "acceptance_criteria": book_info.get("acceptance_criteria", ""),
-        }
-        columns = ", ".join(meta_data.keys())
-        placeholders = ", ".join([f":{key}" for key in meta_data.keys()])
-        update_clause = ", ".join([f"{key} = excluded.{key}" for key in meta_data if key != 'run_id'])
+        if "run_id" not in book_info or not book_info["run_id"]:
+            if "name" not in book_info or not book_info["name"]:
+                raise ValueError("创建新书时，'name' 字段不能为空。")
+            book_info["run_id"] = sanitize_filename(book_info["name"])
+        
+        run_id = book_info["run_id"]
+
+        columns = ", ".join(book_info.keys())
+        placeholders = ", ".join([f":{key}" for key in book_info.keys()])
+        update_clause = ", ".join([f"{key} = :{key}" for key in book_info if key != 'run_id'])
+
         with self._lock:
             self.cursor.execute(
                 f"""
                 INSERT INTO t_book_meta ({columns})
                 VALUES ({placeholders})
                 ON CONFLICT(run_id) DO UPDATE SET
-                    {update_clause}
+                    {update_clause}, updated_at = CURRENT_TIMESTAMP
                 """,
-                meta_data
+                book_info
             )
             self.conn.commit()
         return run_id
@@ -194,8 +185,11 @@ class BookMetaDB:
 
 @lru_cache(maxsize=None)
 def get_meta_db() -> BookMetaDB:
+    import atexit
     from utils.file import data_dir
     db_path = data_dir / "books.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     instance = BookMetaDB(db_path=str(db_path))
+    # 注册 close 方法，确保在程序退出时数据库连接能被正确关闭
+    atexit.register(instance.close)
     return instance

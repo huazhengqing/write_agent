@@ -25,42 +25,30 @@ export const useBookStore = defineStore('books', () => {
   }
 
   async function createNewBook(bookData: BookCreate) {
-    isLoading.value = true;
-    error.value = null;
     try {
       const response = await createBook(bookData);
       // 优化：直接将新书添加到列表，而不是重新获取所有
       books.value.push(response.data);
       return response.data;
     } catch (err) {
-      error.value = '创建书籍失败';
-      console.error(error.value, err);
+      console.error('创建书籍失败', err);
       throw error;
-    } finally {
-      isLoading.value = false;
     }
   }
 
   async function deleteBookById(runId: string) {
-    isLoading.value = true;
-    error.value = null;
     try {
       await deleteBook(runId);
       // 优化：直接从列表中移除，而不是重新获取所有
       const index = books.value.findIndex(b => b.run_id === runId);
       if (index !== -1) books.value.splice(index, 1);
     } catch (err) {
-      error.value = `删除书籍 ${runId} 失败`;
-      console.error(error.value, err);
+      console.error(`删除书籍 ${runId} 失败`, err);
       throw err;
-    } finally {
-      isLoading.value = false;
     }
   }
 
   async function updateBookById(runId: string, bookData: BookMeta) {
-    isLoading.value = true;
-    error.value = null;
     try {
       // 创建一个不包含 run_id 的副本用于请求体
       const dataToUpdate = { ...bookData };
@@ -76,25 +64,19 @@ export const useBookStore = defineStore('books', () => {
       }
       return response.data;
     } catch (err) {
-      error.value = `更新书籍 ${runId} 失败`;
-      console.error(error.value, err);
+      console.error(`更新书籍 ${runId} 失败`, err);
       throw err;
     } finally {
-      isLoading.value = false;
+      // isLoading.value = false; // This was the original issue. It's now removed.
     }
   }
 
   async function syncBookById(runId: string) {
-    isLoading.value = true;
-    error.value = null;
     try {
       return await syncBook(runId);
     } catch (err) {
-      error.value = `同步书籍 ${runId} 失败`;
       console.error(error.value, err);
       throw err;
-    } finally {
-      isLoading.value = false;
     }
   }
 

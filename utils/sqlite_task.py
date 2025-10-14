@@ -264,22 +264,15 @@ class TaskDB:
 
 
     def get_task_by_id(self, task_id: str) -> Optional[Dict[str, Any]]:
-        """
-        根据 task_id 获取单个任务的完整信息, 并返回一个字典。
-        """
         if not task_id:
             return None
-        
         row = None
         with self._lock:
             self.cursor.execute("SELECT * FROM t_tasks WHERE id = ?", (task_id,))
             row = self.cursor.fetchone()
-
         if not row:
             return None
         task_data = dict(row)
-        
-        # 将存储在 'results' 字段的JSON字符串解码并合并
         if task_data.get('results'):
             try:
                 remaining_results = json.loads(task_data['results'])

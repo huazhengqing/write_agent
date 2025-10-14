@@ -14,7 +14,11 @@
             <component :is="isCollapsed ? 'Expand' : 'Fold'" />
           </el-icon>
         </div>
-        <el-menu-item index="/">
+        <el-menu-item index="/create-book">
+          <el-icon><Edit /></el-icon>
+          <span>创建项目</span>
+        </el-menu-item>
+        <el-menu-item index="/dashboard">
           <el-icon><Folder /></el-icon>
           <span>项目管理</span>
         </el-menu-item>
@@ -35,6 +39,7 @@
 import { ref, computed } from 'vue';
 import { useRoute } from 'vue-router';
 import { Folder, Tickets, Fold, Expand } from '@element-plus/icons-vue';
+import { Edit } from '@element-plus/icons-vue';
 
 const route = useRoute();
 const isCollapsed = ref(false);
@@ -46,7 +51,7 @@ const activeMenu = computed(() => {
   }
   // 如果是项目详情页，也高亮项目管理
   if (route.path.startsWith('/books/')) {
-    return '/';
+    return '/dashboard';
   }
   return route.path;
 });
