@@ -1,10 +1,10 @@
+import importlib
 from story.prompts.models.atom import AtomOutput
 from story.prompts.models.plan import PlanOutput, convert_plan_to_tasks
 from story.prompts.route.expert import RouteExpertOutput
 from story.agent.context import get_outside_design, get_outside_search, get_summary
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion
-from utils.loader import load_prompts
 from utils.sqlite_meta import get_meta_db
 from utils.sqlite_task import get_task_db, dict_to_task
 from story import save
@@ -178,8 +178,8 @@ async def design(task: Task, expert: str) -> Task:
         "text_summary": await get_summary(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
     }
 
-    system_prompt, user_prompt = load_prompts(f"story.prompts.design.{expert}", "system_prompt", "user_prompt")
-    messages = get_llm_messages(system_prompt, user_prompt, None, context)
+    module = importlib.import_module(f"story.prompts.design.{expert}")
+    messages = get_llm_messages(module.system_prompt, module.user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.75)
     llm_message = await llm_completion(llm_params)
 

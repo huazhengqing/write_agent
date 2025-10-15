@@ -1,5 +1,4 @@
 from pydantic import BaseModel, Field
-import asyncio
 from utils.llm import get_llm_messages, get_llm_params, llm_completion
 
 
@@ -62,11 +61,9 @@ user_prompt = """
 
 
 
-async def generate_idea_async():
+async def generate_idea():
     messages = get_llm_messages(system_prompt, user_prompt)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.8)
     llm_message = await llm_completion(llm_params, response_model=IdeaOutput)
     return llm_message.validated_data
 
-def generate_idea():
-    return asyncio.run(generate_idea_async())

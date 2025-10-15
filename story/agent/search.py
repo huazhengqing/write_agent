@@ -3,7 +3,6 @@ from story.prompts.models.atom import AtomOutput
 from story.prompts.models.plan import PlanOutput, convert_plan_to_tasks
 from story import save
 from utils.models import Task
-from utils.loader import load_prompts
 from utils.llm import get_llm_messages, get_llm_params, llm_completion
 from utils.react_agent import call_react_agent
 from utils.sqlite_meta import get_meta_db

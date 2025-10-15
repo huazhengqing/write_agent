@@ -3,7 +3,6 @@ from story.prompts.models.plan import PlanOutput, plan_to_task
 from story.agent.context import get_outside_design, get_outside_search, get_summary
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion
-from utils.loader import load_prompts
 from utils.sqlite_task import get_task_db, dict_to_task
 from story.base import hybrid_query_react
 from utils.sqlite_meta import get_meta_db

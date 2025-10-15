@@ -3,7 +3,6 @@ from story import save
 from story.agent.context import get_outside_design, get_outside_search, get_summary
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion
-from utils.loader import load_prompts
 from utils.sqlite_meta import get_meta_db
 from utils.sqlite_task import dict_to_task, get_task_db
 

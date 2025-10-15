@@ -2,15 +2,8 @@ from functools import lru_cache
 import os
 from loguru import logger
 from typing import List, Optional, Callable, Any, Tuple
-from diskcache import Cache
 from llama_index.core.tools import FunctionTool
 from utils.file import cache_dir
-
-
-
-cache_search_dir = cache_dir / "search"
-cache_search_dir.mkdir(parents=True, exist_ok=True)
-cache_searh = Cache(str(cache_search_dir), expire=60 * 60 * 24 * 7)
 
 
 
@@ -70,12 +63,6 @@ def search_with_ddg(query: str, max_results: int) -> str:
 
 
 async def web_search(query: str, max_results: int = 10) -> str:
-    normalized_query = query.lower().strip()
-    cache_key = f"web_search:{normalized_query}:{max_results}"
-    cached_result = cache_searh.get(cache_key)
-    if cached_result:
-        return cached_result
-    
     search_strategies: List[Tuple[str, Callable[[str, int], Any]]] = [
         ("SearXNG", search_with_searxng),
         ("DuckDuckGo", search_with_ddg),
@@ -91,7 +78,6 @@ async def web_search(query: str, max_results: int = 10) -> str:
             else:
                 search_results = strategy_func(query, max_results)
             if search_results:
-                cache_searh.set(cache_key, search_results)
                 logger.info(f"使用 {name} 搜索成功")
                 return search_results
         except Exception as e:
@@ -183,11 +169,6 @@ async def scrape_dynamic(url: str) -> Optional[str]:
 
 async def scrape_and_extract(url: str) -> str:
     logger.info(f"开始抓取 URL: {url}")
-    cached_content = cache_searh.get(url)
-    if cached_content:
-        logger.info(f"从缓存中获取 URL 内容: {url}")
-        return cached_content
-    
     scrape_strategies: List[Tuple[str, Callable[[str], Any]]] = [
         ("静态抓取", scrape_static),
         ("动态渲染抓取", scrape_dynamic),
@@ -220,7 +201,6 @@ async def scrape_and_extract(url: str) -> str:
             final_text = scraped_text
             
         logger.info(f"正在缓存 URL 内容: {url}")
-        cache_searh.set(url, final_text)
         return final_text
     
     logger.error("错误: 所有抓取策略均未能从URL '{}' 提取到有效内容。最后错误: {}", url, last_exception)

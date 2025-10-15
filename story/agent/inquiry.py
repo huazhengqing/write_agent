@@ -1,9 +1,9 @@
+import importlib
 import json
 from typing import Literal
 from loguru import logger
 from story.prompts.models.inquiry import InquiryOutput
 from utils.llm import get_llm_messages, get_llm_params, llm_completion
-from utils.loader import load_prompts
 from utils.models import Task
 from utils.sqlite_task import get_task_db
 
@@ -36,8 +36,8 @@ async def inquiry(
         "latest_text": latest_text,
         "overall_planning": overall_planning,
     }
-    system_prompt, user_prompt = load_prompts(f"story.prompts.inquiry.{inquiry_type}", "system_prompt", "user_prompt")
-    messages = get_llm_messages(system_prompt, user_prompt, None, context)
+    module = importlib.import_module(f"story.prompts.inquiry.{inquiry_type}")
+    messages = get_llm_messages(module.system_prompt, module.user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.1)
     llm_message = await llm_completion(llm_params, response_model=InquiryOutput)
     

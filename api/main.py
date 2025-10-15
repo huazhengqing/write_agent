@@ -17,7 +17,7 @@ from utils.sqlite_task import get_task_db, dict_to_task, TaskDB
 from utils.models import Task
 from utils.file import data_dir 
 from story.task import create_root_task, do_task
-from story.project import generate_idea_async, IdeaOutput
+from story.idea import generate_idea, IdeaOutput
 
 
 app = FastAPI(
@@ -159,7 +159,7 @@ async def generate_idea_api():
     使用 AI 生成一个新的书籍创意，包含名称、目标、指令等元信息。
     """
     try:
-        idea = await generate_idea_async()
+        idea = await generate_idea()
         if not idea:
             raise HTTPException(status_code=500, detail="AI 未能生成有效的创意。")
         return idea

@@ -1,5 +1,4 @@
 from datetime import datetime
-from utils.loader import load_prompts
 from rag.kg import kg_add
 from rag.vector_add import vector_add
 from story.base import get_story_kg_store, get_story_vector_store
@@ -30,13 +29,14 @@ def design(task: Task, content: str) -> None:
         content_format="md",
         doc_id=task.id
     )
+    from story.prompts.kg.design import kg_extraction_prompt
     kg_add(
         kg_store=kg_store,
         content=content,
         metadata=doc_metadata,
         doc_id=task.id,
         content_format="md",
-        kg_extraction_prompt=load_prompts(f"story.prompts.kg.design", "kg_extraction_prompt")[0]
+        kg_extraction_prompt=kg_extraction_prompt
     )
 
 
@@ -67,13 +67,14 @@ def write(task: Task, content: str) -> None:
         "hierarchical_position": task.hierarchical_position,
         "created_at": datetime.now().isoformat()
     }
+    from story.prompts.kg.write import kg_extraction_prompt
     kg_add(
         kg_store=kg_store,
         content=content,
         metadata=doc_metadata,
         doc_id=task.id,
         content_format="txt",
-        kg_extraction_prompt=load_prompts(f"story.prompts.kg.write", "kg_extraction_prompt")[0]
+        kg_extraction_prompt=kg_extraction_prompt
     )
 
 
