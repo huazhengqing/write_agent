@@ -74,6 +74,22 @@ def get_llm_messages(
 
 
 
+def log_llm_params(llm_params: Dict[str, Any]):
+    params_to_log = llm_params.copy()
+    params_to_log.pop("messages", None)
+    import json
+    logger.info(f"LLM 参数:\n{json.dumps(params_to_log, indent=2, ensure_ascii=False, default=str)}")
+
+    messages = llm_params.get("messages", [])
+    system_prompt = next((m.get("content", "") for m in messages if m.get("role") == "system"), "")
+    user_prompt = next((m.get("content", "") for m in reversed(messages) if m.get("role") == "user"), "")
+    if system_prompt:
+        logger.info(f"系统提示词:\n{system_prompt}")
+    if user_prompt:
+        logger.info(f"用户提示词:\n{user_prompt}")
+    
+
+
 def clean_markdown_fences(content: str) -> str:
     """如果内容被Markdown代码块包裹, 则移除它们。"""
     if not content:

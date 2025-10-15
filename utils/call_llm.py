@@ -3,9 +3,8 @@ import os
 from loguru import logger
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List, Literal, Type, Callable, Union
-from utils.llm import get_llm_params, llm_group_type, llm_completion, clean_markdown_fences
+from utils.llm import get_llm_params, llm_group_type, llm_completion, clean_markdown_fences, log_llm_params, log_prompts
 from utils.search import web_search_tools
-
 
 
 
@@ -28,15 +27,16 @@ def delete_cache(cache_key: Optional[str]):
 ###############################################################################
 
 
-self_correction_prompt = """
+
+retry_output_cls_prompt = """
 # 任务: 修正JSON输出
 你上次的输出因为格式错误导致解析失败。请根据原始任务和错误信息, 重新生成。
 
+# 你上次格式错误的输出
+{error_output}
+
 # 错误信息
 {error}
-
-# 你上次格式错误的输出
-{raw_output}
 
 # 这是你需要完成的原始任务
 {original_task}
@@ -48,34 +48,119 @@ self_correction_prompt = """
 """
 
 
-
-def _handle_llm_failure(
-    e: Exception,
+async def retry_output_cls(
     llm_params: Dict[str, Any],
-    llm_params_for_api: Dict[str, Any],
-    output_cls: Optional[Type[BaseModel]],
-    raw_output_for_correction: Optional[str],
-):
-    from pydantic import ValidationError
-    if output_cls and isinstance(e, (ValidationError, json.JSONDecodeError)) and raw_output_for_correction:
-        logger.info("检测到JSON错误, 下次尝试将进行自我修正...")
-        original_user_content = ""
-        for msg in reversed(llm_params["messages"]):
-            if msg["role"] == "user":
-                original_user_content = msg.get("content", "")
-                break
-        
-        correction_prompt = self_correction_prompt.format(
-            error=str(e), 
-            raw_output=raw_output_for_correction,
-            original_task=original_user_content
-        )
-        
-        system_message = [m for m in llm_params["messages"] if m["role"] == "system"]
-        llm_params_for_api["messages"] = system_message + [{"role": "user", "content": correction_prompt}]
+    error_output: str,
+    error: str,
+    output_cls: Type[BaseModel]
+) -> Dict[str, Any]:
+    """
+    独立的接口, 负责完成一次完整的JSON自我修正交互。
+    它会生成修正提示, 调用LLM, 并解析返回的结果。
+    """
+    original_messages = llm_params["messages"]
+    original_user_content = ""
+    for msg in reversed(original_messages):
+        if msg["role"] == "user":
+            original_user_content = msg.get("content", "")
+            break
+    
+    prompt = retry_output_cls_prompt.format(
+        error=error, 
+        error_output=error_output,
+        original_task=original_user_content
+    )
+    
+    system_message = [m for m in original_messages if m["role"] == "system"]
+    new_messages = system_message + [{"role": "user", "content": prompt}]
+
+    correction_llm_params = llm_params.copy()
+    correction_llm_params["messages"] = new_messages
+    correction_llm_params["response_format"] = {
+        "type": "json_object",
+        "schema": output_cls.model_json_schema()
+    }
+
+    import litellm
+    response = await litellm.acompletion(**correction_llm_params)
+    if not response.choices or not response.choices[0].message or not response.choices[0].message.content:
+        raise ValueError("LLM自我修正响应无效。")
+
+    message = response.choices[0].message
+    cleaned_content = clean_markdown_fences(message.content)
+    validated_data = output_cls.model_validate_json(cleaned_content)
+    message.validated_data = validated_data
+    return message
+
+
+
+###############################################################################
+
+
+
+def _parse_and_validate_response(message: Any, output_cls: Type[BaseModel]) -> tuple[BaseModel, str]:
+    """
+    从 LLM 响应中解析和验证数据。
+    它处理 tool_calls 或 content, 并根据 output_cls 进行验证。
+    如果解析或验证失败, 它会引发一个带有原始输出的异常。
+    返回:
+        - validated_data: 验证后的 Pydantic 模型实例。
+        - raw_output: 从 LLM 响应中提取的原始字符串输出。
+    """
+    validated_data = None
+    raw_output = ""
+    if message.tool_calls:
+        tool_call = message.tool_calls[0]
+        raw_output = tool_call.function.arguments
+        cleaned_args = clean_markdown_fences(raw_output)
+        parsed_args = getattr(tool_call.function, "parsed_arguments", None) or json.loads(cleaned_args)
+        validated_data = output_cls(**parsed_args)
+    elif message.content:
+        raw_output = message.content
+        validated_data = output_cls.model_validate_json(clean_markdown_fences(raw_output))
+    return validated_data, raw_output
+
+
+async def completion_once(
+    llm_params: Dict[str, Any], 
+    output_cls: Optional[Type[BaseModel]] = None
+) -> Dict[str, Any]:
+    llm_params_for_api = llm_params.copy()
+    if output_cls:
+        llm_params_for_api["response_format"] = {
+            "type": "json_object",
+            "schema": output_cls.model_json_schema()
+        }
+    log_llm_params(llm_params_for_api)
+
+    import litellm
+    response = await litellm.acompletion(**llm_params_for_api)
+
+    if not response.choices or not response.choices[0].message:
+        raise ValueError("LLM响应中缺少 choices 或 message。")
+    
+    message = response.choices[0].message
+
+    cache_key = response.get("x-litellm-cache-key", "")
+    if cache_key:
+        message.cache_key = cache_key
+        logger.info(f"cache_key={message.cache_key}")
+
+    if output_cls:
+        from pydantic import ValidationError
+        try:
+            validated_data, raw_output = _parse_and_validate_response(message, output_cls)
+            message.validated_data = validated_data
+            logger.success(f"LLM 成功返回内容 \n{message.validated_data}")
+        except (json.JSONDecodeError, ValidationError) as e:
+            delete_cache(message.cache_key)
+            e.raw_output = raw_output
+            raise e
     else:
-        # 如果不是可修正的错误, 或者没有 output_cls, 则重置为原始消息
-        llm_params_for_api["messages"] = llm_params["messages"]
+        message.content = clean_markdown_fences(message.content)
+        logger.success(f"LLM 成功返回内容 \n{message.content}")
+
+    return message
 
 
 
@@ -83,95 +168,45 @@ async def completion(
     llm_params: Dict[str, Any], 
     output_cls: Optional[Type[BaseModel]] = None
 ) -> Dict[str, Any]:
-    params_to_log = llm_params.copy()
-    params_to_log.pop("messages", None)
-    logger.info(f"LLM 参数:\n{json.dumps(params_to_log, indent=2, ensure_ascii=False, default=str)}")
+    """
+    调用 LLM, 支持 JSON 输出和自动修正。
+    它首先尝试一次获取结果。如果因为格式问题失败, 它会进入一个重试循环, 
+    尝试让 LLM 自我修正其输出。
+    """
+    from pydantic import ValidationError
 
-    llm_params_for_api = llm_params.copy()
-
-    if output_cls:
-        llm_params_for_api["response_format"] = {
-            "type": "json_object",
-            "schema": output_cls.model_json_schema()
-        }
-    
-    for attempt in range(6):
-        system_prompt = ""
-        user_prompt = ""
-        messages = llm_params_for_api.get("messages", [])
-        for message in messages:
-            if message.get("role") == "system":
-                system_prompt = message.get("content", "")
-            elif message.get("role") == "user":
-                user_prompt = message.get("content", "")
+    # 1. 首次尝试
+    try:
+        return await completion_once(llm_params, output_cls)
+    except (ValidationError, json.JSONDecodeError) as e:
+        logger.warning(f"首次尝试解析LLM输出失败: {e}")
+        if not (output_cls and hasattr(e, 'raw_output') and e.raw_output):
+            logger.error("无法进行修正重试: 缺少 output_cls 或原始输出。")
+            raise e
         
-        if system_prompt:
-            logger.info(f"系统提示词:\n{system_prompt}")
-        if user_prompt:
-            logger.info(f"用户提示词:\n{user_prompt}")
-        
-        logger.info(f"开始 LLM 调用 (尝试 {attempt + 1}/6)...")
+        # 准备进入修正重试循环
+        error_output = e.raw_output
+        error_str = str(e)
+    except Exception as e:
+        logger.error(f"LLM 调用时发生意外错误: {e}")
+        raise e
 
-        cache_key = None
-        raw_output_for_correction = None
+    # 2. 如果首次尝试失败, 进入修正重试循环
+    max_retries = 6
+    for attempt in range(max_retries):
         try:
-            import litellm
-            response = await litellm.acompletion(**llm_params_for_api)
-            # logger.debug(f"LLM 原始响应: {response}")
-            if not response.choices or not response.choices[0].message:
-                raise ValueError("LLM响应中缺少 choices 或 message。")
+            logger.info(f"正在进行第 {attempt + 1} 次修正重试...")
+            return await retry_output_cls(llm_params=llm_params, error_output=error_output, error=error_str, output_cls=output_cls)
+        except (ValidationError, json.JSONDecodeError) as retry_e:
+            logger.warning(f"第 {attempt + 1} 次修正重试失败: {retry_e}")
+            error_output = getattr(retry_e, 'raw_output', error_output) 
+            error_str = str(retry_e)
+        except Exception as retry_e:
+            logger.error(f"修正重试期间发生意外错误: {retry_e}")
+            raise retry_e
 
-            message = response.choices[0].message
-            cache_key = response.get("x-litellm-cache-key")
-
-            if output_cls:
-                validated_data = None
-                if message.tool_calls:
-                    tool_call = message.tool_calls[0]
-                    raw_output_for_correction = tool_call.function.arguments
-                    cleaned_args = clean_markdown_fences(raw_output_for_correction)
-                    if hasattr(tool_call.function, "parsed_arguments") and tool_call.function.parsed_arguments:
-                        parsed_args = tool_call.function.parsed_arguments
-                    else:
-                        parsed_args = json.loads(cleaned_args)
-                    validated_data = output_cls(**parsed_args)
-                elif message.content:
-                    raw_output_for_correction = clean_markdown_fences(message.content)
-                    validated_data = output_cls.model_validate_json(raw_output_for_correction)
-
-                if validated_data:
-                    message.validated_data = validated_data
-                else:
-                    raise ValueError("LLM响应既无tool_calls也无有效content可供解析。")
-            else:
-                message.content = clean_markdown_fences(message.content)
-            
-            # logger.success("LLM 响应成功通过验证。")
-
-            reasoning = message.get("reasoning_content") or message.get("reasoning", "")
-            if reasoning:
-                logger.info(f"推理过程:\n{reasoning}")
-
-            final_content_to_log = message.validated_data if output_cls else message.content
-            logger.info(f"LLM 成功返回内容 (尝试 {attempt + 1}):\n{final_content_to_log}")
-
-            return message
-        except Exception as e:
-            logger.warning("LLM调用或验证失败 (尝试 {}/{}): {}", attempt + 1, 6, e)
-            if attempt >= 6 - 1:
-                logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
-                raise e
-
-            delete_cache(cache_key)
-            _handle_llm_failure(
-                e=e,
-                llm_params=llm_params,
-                llm_params_for_api=llm_params_for_api,
-                output_cls=output_cls,
-                raw_output_for_correction=raw_output_for_correction,
-            )
-
-    raise RuntimeError("llm_completion 在所有重试后失败, 这是一个不应出现的情况。")
+    logger.error("LLM 响应在多次重试后仍然无效, 任务失败。")
+    raise RuntimeError("LLM completion failed after all retries.")
 
 
 
@@ -245,4 +280,3 @@ async def react(
         output = clean_markdown_fences(agentOutput.response)
         logger.info(f"完成 output=\n{output}")
         return output
-
