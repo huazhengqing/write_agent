@@ -1,7 +1,7 @@
 from datetime import datetime
 from rag.kg import kg_add
 from rag.vector_add import vector_add
-from story.base import get_story_kg_store, get_story_vector_store
+from story.rag.base import get_kg, get_vector
 from utils.models import Task
 
 
@@ -14,8 +14,8 @@ def design(task: Task, content: str) -> None:
     ]
     header = " ".join(filter(None, header_parts))
     content = f"# 任务\n{header}\n\n{content}"
-    vector_store = get_story_vector_store(task.run_id, "design")
-    kg_store = get_story_kg_store(task.run_id, "design")
+    vector_store = get_vector(task.run_id, "design")
+    kg_store = get_kg(task.run_id, "design")
     doc_metadata = {
         "task_id": task.id,
         "hierarchical_position": task.hierarchical_position,
@@ -45,7 +45,7 @@ def search(task: Task, content: str) -> None:
     header_parts = [task.id, task.hierarchical_position, task.goal]
     header = " ".join(filter(None, header_parts))
     full_content = f"# 任务\n{header}\n\n{content}"
-    vector_store = get_story_vector_store(task.run_id, "search")
+    vector_store = get_vector(task.run_id, "search")
     doc_metadata = {
         "task_id": task.id,
         "created_at": datetime.now().isoformat()
@@ -61,7 +61,7 @@ def search(task: Task, content: str) -> None:
 
 
 def write(task: Task, content: str) -> None:
-    kg_store = get_story_kg_store(task.run_id, "write")
+    kg_store = get_kg(task.run_id, "write")
     doc_metadata = {
         "task_id": task.id,
         "hierarchical_position": task.hierarchical_position,
@@ -88,7 +88,7 @@ def summary(task: Task, content: str) -> None:
     ]
     header = " ".join(filter(None, header_parts))
     full_content = f"# 任务\n{header}\n\n{content}"
-    vector_store = get_story_vector_store(task.run_id, "summary")
+    vector_store = get_vector(task.run_id, "summary")
     doc_metadata = {
         "task_id": task.id,
         "hierarchical_position": task.hierarchical_position,

@@ -1,10 +1,10 @@
 from typing import Optional
+from story.agent.react_agent import story_react_agent
 from story.prompts.models.plan import PlanOutput, plan_to_task
-from story.agent.context import get_outside_design, get_outside_search, get_summary
+from story.context import get_context
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion
 from utils.sqlite_task import get_task_db, dict_to_task
-from story.base import hybrid_query_react
 from utils.sqlite_meta import get_meta_db
 
 
@@ -35,9 +35,9 @@ async def all(task: Task) -> Task:
         "search_dependent": search_dependent,
         "latest_text": latest_text,
         "overall_planning": overall_planning,
-        "outside_design": await get_outside_design(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
-        "outside_search": await get_outside_search(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
-        "text_summary": await get_summary(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
+        "outside_design": await get_context.design(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
+        "outside_search": await get_context.search(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
+        "text_summary": await get_context.summary(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
     }
 
     from story.prompts.plan.all import system_prompt, user_prompt
@@ -99,11 +99,11 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     final_system_prompt = messages[0]["content"]
     final_user_prompt = messages[1]["content"]
-    llm_message = await hybrid_query_react(
+    llm_message = await story_react_agent(
         run_id=parent_task.run_id,
         system_prompt=final_system_prompt,
         user_prompt=final_user_prompt,
-        response_model=PlanOutput
+        output_cls=PlanOutput
     )
     if not llm_message:
         return None

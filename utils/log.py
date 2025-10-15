@@ -5,20 +5,12 @@ from utils.file import log_dir
 
 
 
-class PropagateHandler(logging.Handler):
-    def emit(self, record: logging.LogRecord):
-        logging.getLogger(record.name).handle(record)
-
-
-
 @lru_cache(maxsize=None)
 def init_logger(file_name):
     logger.remove()
     log_path = log_dir / f"{file_name}.log"
     if log_path.exists():
         log_path.unlink()
-    # 在测试期间, 注释此行可将所有日志输出重定向到文件
-    # logger.add(PropagateHandler(), format="{message}", level="DEBUG")
     sink_id = logger.add(
         log_path,
         format="{time:YYYY-MM-DD HH:mm:ss.SSS} | {level: <8} | {name}:{function}:{line} - {message}",

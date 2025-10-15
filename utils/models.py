@@ -61,7 +61,6 @@ class Task(BaseModel):
 
 
 
-@lru_cache(maxsize=30)
 def get_parent_id(task_id: str) -> str:
     """
     根据任务ID, 获取其父任务ID。
@@ -69,7 +68,6 @@ def get_parent_id(task_id: str) -> str:
     对于 '1', 它会返回 ''。
     """
     if not task_id or '.' not in task_id:
-        # 如果ID为空或没有'.', 说明是根任务, 没有父任务
         return ""
     # 使用 rsplit 提高效率, 只分割一次
     parent_id, _ = task_id.rsplit('.', 1)

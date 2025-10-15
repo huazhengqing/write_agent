@@ -1,14 +1,15 @@
 from loguru import logger
 from llama_index.core.vector_stores import MetadataFilters, MetadataFilter
-from story.agent import inquiry
+from story.rag import query
+from story.context import inquiry
 from utils.models import Task, get_sibling_ids_up_to_current
 from rag.vector_query import get_vector_query_engine, index_query_batch
-from story.base import get_story_vector_store
+from story.rag.base import get_vector
 from utils.sqlite_task import get_task_db
 
 
 
-async def get_outside_search(
+async def search(
     task: Task, 
     book_level_design: str, 
     global_state_summary: str, 
@@ -52,7 +53,7 @@ async def get_outside_search(
     filters = MetadataFilters(filters=active_filters) if active_filters else None
     
     query_engine = get_vector_query_engine(
-        vector_store=get_story_vector_store(task.run_id, "search"),
+        vector_store=get_vector(task.run_id, "search"),
         filters=filters,
         similarity_top_k=150,
         top_n=50,
@@ -66,7 +67,7 @@ async def get_outside_search(
     return result
 
 
-async def get_outside_design(
+async def design(
     task: Task, 
     book_level_design: str, 
     global_state_summary: str, 
@@ -109,15 +110,14 @@ async def get_outside_design(
         active_filters.append(MetadataFilter(key='task_id', value=preceding_sibling_ids, operator='nin'))
     vector_filters = MetadataFilters(filters=active_filters) if active_filters else None
 
-    from story.base import hybrid_query_design
-    result = await hybrid_query_design(task.run_id, all_questions, vector_filters)
+    result = await query.design(task.run_id, all_questions, vector_filters)
 
     if result:
         task_db.update_task_context(task.id, "design", result)
     return result
 
 
-async def get_summary(
+async def summary(
     task: Task, 
     book_level_design: str, 
     global_state_summary: str, 
@@ -164,8 +164,7 @@ async def get_summary(
         active_filters.append(MetadataFilter(key='task_id', value=preceding_sibling_ids, operator='nin'))
     vector_filters = MetadataFilters(filters=active_filters) if active_filters else None
 
-    from story.base import hybrid_query_write
-    result = await hybrid_query_write(task.run_id, all_questions, vector_filters)
+    result = await query.write(task.run_id, all_questions, vector_filters)
 
     if result:
         task_db.update_task_context(task.id, "summary", result)

@@ -1,6 +1,6 @@
+from story.context import get_context
 from story.prompts.models.atom import AtomOutput
-from story import save
-from story.agent.context import get_outside_design, get_outside_search, get_summary
+from story.rag import save
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion
 from utils.sqlite_meta import get_meta_db
@@ -74,9 +74,9 @@ async def write(task: Task) -> Task:
         "latest_text": latest_text,
         "overall_planning": overall_planning,
         "style": book_meta.get("style", ""),
-        "outside_design": await get_outside_design(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
-        "outside_search": await get_outside_search(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
-        "text_summary": await get_summary(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
+        "outside_design": await get_context.design(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
+        "outside_search": await get_context.search(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
+        "text_summary": await get_context.summary(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
     }
 
     from story.prompts.write.write import system_prompt, user_prompt
@@ -122,9 +122,9 @@ async def review(task: Task) -> Task:
         "search_dependent": search_dependent,
         "latest_text": latest_text,
         "overall_planning": overall_planning,
-        "outside_design": await get_outside_design(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
-        "outside_search": await get_outside_search(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
-        "text_summary": await get_summary(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
+        "outside_design": await get_context.design(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
+        "outside_search": await get_context.search(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
+        "text_summary": await get_context.summary(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
     }
 
     from story.prompts.write.review import system_prompt, user_prompt

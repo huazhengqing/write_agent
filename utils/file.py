@@ -29,7 +29,6 @@ log_dir.mkdir(parents=True, exist_ok=True)
 
 
 
-@lru_cache(maxsize=30)
 def sanitize_filename(name: str) -> str:
     import re
     s = re.sub(r'[\\/*?:"<>|]', "", name)
@@ -38,13 +37,11 @@ def sanitize_filename(name: str) -> str:
 
 
 
-@lru_cache(maxsize=30)
 def get_text_file_path(task: Task) -> str:
     return os.path.join(output_dir, f"{task.run_id}.txt")
 
 
 
-@lru_cache(maxsize=30)
 def get_translation_file_path(task: Task) -> str:
     return os.path.join(output_dir, f"{task.run_id}_translation.txt")
 

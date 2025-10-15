@@ -1,4 +1,4 @@
-from story import save
+from story.rag import save
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, llm_completion
 from utils.sqlite_meta import get_meta_db
