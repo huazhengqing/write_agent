@@ -36,10 +36,16 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, watch, onUnmounted } from 'vue';
 import { useRoute } from 'vue-router';
+import { storeToRefs } from 'pinia';
+import { useBookStore } from '@/stores/bookStore';
 import { Folder, Tickets, Fold, Expand } from '@element-plus/icons-vue';
 import { Edit } from '@element-plus/icons-vue';
+import { ElMessage } from 'element-plus';
+
+const bookStore = useBookStore();
+const { books } = storeToRefs(bookStore);
 
 const route = useRoute();
 const isCollapsed = ref(false);
@@ -55,6 +61,44 @@ const activeMenu = computed(() => {
   }
   return route.path;
 });
+
+// --- 全局轮询逻辑 ---
+let pollInterval: number | undefined;
+
+const hasRunningBook = computed(() => {
+  return books.value.some(book => book.status === 'running');
+});
+
+const startGlobalPolling = () => {
+  if (!pollInterval) {
+    pollInterval = window.setInterval(async () => {
+      // **关键修复**: 调用一个只更新状态和字数的方法，而不是全量替换。
+      // 我们假设 bookStore 中有这样一个方法，或者 fetchAllBooks 的行为被修正为合并而非替换。
+      // 这里我们改为调用 updateBooksStatus，这通常是更安全的操作。
+      await bookStore.updateBooksStatus();
+    }, 5000); // 5秒一次
+    ElMessage.success('检测到正在运行的项目，已启动全局自动刷新。');
+  }
+};
+
+const stopGlobalPolling = () => {
+  if (pollInterval) {
+    clearInterval(pollInterval);
+    pollInterval = undefined;
+    ElMessage.info('所有项目已停止运行，全局自动刷新已暂停。');
+  }
+};
+
+watch(hasRunningBook, (newValue, oldValue) => {
+  if (newValue && !oldValue) {
+    startGlobalPolling();
+  } else if (!newValue && oldValue) {
+    stopGlobalPolling();
+  }
+}, { immediate: true }); // immediate: true 确保应用加载时就会检查一次
+
+onUnmounted(stopGlobalPolling); // 确保在极端情况下（如关闭浏览器标签页）能清理定时器
+
 </script>
 
 <style>

@@ -1,29 +1,25 @@
-import asyncio
 from utils.log import ensure_task_logger
 from loguru import logger
 from utils.models import Task
-from utils.sqlite_meta import get_meta_db
+from utils.sqlite_meta import BookMetaDB, get_meta_db
 from utils.sqlite_task import get_task_db
 from story.agent import design, hierarchy, plan, search, summary, write
-from contextlib import asynccontextmanager
+from contextlib import contextmanager
 
 
 
 def create_root_task(run_id: str):
     if not run_id:
         raise ValueError("run_id 不能为空。")
-    
     ensure_task_logger(run_id)
     with logger.contextualize(run_id=run_id):
         task_db = get_task_db(run_id)
         if task_db.get_task_by_id("1"):
             return
-
         book_meta_db = get_meta_db()
         book_meta = book_meta_db.get_book_meta(run_id)
         if not book_meta:
             raise ValueError(f"在数据库中找不到 run_id '{run_id}' 对应的书籍元数据。")
-
         root_task = Task(
             id="1",
             parent_id="",
@@ -46,26 +42,31 @@ def create_root_task(run_id: str):
 
 
 
-RUNNING_RUN_IDS = set()
-
-
-@asynccontextmanager
-async def run_id_lock(run_id: str):
-    """一个异步上下文管理器，用于防止同一 run_id 的任务重入。"""
-    if run_id in RUNNING_RUN_IDS:
-        raise RuntimeError(f"项目 '{run_id}' 已有任务在执行中，无法开始新任务。")
-    
-    RUNNING_RUN_IDS.add(run_id)
-    logger.info(f"项目 '{run_id}' 开始执行任务，已加锁。")
+@contextmanager
+def manage_project_status(run_id: str):
+    """
+    一个上下文管理器，用于在任务执行期间管理项目的运行状态。
+    进入时将项目状态设置为 'running'，退出时（无论成功或异常）设置为 'idle'。
+    """
+    meta_db: BookMetaDB = get_meta_db()
+    meta_db.update_status(run_id, "running")
     try:
         yield
     finally:
-        RUNNING_RUN_IDS.remove(run_id)
-        logger.info(f"项目 '{run_id}' 任务执行完毕，已解锁。")
+        meta_db.update_status(run_id, "idle")
+
 
 
 async def do_task(task: Task):
-    async with run_id_lock(task.run_id):
+    """
+    外部调用接口，统一的入口
+    """
+    meta_db = get_meta_db()
+    book_meta = meta_db.get_book_meta(task.run_id)
+    if book_meta and book_meta.get("status") == "running":
+        return
+    ensure_task_logger(task.run_id)
+    with manage_project_status(task.run_id), logger.contextualize(run_id=task.run_id):
         if task.task_type == "write":
             await do_write(task)
         elif task.task_type == "design":
@@ -81,49 +82,65 @@ async def do_task(task: Task):
 
 
 
+@contextmanager
+def track_task_execution(task: Task):
+    """
+    更新任务状态
+    """
+    task_db = get_task_db(task.run_id)
+    task.status = "running"
+    task_db.update_task_status(task.id, "running")
+    try:
+        yield
+        task.status = "completed"
+        task_db.update_task_status(task.id, "completed")
+    except Exception:
+        task.status = "failed"
+        task_db.update_task_status(task.id, "failed")
+        raise
+    finally:
+        pass
+
+
+
+###############################################################################
+
+
+
 def is_daily_word_goal_reached(run_id: str) -> bool:
     """
     检查指定项目的每日写作字数目标是否已达到。
-    如果达到或超过，则返回 True，否则返回 False。
     """
     task_db = get_task_db(run_id)
     meta_db = get_meta_db()
     book_meta = meta_db.get_book_meta(run_id)
     if not book_meta:
-        return False  # 如果没有元数据，不限制
-
+        return False
     day_wordcount_goal = book_meta.get("day_wordcount_goal", 0)
     if day_wordcount_goal <= 0:
-        return False  # 如果没有设置目标或目标无效，不限制
-
+        return False
     word_count_last_24h = task_db.get_word_count_last_24h()
     if word_count_last_24h >= day_wordcount_goal:
-        logger.info(f"项目 {run_id} 在过去24小时内已写入 {word_count_last_24h} 字，已达到或超过每日目标 {day_wordcount_goal} 字。今日写作任务暂停。")
         return True
-    
     return False
 
 
 
 async def do_write(current_task: Task):
-    ensure_task_logger(current_task.run_id)
-    with logger.contextualize(run_id=current_task.run_id):
-        if not current_task.id or not current_task.goal:
-            raise ValueError("任务ID和目标不能为空。")
-        if current_task.task_type != "write":
-            raise ValueError(f"do_write 只能处理 'write' 类型的任务, 但收到了 '{current_task.task_type}' 类型。")
-        if not current_task.length:
-            raise ValueError("写作任务没有长度要求")
-        
-        if is_daily_word_goal_reached(current_task.run_id):
-            return
+    if not current_task.id or not current_task.goal:
+        raise ValueError("任务ID和目标不能为空。")
+    if current_task.task_type != "write":
+        raise ValueError(f"do_write 只能处理 'write' 类型的任务, 但收到了 '{current_task.task_type}' 类型。")
+    if not current_task.length:
+        raise ValueError("写作任务没有长度要求")
+    
+    if is_daily_word_goal_reached(current_task.run_id):
+        return
 
-        if current_task.status == "completed":
-            return
+    if current_task.status == "completed":
+        return
         
-        current_task.status = "running"
-        get_task_db(current_task.run_id).update_task_status(current_task.id, "running")
-
+    with track_task_execution(current_task):
         await do_plan(current_task)
         task_result = design.aggregate(current_task)
         task_result = write.atom(task_result)
@@ -137,9 +154,6 @@ async def do_write(current_task: Task):
         else:
             raise ValueError(f"未知的 'atom' 类型: '{task_result.results.get('atom')}'")
         
-        current_task.status = "completed"
-        get_task_db(current_task.run_id).update_task_status(current_task.id, "completed")
-
 
 
 async def do_plan(parent_task: Task):
@@ -181,19 +195,15 @@ async def do_hierarchy(parent_task: Task):
 
 
 async def do_design(current_task: Task):
-    ensure_task_logger(current_task.run_id)
-    with logger.contextualize(run_id=current_task.run_id):
-        if not current_task.id or not current_task.goal:
-            raise ValueError("任务ID和目标不能为空。")
-        if current_task.task_type != "design":
-            raise ValueError(f"do_design 只能处理 'design' 类型的任务, 但收到了 '{current_task.task_type}' 类型。")
+    if not current_task.id or not current_task.goal:
+        raise ValueError("任务ID和目标不能为空。")
+    if current_task.task_type != "design":
+        raise ValueError(f"do_design 只能处理 'design' 类型的任务, 但收到了 '{current_task.task_type}' 类型。")
+    
+    if current_task.status == "completed":
+        return
         
-        if current_task.status == "completed":
-            return
-        
-        current_task.status = "running"
-        get_task_db(current_task.run_id).update_task_status(current_task.id, "running")
-
+    with track_task_execution(current_task):
         task_result = design.atom(current_task)
         if task_result.results["atom"] == "atom":
             route_result = design.route(task_result)
@@ -218,29 +228,21 @@ async def do_design(current_task: Task):
         else:
             raise ValueError(f"未知的 'atom' 类型: '{task_result.results.get('atom')}'")
         
-        current_task.status = "completed"
-        get_task_db(current_task.run_id).update_task_status(current_task.id, "completed")
-
-
 
 ###############################################################################
 
 
 
 async def do_search(current_task: Task):
-    ensure_task_logger(current_task.run_id)
-    with logger.contextualize(run_id=current_task.run_id):
-        if not current_task.id or not current_task.goal:
-            raise ValueError("任务ID和目标不能为空。")
-        if current_task.task_type != "search":
-            raise ValueError(f"do_search 只能处理 'search' 类型的任务, 但收到了 '{current_task.task_type}' 类型。")
+    if not current_task.id or not current_task.goal:
+        raise ValueError("任务ID和目标不能为空。")
+    if current_task.task_type != "search":
+        raise ValueError(f"do_search 只能处理 'search' 类型的任务, 但收到了 '{current_task.task_type}' 类型。")
         
-        if current_task.status == "completed":
-            return
-        
-        current_task.status = "running"
-        get_task_db(current_task.run_id).update_task_status(current_task.id, "running")
-
+    if current_task.status == "completed":
+        return
+    
+    with track_task_execution(current_task):
         task_result = search.atom(current_task)
         if task_result.results["atom"] == "atom":
             search.search(task_result)
@@ -255,5 +257,3 @@ async def do_search(current_task: Task):
         else:
             raise ValueError(f"未知的 'atom' 类型: '{task_result.results.get('atom')}'")
         
-        current_task.status = "completed"
-        get_task_db(current_task.run_id).update_task_status(current_task.id, "completed")

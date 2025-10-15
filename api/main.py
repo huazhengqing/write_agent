@@ -15,7 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from utils.sqlite_meta import get_meta_db
 from utils.sqlite_task import get_task_db, dict_to_task, TaskDB
 from utils.models import Task
-from utils.file import data_dir
+from utils.file import data_dir 
 from story.task import create_root_task, do_task
 from story.project import generate_idea_async, IdeaOutput
 
@@ -60,10 +60,12 @@ class BookMeta(BaseModel):
     style: Optional[str] = None
     book_level_design: Optional[str] = None
     global_state_summary: Optional[str] = None
+    status: Optional[str] = "idle"
+    word_count_today: Optional[int] = 0
 
 
 class BookCreate(BaseModel):
-    """创建书籍时请求体使用的模型。"""
+    """创建书籍时请求体使用的模型。""" 
     name: str = Field(..., min_length=1, description="书名/项目名，不能为空")
     goal: str = Field(..., min_length=1, description="核心目标，不能为空")
     category: Optional[str] = "story"
@@ -128,12 +130,16 @@ class TaskRunResponse(BaseModel):
     status_url: AnyHttpUrl
 
 
-
-@app.get("/api/books", response_model=List[Dict], tags=["Books"])
+@app.get("/api/books", response_model=List[BookMeta], tags=["Books"])
 def get_all_books_api():
     """获取所有书籍的元数据列表。"""
     meta_db = get_meta_db()
-    return meta_db.get_all_book_meta()
+    books_meta = meta_db.get_all_book_meta()
+    # 为每本书籍补充今日字数
+    for book in books_meta:
+        task_db = get_task_db(book['run_id'])
+        book['word_count_today'] = task_db.get_word_count_last_24h()
+    return books_meta
 
 
 @app.post("/api/books", response_model=Dict, status_code=201, tags=["Books"])
@@ -168,6 +174,8 @@ def get_book_api(run_id: str):
     book = meta_db.get_book_meta(run_id)
     if not book:
         raise HTTPException(status_code=404, detail=f"未找到 run_id 为 '{run_id}' 的书籍。")
+    task_db = get_task_db(run_id)
+    book['word_count_today'] = task_db.get_word_count_last_24h()
     return book
 
 
@@ -182,6 +190,14 @@ def sync_book_to_task_db_api(run_id: str):
     return {"message": f"项目 {run_id} 已成功同步到任务库！"}
 
 
+@app.get("/api/books/{run_id}/word-count-today", response_model=Dict[str, int], tags=["Books"])
+def get_word_count_today_api(run_id: str):
+    """获取指定项目在过去24小时内完成的写作字数。"""
+    task_db = get_task_db(run_id)
+    count = task_db.get_word_count_last_24h()
+    return {"word_count_last_24h": count}
+
+
 @app.put("/api/books/{run_id}", response_model=BookMeta, tags=["Books"])
 def update_book_api(run_id: str, book_update: BookMeta):
     """更新指定 run_id 的书籍信息。"""
@@ -190,10 +206,13 @@ def update_book_api(run_id: str, book_update: BookMeta):
         raise HTTPException(status_code=404, detail=f"未找到 run_id 为 '{run_id}' 的书籍。")
     
     # Pydantic 的 model_dump 可以方便地将模型转为字典
-    meta_db.add_book(book_update.model_dump())
+    update_data = book_update.model_dump(exclude={'word_count_today'})
+    meta_db.add_book(update_data)
     updated_book = meta_db.get_book_meta(run_id)
     if not updated_book:
          raise HTTPException(status_code=500, detail="更新书籍后无法立即找到，请检查数据库。")
+    task_db = get_task_db(run_id)
+    updated_book['word_count_today'] = task_db.get_word_count_last_24h()
     return updated_book
 
 

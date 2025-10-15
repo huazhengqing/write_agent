@@ -1,15 +1,21 @@
 <template>
   <div class="create-book-view">
     <div class="page-header">
-      <h1>➕ 创建新项目</h1>
+      <h1>创建新书项目</h1>
+      <div class="header-buttons">
       <el-button
-        class="button"
-        text
+        type="success"
         @click="handleGenerateIdea"
         :loading="isGeneratingIdea"
-      >
-        🤖 AI 生成创意
-      </el-button>
+      >AI 生成创意</el-button>
+      <el-button
+        type="primary"
+        @click="handleCreateBook"
+        :loading="isCreating"
+        style="margin-left: 12px;"
+      >创建新书项目</el-button>
+      </div>
+
     </div>
     <div class="form-container">
       <el-form :model="newBookForm" label-position="top" ref="newBookFormRef">
@@ -65,9 +71,6 @@
         </el-form-item>
         <el-form-item label="验收标准 (Acceptance Criteria)">
             <el-input v-model="newBookForm.acceptance_criteria" type="textarea" autosize />
-        </el-form-item>
-        <el-form-item>
-          <el-button type="primary" @click="handleCreateBook" :loading="isCreating">创建项目</el-button>
         </el-form-item>
       </el-form>
     </div>
@@ -196,8 +199,8 @@ const handleCreateBook = async () => {
           message: `项目《${newBook.name}》已创建！现在将跳转到项目管理页面。`,
           type: 'success',
         });
-        // 创建成功后跳转到项目管理页
-        router.push('/dashboard');
+        // 创建成功后跳转到项目管理页, 并通过查询参数告知新创建的项目ID
+        router.push({ path: '/dashboard', query: { newBookId: newBook.run_id } });
       } catch (error) {
         ElMessage.error('创建项目失败！');
       } finally {
@@ -222,5 +225,8 @@ const handleCreateBook = async () => {
   font-size: 24px;
   color: #303133;
   margin: 0;
+}
+.header-buttons {
+  margin-left: auto;
 }
 </style>

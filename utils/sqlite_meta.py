@@ -28,6 +28,7 @@ Table: t_book_meta
 - style: TEXT - 叙事风格。
 - book_level_design: TEXT - 全书设计方案
 - global_state_summary: TEXT - 全局状态摘要
+- status: TEXT - 项目状态 ('idle', 'running', 'paused', 'completed', 'archived')。
 - created_at: TIMESTAMP - 记录创建时的时间戳。
 - updated_at: TIMESTAMP - 记录最后更新时的时间戳。
 """
@@ -64,6 +65,7 @@ class BookMetaDB:
                 style TEXT,
                 book_level_design TEXT,
                 global_state_summary TEXT,
+                status TEXT DEFAULT 'idle',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -86,13 +88,12 @@ class BookMetaDB:
             if "name" not in book_info or not book_info["name"]:
                 raise ValueError("创建新书时，'name' 字段不能为空。")
             book_info["run_id"] = sanitize_filename(book_info["name"])
-        
+        if "status" not in book_info:
+            book_info["status"] = "idle"
         run_id = book_info["run_id"]
-
         columns = ", ".join(book_info.keys())
         placeholders = ", ".join([f":{key}" for key in book_info.keys()])
         update_clause = ", ".join([f"{key} = :{key}" for key in book_info if key != 'run_id'])
-
         with self._lock:
             self.cursor.execute(
                 f"""
@@ -147,6 +148,14 @@ class BookMetaDB:
             )
             self.conn.commit()
 
+    def update_status(self, run_id: str, status: str):
+        with self._lock:
+            self.cursor.execute(
+                "UPDATE t_book_meta SET status = ? WHERE run_id = ?",
+                (status, run_id)
+            )
+            self.conn.commit()
+
     def delete_book_meta(self, run_id: str):
         with self._lock:
             self.cursor.execute(
@@ -190,6 +199,5 @@ def get_meta_db() -> BookMetaDB:
     db_path = data_dir / "books.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
     instance = BookMetaDB(db_path=str(db_path))
-    # 注册 close 方法，确保在程序退出时数据库连接能被正确关闭
     atexit.register(instance.close)
     return instance

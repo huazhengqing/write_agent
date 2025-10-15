@@ -16,9 +16,11 @@ export interface BookMeta {
   day_wordcount_goal?: number | null;
   title?: string | null;
   synopsis?: string | null;
+  word_count_today?: number;
   style?: string | null;
   book_level_design?: string | null;
   global_state_summary?: string | null;
+  status?: string | null;
 }
 
 // 对应后端的 BookCreate 模型
@@ -45,6 +47,7 @@ export interface IdeaOutput {
   acceptance_criteria: string;
 }
 
+
 export const getAllBooks = () => apiClient.get<BookMeta[]>('/books');
 export const getBook = (runId: string) => apiClient.get<BookMeta>(`/books/${runId}`);
 export const createBook = (bookData: BookCreate) => apiClient.post<BookMeta>('/books', bookData);
@@ -52,3 +55,4 @@ export const updateBook = (runId: string, bookData: BookMeta) => apiClient.put<B
 export const deleteBook = (runId: string) => apiClient.delete(`/books/${runId}`);
 export const syncBook = (runId: string) => apiClient.post<{ message: string }>(`/books/${runId}/sync`);
 export const generateIdea = () => apiClient.post<IdeaOutput>('/books/generate-idea');
+export const getWordCountToday = (runId: string) => apiClient.get<{ word_count_last_24h: number }>(`/books/${runId}/word-count-today`);

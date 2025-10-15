@@ -1,6 +1,6 @@
 // src/stores/bookStore.ts
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, reactive } from 'vue';
 import { getAllBooks, createBook, deleteBook, updateBook, syncBook, generateIdea, type BookMeta, type BookCreate, type IdeaOutput } from '@/api/books';
 
 export const useBookStore = defineStore('books', () => {
@@ -13,12 +13,14 @@ export const useBookStore = defineStore('books', () => {
     error.value = null;
     try {
       const response = await getAllBooks();
+      // 修复：将获取到的书籍数据赋值给 store 中的 books ref
       books.value = response.data;
-      return response.data;
-    } catch (err) {
-      error.value = '获取书籍列表失败';
+      return books.value;
+    } catch (err: any) {
+      const message = err.response?.data?.detail || '获取书籍列表失败';
+      error.value = message;
       console.error(error.value, err);
-      throw error;
+      throw new Error(message);
     } finally {
       isLoading.value = false;
     }
@@ -27,19 +29,17 @@ export const useBookStore = defineStore('books', () => {
   async function createNewBook(bookData: BookCreate) {
     try {
       const response = await createBook(bookData);
-      // 优化：直接将新书添加到列表，而不是重新获取所有
       books.value.push(response.data);
       return response.data;
     } catch (err) {
       console.error('创建书籍失败', err);
-      throw error;
+      throw err;
     }
   }
 
   async function deleteBookById(runId: string) {
     try {
       await deleteBook(runId);
-      // 优化：直接从列表中移除，而不是重新获取所有
       const index = books.value.findIndex(b => b.run_id === runId);
       if (index !== -1) books.value.splice(index, 1);
     } catch (err) {
@@ -50,14 +50,11 @@ export const useBookStore = defineStore('books', () => {
 
   async function updateBookById(runId: string, bookData: BookMeta) {
     try {
-      // 创建一个不包含 run_id 的副本用于请求体
       const dataToUpdate = { ...bookData };
-      // delete dataToUpdate.run_id; // API的updateBook需要完整的BookMeta，如果后端不需要run_id在body中，则取消此行注释
-
       const response = await updateBook(runId, dataToUpdate);
-      // 更新成功后刷新列表，以获取最新数据
       const index = books.value.findIndex(b => b.run_id === runId);
       if (index !== -1) {
+        // 后端返回了完整的更新后的 book 对象，直接替换即可
         books.value[index] = response.data;
       } else {
         await fetchAllBooks();
@@ -67,7 +64,6 @@ export const useBookStore = defineStore('books', () => {
       console.error(`更新书籍 ${runId} 失败`, err);
       throw err;
     } finally {
-      // isLoading.value = false; // This was the original issue. It's now removed.
     }
   }
 
@@ -81,10 +77,18 @@ export const useBookStore = defineStore('books', () => {
   }
 
   async function generateNewIdea(): Promise<IdeaOutput> {
-    // 对于这种一次性操作，可以在组件级别处理加载和错误状态
     const response = await generateIdea();
     return response.data;
   }
 
-  return { books, isLoading, error, fetchAllBooks, createNewBook, deleteBookById, updateBookById, syncBookById, generateNewIdea };
+  async function updateBooksStatus() {
+    if (books.value.length === 0) return;
+    try {
+      await fetchAllBooks();
+    } catch (err) {
+      console.error('更新书籍运行状态失败', err);
+    }
+  }
+
+  return { books, isLoading, error, fetchAllBooks, createNewBook, deleteBookById, updateBookById, syncBookById, generateNewIdea, updateBooksStatus };
 });

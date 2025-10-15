@@ -21,7 +21,7 @@ export interface Task {
   reasoning: string | null;
   expert: string | null;
   results: Record<string, any>;
-  subtasks: Task[]; // 这个字段在前端构建树形结构时添加
+  subtasks: Task[];
 }
 
 // 对应后端的 TaskUpdate 模型

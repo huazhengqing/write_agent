@@ -140,7 +140,6 @@ export const useTaskStore = defineStore('tasks', () => {
         if (!currentRunId.value) return;
         try {
             await apiDeleteTask(currentRunId.value, taskId);
-            // 优化：直接从本地树中移除，而不是重新获取所有
             findAndRemoveTask(taskId, tasks.value);
         } catch (err) {
             console.error(`删除任务 ${taskId} 失败`, err);

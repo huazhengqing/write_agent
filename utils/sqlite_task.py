@@ -875,8 +875,10 @@ def dict_to_task(task_data: dict) -> Task | None:
 
 @lru_cache(maxsize=None)
 def get_task_db(run_id: str) -> TaskDB:
+    import atexit
     from utils.file import data_dir
     db_path = data_dir / run_id / "task.db"
     db_path.parent.mkdir(parents=True, exist_ok=True)
-    store = TaskDB(db_path=str(db_path))
-    return store
+    instance = TaskDB(db_path=str(db_path))
+    atexit.register(instance.close)
+    return instance
