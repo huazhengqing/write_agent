@@ -2,7 +2,8 @@ import importlib
 from typing import Literal
 from loguru import logger
 from story.prompts.models.inquiry import InquiryOutput
-from utils.llm import get_llm_messages, get_llm_params, llm_completion
+from utils import call_llm
+from utils.llm import get_llm_messages, get_llm_params
 from utils.models import Task
 from utils.sqlite_task import get_task_db
 
@@ -38,7 +39,7 @@ async def inquiry(
     module = importlib.import_module(f"story.prompts.inquiry.{inquiry_type}")
     messages = get_llm_messages(module.system_prompt, module.user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.1)
-    llm_message = await llm_completion(llm_params, response_model=InquiryOutput)
+    llm_message = await call_llm.completion(llm_params, response_model=InquiryOutput)
     
     inquiry_result = llm_message.validated_data
     if inquiry_result:

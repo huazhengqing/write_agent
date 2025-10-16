@@ -4,16 +4,18 @@ from llama_index.core.tools import QueryEngineTool
 from llama_index.core.tools import AsyncFunctionTool
 from story.rag import query
 from story.rag.base import get_vector
-from utils.react_agent import call_react_agent
 from rag.vector_query import get_vector_query_engine
+from utils.llm import llm_group_type
 
 
 
-
-async def story_react_agent(
+async def react(
     run_id: str,
-    system_prompt: str,
-    user_prompt: str,
+    llm_group: llm_group_type = 'reasoning',
+    temperature = 0.1, 
+    system_header: Optional[str] = None,
+    system_prompt: Optional[str] = None,
+    user_prompt: str = "",
     output_cls: Optional[Type[BaseModel]] = None
 ) -> Optional[Union[BaseModel, str]]:
     design_tool = AsyncFunctionTool.from_defaults(
@@ -35,7 +37,11 @@ async def story_react_agent(
         description="用于查找外部世界的参考资料和事实。只有当你自己的知识库无法回答，且问题不涉及故事内部设定或已发生情节时，才使用此工具获取非虚构的背景知识或事实依据（例如：'中世纪城堡的结构'、'某种植物的特性'）。"
     )
 
-    result = await call_react_agent(
+    from utils import call_llm
+    result = await call_llm.react(
+        llm_group=llm_group,
+        temperature = temperature, 
+        system_header=system_header,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         tools=[design_tool, write_summary_tool, search_tool],

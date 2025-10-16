@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
-from utils.llm import get_llm_messages, get_llm_params, llm_completion
+from utils import call_llm
+from utils.llm import get_llm_messages, get_llm_params
 
 
 class IdeaOutput(BaseModel):
@@ -64,6 +65,6 @@ user_prompt = """
 async def generate_idea():
     messages = get_llm_messages(system_prompt, user_prompt)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.8)
-    llm_message = await llm_completion(llm_params, response_model=IdeaOutput)
+    llm_message = await call_llm.completion(llm_params, response_model=IdeaOutput)
     return llm_message.validated_data
 

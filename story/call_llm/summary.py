@@ -1,6 +1,7 @@
 from story.rag import save
+from utils import call_llm
 from utils.models import Task
-from utils.llm import get_llm_messages, get_llm_params, llm_completion
+from utils.llm import get_llm_messages, get_llm_params
 from utils.sqlite_meta import get_meta_db
 from utils.sqlite_task import dict_to_task, get_task_db
 
@@ -20,7 +21,7 @@ async def summary(task: Task) -> Task:
     from story.prompts.summary.summary import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.2)
-    llm_message = await llm_completion(llm_params)
+    llm_message = await call_llm.completion(llm_params)
 
     content = llm_message.content
     updated_task = task.model_copy(deep=True)
@@ -53,7 +54,7 @@ async def aggregate(task: Task) -> Task:
     from story.prompts.summary.aggregate import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.2)
-    llm_message = await llm_completion(llm_params)
+    llm_message = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
     updated_task.results["summary"] = llm_message.content
@@ -93,7 +94,7 @@ async def global_state(task: Task) -> Task:
     from story.prompts.summary.global_state import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.2)
-    llm_message = await llm_completion(llm_params)
+    llm_message = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
     updated_task.results["global_state"] = llm_message.content

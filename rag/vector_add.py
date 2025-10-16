@@ -1,5 +1,3 @@
-
-from functools import lru_cache
 from typing import Any, Dict, List, Literal, Optional
 from loguru import logger
 from llama_index.core import Document, Settings

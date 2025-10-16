@@ -1,10 +1,9 @@
-import os
 from typing import Optional
-from story.agent.react_agent import story_react_agent
 from story.context import get_context
+from utils import call_llm
 from utils.models import Task
-from story.prompts.models.plan import PlanOutput, convert_plan_to_tasks, plan_to_task
-from utils.llm import get_llm_messages, get_llm_params, llm_completion
+from story.prompts.models.plan import PlanOutput, plan_to_task
+from utils.llm import get_llm_messages, get_llm_params
 from utils.sqlite_meta import get_meta_db
 from utils.sqlite_task import dict_to_task, get_task_db
 
@@ -44,7 +43,7 @@ async def all(task: Task) -> Task:
     from story.prompts.hierarchy.all import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.75)
-    llm_message = await llm_completion(llm_params)
+    llm_message = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
     updated_task.results["hierarchy"] = llm_message.content
@@ -105,7 +104,7 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     final_system_prompt = messages[0]["content"]
     final_user_prompt = messages[1]["content"]
-    llm_message = await story_react_agent(
+    llm_message = await call_llm.react.react(
         run_id=parent_task.run_id,
         system_prompt=final_system_prompt,
         user_prompt=final_user_prompt,

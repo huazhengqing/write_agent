@@ -2,15 +2,19 @@ import os
 import sys
 import shutil
 from typing import List, Optional, Dict, Any
-from fastapi import FastAPI, HTTPException, Body, BackgroundTasks, status
 from pydantic import BaseModel, Field, AnyHttpUrl
+from fastapi import FastAPI, HTTPException, Body, BackgroundTasks, status
+from fastapi.middleware.cors import CORSMiddleware
 
 
 project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 if project_root not in sys.path:
     sys.path.insert(0, project_root)
 
-from fastapi.middleware.cors import CORSMiddleware
+
+from dotenv import load_dotenv
+load_dotenv()
+
 
 from utils.sqlite_meta import get_meta_db
 from utils.sqlite_task import get_task_db, dict_to_task, TaskDB

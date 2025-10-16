@@ -42,20 +42,20 @@ class Task(BaseModel):
     def to_context(self) -> str:
         """将Task对象转换为用于LLM上下文的Markdown格式字符串。"""
         context_parts = []
-        context_parts.append(f"## 任务: {self.id} - {self.hierarchical_position}")
+        context_parts.append(f"### 任务: {self.id} - {self.hierarchical_position}")
         context_parts.append(f"**类型**: {self.task_type}")
         if self.length:
             context_parts.append(f"**预估长度**: {self.length}")
         if self.goal and self.goal.strip():
-            context_parts.append(f"### 核心目标\n{self.goal}")
+            context_parts.append(f"#### 核心目标\n{self.goal}")
         if self.instructions and self.instructions.strip():
-            context_parts.append(f"### 具体指令\n{self.instructions}")
+            context_parts.append(f"#### 具体指令\n{self.instructions}")
         if self.input_brief and self.input_brief.strip():
-            context_parts.append(f"### 输入指引\n{self.input_brief}")
+            context_parts.append(f"#### 输入指引\n{self.input_brief}")
         if self.constraints and self.constraints.strip():
-            context_parts.append(f"### 限制和禁忌\n{self.constraints}")
+            context_parts.append(f"#### 限制和禁忌\n{self.constraints}")
         if self.acceptance_criteria and self.acceptance_criteria.strip():
-            context_parts.append(f"### 验收标准\n{self.acceptance_criteria}")
+            context_parts.append(f"#### 验收标准\n{self.acceptance_criteria}")
         return "\n\n".join(context_parts)
 
 

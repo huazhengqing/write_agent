@@ -3,9 +3,6 @@ from loguru import logger
 from typing import Dict, Any, Optional, List, Literal
 import copy
 
-from dotenv import load_dotenv
-load_dotenv()
-
 
 llm_temperatures = {
     "creative": 0.75,
@@ -28,8 +25,8 @@ def get_llm_params(
 ) -> Dict[str, Any]:
     llm_params = {
         "model": f"openai/{llm_group}",
-        "api_base": os.getenv("LITELLM_PROXY_URL"),
-        "api_key": os.getenv("LITELLM_MASTER_KEY")
+        "api_base": os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
+        "api_key": os.getenv("LITELLM_MASTER_KEY", "sk-1234")
     }
     llm_params.update(kwargs)
     llm_params["temperature"] = temperature

@@ -1,11 +1,11 @@
 import importlib
-from story.context import get_context
 from story.prompts.models.atom import AtomOutput
 from story.prompts.models.plan import PlanOutput, convert_plan_to_tasks
 from story.prompts.route.expert import RouteExpertOutput
 from story.context import get_context
+from utils import call_llm
 from utils.models import Task
-from utils.llm import get_llm_messages, get_llm_params, llm_completion
+from utils.llm import get_llm_messages, get_llm_params
 from utils.sqlite_meta import get_meta_db
 from utils.sqlite_task import get_task_db, dict_to_task
 from story.rag import save
@@ -46,7 +46,7 @@ async def atom(task: Task) -> Task:
     from story.prompts.design.atom import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.0)
-    llm_message = await llm_completion(llm_params, response_model=AtomOutput)
+    llm_message = await call_llm.completion(llm_params, response_model=AtomOutput)
 
     data = llm_message.validated_data
     reasoning = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
@@ -98,7 +98,7 @@ async def decomposition(task: Task) -> Task:
     from story.prompts.design.decomposition import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.1)
-    llm_message = await llm_completion(llm_params, response_model=PlanOutput)
+    llm_message = await call_llm.completion(llm_params, response_model=PlanOutput)
     plan_output = llm_message.validated_data
 
     updated_task = task.model_copy(deep=True)
@@ -141,7 +141,7 @@ async def route(task: Task) -> RouteExpertOutput:
     from story.prompts.route.expert import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.0)
-    llm_message = await llm_completion(llm_params, response_model=RouteExpertOutput)
+    llm_message = await call_llm.completion(llm_params, response_model=RouteExpertOutput)
     expert_output = llm_message.validated_data
 
     task_db.update_task_expert(task.id, expert_output.expert)
@@ -182,7 +182,7 @@ async def design(task: Task, expert: str) -> Task:
     module = importlib.import_module(f"story.prompts.design.{expert}")
     messages = get_llm_messages(module.system_prompt, module.user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.75)
-    llm_message = await llm_completion(llm_params)
+    llm_message = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
     updated_task.results["design"] = llm_message.content
@@ -229,7 +229,7 @@ async def aggregate(task: Task) -> Task:
     from story.prompts.design.aggregate import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.4)
-    llm_message = await llm_completion(llm_params)
+    llm_message = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
     updated_task.results["design"] = llm_message.content
@@ -276,7 +276,7 @@ async def book_level_design(task: Task) -> Task:
     from story.prompts.design.book_level_design import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.2)
-    llm_message = await llm_completion(llm_params)
+    llm_message = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
     updated_task.results["book_level_design"] = llm_message.content

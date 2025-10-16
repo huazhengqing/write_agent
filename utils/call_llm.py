@@ -3,19 +3,18 @@ import os
 from loguru import logger
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List, Literal, Type, Callable, Union
-from utils.llm import get_llm_params, llm_group_type, llm_completion, clean_markdown_fences, log_llm_params, log_prompts
-from utils.search import web_search_tools
+from utils.llm import get_llm_params, llm_group_type, clean_markdown_fences, log_llm_params
 
 
 
 def delete_cache(cache_key: Optional[str]):
     if not cache_key:
         return
-    proxy_base_url = os.getenv("LITELLM_PROXY_URL")
+    proxy_base_url = os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000")
     if not proxy_base_url:
         return
     delete_url = f"{proxy_base_url}/cache/delete"
-    headers = {"Authorization": f"Bearer {os.getenv('LITELLM_MASTER_KEY')}"}
+    headers = {"Authorization": f"Bearer {os.getenv('LITELLM_MASTER_KEY', "sk-1234")}"}
     data = {"keys": [cache_key]}
     import httpx
     with httpx.Client() as client:
@@ -121,10 +120,8 @@ def _parse_and_validate_response(message: Any, output_cls: Type[BaseModel]) -> t
     return validated_data, raw_output
 
 
-async def completion_once(
-    llm_params: Dict[str, Any], 
-    output_cls: Optional[Type[BaseModel]] = None
-) -> Dict[str, Any]:
+
+async def completion_once(llm_params: Dict[str, Any], output_cls: Optional[Type[BaseModel]] = None) -> Dict[str, Any]:
     llm_params_for_api = llm_params.copy()
     if output_cls:
         llm_params_for_api["response_format"] = {
@@ -151,14 +148,14 @@ async def completion_once(
         try:
             validated_data, raw_output = _parse_and_validate_response(message, output_cls)
             message.validated_data = validated_data
-            logger.success(f"LLM 成功返回内容 \n{message.validated_data}")
+            logger.success(f"LLM 成功返回内容 output_cls=\n{message.validated_data.model_dump_json(indent=2, ensure_ascii=False)}")
         except (json.JSONDecodeError, ValidationError) as e:
             delete_cache(message.cache_key)
             e.raw_output = raw_output
             raise e
     else:
         message.content = clean_markdown_fences(message.content)
-        logger.success(f"LLM 成功返回内容 \n{message.content}")
+        logger.success(f"LLM 成功返回内容 content=\n{message.content}")
 
     return message
 
@@ -191,7 +188,7 @@ async def completion(
         logger.error(f"LLM 调用时发生意外错误: {e}")
         raise e
 
-    # 2. 如果首次尝试失败, 进入修正重试循环
+    # 如果首次尝试失败, 进入修正重试循环
     max_retries = 6
     for attempt in range(max_retries):
         try:
@@ -229,7 +226,7 @@ async def txt_to_json(text: str, output_cls: Type[BaseModel]):
         messages=messages,
         temperature=0.0
     )
-    response = await llm_completion(
+    response = await completion(
         llm_params=llm_params, 
         output_cls=output_cls
     )
@@ -247,9 +244,15 @@ async def react(
     system_header: Optional[str] = None,
     system_prompt: Optional[str] = None,
     user_prompt: str = "",
-    tools: List[Any] = web_search_tools,
+    tools: List[Any] = [],
     output_cls: Optional[Type[BaseModel]] = None
 ) -> Optional[Union[BaseModel, str]]:
+    if not tools:
+        raise ValueError("tools 参数必须提供, 且不能为空列表。")
+
+    if not system_header and not system_prompt:
+        raise ValueError("system_header 和 system_prompt 必须至少提供一个。")
+    
     logger.info(f"system_header=\n{system_header}")
     logger.info(f"system_prompt=\n{system_prompt}")
     logger.info(f"user_prompt=\n{user_prompt}")
@@ -261,20 +264,25 @@ async def react(
     agent = ReActAgent(
         tools=tools,
         llm=LiteLLM(**llm_params),
-        output_cls = output_cls, 
         system_prompt=system_prompt,
+        output_cls = output_cls, 
     )
+    
     if system_header:
         agent.update_prompts({"react_header": system_header})
+
     handler = agent.run(user_prompt)
+
     # async for ev in handler.stream_events():
     #     if hasattr(ev, 'delta'):
     #         delta = ev.delta
     #         if delta is not None:
     #             print(f"{delta}", end="", flush=True)
+
     agentOutput = await handler
+
     if output_cls:
-        logger.info(f"完成 output_cls=\n{agentOutput.structured_response}")
+        logger.info(f"完成 output_cls=\n{agentOutput.structured_response.model_dump_json(indent=2, ensure_ascii=False)}")
         return agentOutput.structured_response
     else:
         output = clean_markdown_fences(agentOutput.response)

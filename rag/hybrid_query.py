@@ -1,7 +1,8 @@
 from typing import List
 from loguru import logger
 from llama_index.core.base.base_query_engine import BaseQueryEngine
-from utils.llm import get_llm_params, get_llm_messages, llm_completion
+from utils import call_llm
+from utils.llm import get_llm_params, get_llm_messages
 from rag.hybrid_prompts import synthesis_system_prompt, synthesis_user_prompt
 
 
@@ -37,7 +38,7 @@ async def hybrid_query(
     }
     messages = get_llm_messages(synthesis_system_prompt, synthesis_user_prompt, None, context_dict_user)
     final_llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.4)
-    final_message = await llm_completion(final_llm_params)
+    final_message = await call_llm.completion(final_llm_params)
     final_answer = final_message.content.strip()
     return final_answer
 
