@@ -54,7 +54,8 @@
 
 
 
-react  agent 
-
+要自定义react agent 的提示词模板： system_prompt_react
+默认的模板是：system_header_template.md
+现在的流程和默认的流程是冲突的，需要自定义。
 
 

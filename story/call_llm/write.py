@@ -32,7 +32,7 @@ async def atom(task: Task) -> Task:
     from story.prompts.atom import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.0)
-    llm_message = await call_llm.completion(llm_params, response_model=AtomOutput)
+    llm_message = await call_llm.completion(llm_params, output_cls=AtomOutput)
 
     data = llm_message.validated_data
     reasoning = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")

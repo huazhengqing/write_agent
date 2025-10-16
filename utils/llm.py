@@ -3,6 +3,7 @@ from loguru import logger
 from typing import Dict, Any, Optional, List, Literal
 import copy
 
+import collections
 
 llm_temperatures = {
     "creative": 0.75,
@@ -38,35 +39,29 @@ def get_llm_params(
 
 
 
+def template_fill(template: str, context: Optional[Dict[str, Any]]) -> str:
+    content = template
+    if context:
+        safe_context = collections.defaultdict(str, context)
+        content = template.format_map(safe_context)
+    return content
+
+
 def get_llm_messages(
     system_prompt: str = None, 
     user_prompt: str = None, 
     context_dict_system: Dict[str, Any] = None, 
     context_dict_user: Dict[str, Any] = None
 ) -> list[dict]:
-    if not system_prompt and not user_prompt:
-        raise ValueError("system_prompt 和 user_prompt 不能同时为空")
-
     messages = []
-
-    system_content = system_prompt
-    if context_dict_system:
-        import collections
-        safe_context_system = collections.defaultdict(str, context_dict_system)
-        system_content = system_prompt.format_map(safe_context_system)
-    
-    if system_content and system_content.strip():
-        messages.append({"role": "system", "content": system_content})
-
-    user_content = user_prompt
-    if context_dict_user:
-        import collections
-        safe_context_user = collections.defaultdict(str, context_dict_user)
-        user_content = user_prompt.format_map(safe_context_user)
-
-    if user_content and user_content.strip():
-        messages.append({"role": "user", "content": user_content})
-
+    if system_prompt:
+        system_content = template_fill(system_prompt, context_dict_system)
+        if system_content and system_content.strip():
+            messages.append({"role": "system", "content": system_content})
+    if user_prompt:
+        user_content = template_fill(user_prompt, context_dict_user)
+        if user_content and user_content.strip():
+            messages.append({"role": "user", "content": user_content})
     return messages
 
 

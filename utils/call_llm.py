@@ -115,6 +115,12 @@ def _parse_and_validate_response(message: Any, output_cls: Type[BaseModel]) -> t
         parsed_args = getattr(tool_call.function, "parsed_arguments", None) or json.loads(cleaned_args)
         validated_data = output_cls(**parsed_args)
     elif message.content:
+        # 优先检查原始输出是否为 'null'
+        raw_output = message.content
+        cleaned_output = clean_markdown_fences(raw_output).strip()
+        if cleaned_output.lower() == 'null':
+            return None, raw_output
+        # 如果不是 'null', 则正常进行 JSON 验证
         raw_output = message.content
         validated_data = output_cls.model_validate_json(clean_markdown_fences(raw_output))
     return validated_data, raw_output
@@ -148,7 +154,11 @@ async def completion_once(llm_params: Dict[str, Any], output_cls: Optional[Type[
         try:
             validated_data, raw_output = _parse_and_validate_response(message, output_cls)
             message.validated_data = validated_data
-            logger.success(f"LLM 成功返回内容 output_cls=\n{message.validated_data.model_dump_json(indent=2, ensure_ascii=False)}")
+            if message.validated_data:
+                logger.success(f"LLM 成功返回内容 output_cls=\n{message.validated_data.model_dump_json(indent=2, ensure_ascii=False)}")
+            else:
+                logger.info("完成, LLM 返回 'null'，表示任务完成。")
+
         except (json.JSONDecodeError, ValidationError) as e:
             delete_cache(message.cache_key)
             e.raw_output = raw_output
@@ -281,10 +291,19 @@ async def react(
 
     agentOutput = await handler
 
+    # 优先检查原始输出是否为 'null'
+    raw_output = clean_markdown_fences(agentOutput.response)
+    if raw_output.strip().lower() == 'null':
+        logger.info("完成, Agent 返回 'null'，表示任务完成。")
+        return None
+
     if output_cls:
-        logger.info(f"完成 output_cls=\n{agentOutput.structured_response.model_dump_json(indent=2, ensure_ascii=False)}")
-        return agentOutput.structured_response
+        if agentOutput.structured_response:
+            logger.info(f"完成 output_cls=\n{agentOutput.structured_response.model_dump_json(indent=2, ensure_ascii=False)}")
+            return agentOutput.structured_response
+        else:
+            logger.warning("Agent 配置了 output_cls 但 structured_response 为空，且原始响应不是 'null'。")
+            raise ValueError("")
     else:
-        output = clean_markdown_fences(agentOutput.response)
-        logger.info(f"完成 output=\n{output}")
-        return output
+        logger.info(f"完成 output=\n{raw_output}")
+        return raw_output

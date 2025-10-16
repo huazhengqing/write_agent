@@ -41,7 +41,7 @@ async def atom(task: Task) -> Task:
     from story.prompts.search.atom import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.0)
-    llm_message = await call_llm.completion(llm_params, response_model=AtomOutput)
+    llm_message = await call_llm.completion(llm_params, output_cls=AtomOutput)
 
     data = llm_message.validated_data
     reasoning = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
@@ -94,7 +94,7 @@ async def decomposition(task: Task) -> Task:
     from story.prompts.search.decomposition import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.1)
-    llm_message = await call_llm.completion(llm_params, response_model=PlanOutput)
+    llm_message = await call_llm.completion(llm_params, output_cls=PlanOutput)
 
     plan_output = llm_message.validated_data
     updated_task = task.model_copy(deep=True)
@@ -136,6 +136,7 @@ async def search(task: Task) -> Task:
     
     from story.prompts.search.search import system_prompt, user_prompt
     from utils.search import web_search_tools
+    
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     final_system_prompt = messages[0]["content"]
     final_user_prompt = messages[1]["content"]

@@ -1,9 +1,10 @@
 from typing import Optional
+import story
 from story.prompts.models.plan import PlanOutput, plan_to_task
 from story.context import get_context
 from utils import call_llm
 from utils.models import Task
-from utils.llm import get_llm_messages, get_llm_params
+from utils.llm import get_llm_messages, get_llm_params, template_fill
 from utils.sqlite_task import get_task_db, dict_to_task
 from utils.sqlite_meta import get_meta_db
 
@@ -95,24 +96,30 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
         "latest_text": latest_text,
     }
 
-    from story.prompts.plan.next import system_prompt, user_prompt
-    messages = get_llm_messages(system_prompt, user_prompt, None, context)
-    final_system_prompt = messages[0]["content"]
-    final_user_prompt = messages[1]["content"]
-    llm_message = await call_llm.react.react(
-        run_id=parent_task.run_id,
-        system_prompt=final_system_prompt,
-        user_prompt=final_user_prompt,
-        output_cls=PlanOutput
-    )
-    if not llm_message:
+    structured_response = None
+    if parent_task.id == "1":
+        from story.prompts.plan.next import system_prompt, user_prompt
+        messages = get_llm_messages(system_prompt, user_prompt, None, context)
+        llm_params = get_llm_params(messages=messages, temperature=0.1)
+        llm_message = await call_llm.completion(llm_params, output_cls=PlanOutput)
+        structured_response = llm_message.validated_data
+    else:
+        from story.prompts.plan.next_react import system_prompt, user_prompt
+        structured_response = await story.rag.react.react(
+            run_id=parent_task.run_id,
+            system_header=system_prompt,
+            user_prompt=template_fill(user_prompt, context),
+            output_cls=PlanOutput
+        )
+
+    if not structured_response:
         return None
 
-    plan_next = llm_message.validated_data if hasattr(llm_message, 'validated_data') else None
-    if not plan_next or not plan_next.goal:
+    # llm_message 已经是验证过的 PlanOutput 实例了
+    if not structured_response.goal:
         return None
 
-    task_next = plan_to_task(plan_next)
+    task_next = plan_to_task(structured_response)
 
     if pre_task:
         parts = pre_task.id.split('.')

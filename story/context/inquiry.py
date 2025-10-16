@@ -39,7 +39,7 @@ async def inquiry(
     module = importlib.import_module(f"story.prompts.inquiry.{inquiry_type}")
     messages = get_llm_messages(module.system_prompt, module.user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.1)
-    llm_message = await call_llm.completion(llm_params, response_model=InquiryOutput)
+    llm_message = await call_llm.completion(llm_params, output_cls=InquiryOutput)
     
     inquiry_result = llm_message.validated_data
     if inquiry_result:

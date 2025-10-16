@@ -46,7 +46,7 @@ async def atom(task: Task) -> Task:
     from story.prompts.design.atom import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.0)
-    llm_message = await call_llm.completion(llm_params, response_model=AtomOutput)
+    llm_message = await call_llm.completion(llm_params, output_cls=AtomOutput)
 
     data = llm_message.validated_data
     reasoning = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
@@ -98,7 +98,7 @@ async def decomposition(task: Task) -> Task:
     from story.prompts.design.decomposition import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.1)
-    llm_message = await call_llm.completion(llm_params, response_model=PlanOutput)
+    llm_message = await call_llm.completion(llm_params, output_cls=PlanOutput)
     plan_output = llm_message.validated_data
 
     updated_task = task.model_copy(deep=True)
@@ -141,7 +141,7 @@ async def route(task: Task) -> RouteExpertOutput:
     from story.prompts.route.expert import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(messages=messages, temperature=0.0)
-    llm_message = await call_llm.completion(llm_params, response_model=RouteExpertOutput)
+    llm_message = await call_llm.completion(llm_params, output_cls=RouteExpertOutput)
     expert_output = llm_message.validated_data
 
     task_db.update_task_expert(task.id, expert_output.expert)
