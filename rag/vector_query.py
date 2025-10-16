@@ -59,7 +59,7 @@ def _create_auto_retriever_engine(
     node_postprocessors: List,
 ) -> BaseQueryEngine:
     logger.info("正在创建 Auto-Retriever 查询引擎...")
-    reasoning_llm_params = get_llm_params(llm_group="reasoning", temperature=0.1)
+    reasoning_llm_params = get_llm_params(llm_group="summary", temperature=0.1)
     reasoning_llm = LiteLLM(**reasoning_llm_params)
     from llama_index.core.retrievers import VectorIndexAutoRetriever
     retriever = VectorIndexAutoRetriever(

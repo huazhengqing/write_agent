@@ -31,7 +31,7 @@ async def atom(task: Task) -> Task:
 
     from story.prompts.atom import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
-    llm_params = get_llm_params(messages=messages, temperature=0.0)
+    llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.0)
     llm_message = await call_llm.completion(llm_params, output_cls=AtomOutput)
 
     data = llm_message.validated_data
@@ -82,7 +82,7 @@ async def write(task: Task) -> Task:
 
     from story.prompts.write.write import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
-    llm_params = get_llm_params(messages=messages, temperature=0.75)
+    llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.75)
     llm_message = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
@@ -130,7 +130,7 @@ async def review(task: Task) -> Task:
 
     from story.prompts.write.review import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
-    llm_params = get_llm_params(messages=messages, temperature=0.1)
+    llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.1)
     llm_message = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)

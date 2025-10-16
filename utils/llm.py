@@ -18,7 +18,7 @@ llm_group_type = Literal['reasoning', 'fast', 'summary', 'formatter']
 
 
 def get_llm_params(
-    llm_group: llm_group_type = 'reasoning',
+    llm_group: llm_group_type = 'summary',
     messages: Optional[List[Dict[str, Any]]] = None,
     temperature: float = 0.0,
     tools: Optional[List[Dict[str, Any]]] = None,

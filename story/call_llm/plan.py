@@ -43,7 +43,7 @@ async def all(task: Task) -> Task:
 
     from story.prompts.plan.all import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
-    llm_params = get_llm_params(messages=messages, temperature=0.75)
+    llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.75)
     llm_message = await call_llm.completion(llm_params)
     updated_task = task.model_copy(deep=True)
     updated_task.results["plan"] = llm_message.content
@@ -100,7 +100,7 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
     if parent_task.id == "1":
         from story.prompts.plan.next import system_prompt, user_prompt
         messages = get_llm_messages(system_prompt, user_prompt, None, context)
-        llm_params = get_llm_params(messages=messages, temperature=0.1)
+        llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.1)
         llm_message = await call_llm.completion(llm_params, output_cls=PlanOutput)
         structured_response = llm_message.validated_data
     else:
