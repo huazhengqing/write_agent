@@ -45,6 +45,7 @@ export interface IdeaOutput {
   input_brief: string;
   constraints: string;
   acceptance_criteria: string;
+  length: string;
 }
 
 

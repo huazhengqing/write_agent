@@ -9,7 +9,6 @@ TaskType = Literal["write", "design", "search"]
 LanguageType = Literal["cn", "en"]
 
 
-
 """
 待处理 (Pending): 任务已创建，但尚未开始执行。
 执行中 (Running): 任务正在执行。

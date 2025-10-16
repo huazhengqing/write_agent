@@ -1,16 +1,6 @@
-from pydantic import BaseModel, Field
+from story.models.idea import IdeaOutput
 from utils import call_llm
 from utils.llm import get_llm_messages, get_llm_params
-
-
-class IdeaOutput(BaseModel):
-    name: str = Field(description="一个吸引人的书名。")
-    goal: str = Field(description="项目的核心目标或故事的一句话简介。")
-    instructions: str = Field(description="关于故事风格、基调、节奏或关键元素的具体指令。")
-    input_brief: str = Field(description="关于故事背景、主角、世界观、开篇情节等关键设定的输入指引。")
-    constraints: str = Field(description="创作时需要避免的内容，例如特定的情节、元素或主题。")
-    acceptance_criteria: str = Field(description="衡量项目或故事成功的可验证标准，例如必须达成的核心体验、必须塑造的角色弧光等。")
-
 
 
 system_prompt = """
@@ -40,18 +30,17 @@ system_prompt = """
 在完成上述思考流程后，将你的最终策划案整合进以下六个固定字段中，并以JSON格式返回。你的分析和决策过程应体现在这六个字段的深度和细节中。
 
 ## 输出字段定义
-1.  `name`: 一个响亮且有吸引力的书名。
-2.  `goal`: 融合“一句话卖点”和“故事梗概”，清晰概括核心吸引力和故事主线。
-3.  `instructions`: **(对应思考流程1.3, 2.3)** 包含你选择的“目标平台及其理由”、“故事产品定位”（目标读者、风格基调）和“核心爽点设计”（主爽点、辅爽点及其满足的读者心理）。
-4.  `input_brief`: **(对应思考流程2.2, 2.4)** 详细阐述“主角设定”（包含背景、动机、性格、金手指、以及Lie/Want/Need构成的成长弧光）、“世界观核心设定”（包含核心'What if'问题、独特法则、背景谜团）以及“黄金三章的核心情节构思”（需明确每一章的钩子、冲突和爽点）。
-5.  `constraints`: **(对应思考流程2.1, 2.5)** 包含“竞品分析与差异化策略”和“市场风险与规避策略”（明确要避免的常见套路和读者"毒点"）。
-6.  `acceptance_criteria`: 设定衡量项目成功的可验证标准。例如：开篇必须在三章内完成主角塑造、金手指激活和主线悬念的建立；主角的成长弧光必须清晰可辨；核心爽点必须贯穿全文，并有持续升级。
+- `name`: 一个响亮且有吸引力的书名。
+- `goal`: 融合“一句话卖点”和“故事梗概”，清晰概括核心吸引力和故事主线。
+- `length`: 故事的预计字数,比如：50万字。
+- `instructions`: **(对应思考流程1.3, 2.3)** 包含你选择的“目标平台及其理由”、“故事产品定位”（目标读者、风格基调）和“核心爽点设计”（主爽点、辅爽点及其满足的读者心理）。
+- `input_brief`: **(对应思考流程2.2, 2.4)** 详细阐述“主角设定”（包含背景、动机、性格、金手指、以及Lie/Want/Need构成的成长弧光）、“世界观核心设定”（包含核心'What if'问题、独特法则、背景谜团）以及“黄金三章的核心情节构思”（需明确每一章的钩子、冲突和爽点）。
+- `constraints`: **(对应思考流程2.1, 2.5)** 包含“竞品分析与差异化策略”和“市场风险与规避策略”（明确要避免的常见套路和读者"毒点"）。
+- `acceptance_criteria`: 设定衡量项目成功的可验证标准。例如：开篇必须在三章内完成主角塑造、金手指激活和主线悬念的建立；主角的成长弧光必须清晰可辨；核心爽点必须贯穿全文，并有持续升级。
 
 你的每一次输出都必须是基于你对**当前市场**的最新判断，因此每次生成的创意都应该是独特的、顶级的、且以最大化商业回报为目标的。
 请直接以JSON格式返回你的构思。
 """
-
-
 
 user_prompt = """
 请严格遵循你的思考流程，开始分析。
@@ -60,11 +49,50 @@ user_prompt = """
 确保你的创意新颖、前沿，能够精准切入未被满足的市场需求。
 """
 
-
-
 async def generate_idea():
     messages = get_llm_messages(system_prompt, user_prompt)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.8)
     llm_message = await call_llm.completion(llm_params, output_cls=IdeaOutput)
     return llm_message.validated_data
 
+
+###############################################################################
+
+
+system_prompt = """
+你是一个世界级的小说家和创意总监。你的任务是分析用户提供的初步小说创意，并将其完善、扩展成一个结构完整、细节丰富的书籍企划案。
+
+你的工作流程如下：
+1.  **分析与提取**：仔细分析用户提供的初步创意，从中提取可以直接或间接用于企划案各个字段（如书名、核心概念、主角设定等）的信息。
+2.  **补充与创作**：对于初步创意中缺失或不够详细的部分，你需要发挥你的专业知识和创造力进行补充和构思，确保所有字段（书名、核心目标、预计字数、具体指令、输入简报、约束条件、验收标准）都内容详实、逻辑一致，并与原始创意精神相符。
+
+你的输出必须是、且只能是一个符合 Pydantic 模型 `IdeaOutput` 结构的 JSON 对象。
+"""
+
+user_prompt = """请基于以下创意，生成书籍企划案：
+---
+创意：
+{idea}
+---
+"""
+
+async def idea_to_json(idea: str) -> IdeaOutput:
+    formatted_user_prompt = user_prompt.format(idea=idea)
+    messages = get_llm_messages(system_prompt, formatted_user_prompt)
+    llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.1)
+    llm_message = await call_llm.completion(llm_params, output_cls=IdeaOutput)
+    return llm_message.validated_data
+
+
+###############################################################################
+
+
+def add_book(idea: IdeaOutput) -> str:
+    book_info = idea.model_dump(exclude_unset=True)
+    book_info['category'] = 'story'
+    book_info['language'] = 'cn'
+    book_info['day_wordcount_goal'] = 20000
+    from utils.sqlite_meta import get_meta_db
+    db = get_meta_db()
+    run_id = db.add_book(book_info)
+    return run_id

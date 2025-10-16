@@ -3,7 +3,6 @@ from loguru import logger
 from typing import Dict, Any, Optional, List, Literal
 import copy
 
-import collections
 
 llm_temperatures = {
     "creative": 0.75,
@@ -42,6 +41,7 @@ def get_llm_params(
 def template_fill(template: str, context: Optional[Dict[str, Any]]) -> str:
     content = template
     if context:
+        import collections
         safe_context = collections.defaultdict(str, context)
         content = template.format_map(safe_context)
     return content

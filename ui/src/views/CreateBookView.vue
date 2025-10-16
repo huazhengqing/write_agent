@@ -179,6 +179,7 @@ const handleGenerateIdea = async () => {
     newBookForm.input_brief = idea.input_brief;
     newBookForm.constraints = idea.constraints;
     newBookForm.acceptance_criteria = idea.acceptance_criteria;
+    newBookForm.length = idea.length;
     ElMessage.success('AI 创意已生成并填充！');
   } catch (error) {
     ElMessage.error('生成创意失败，请稍后重试。');
