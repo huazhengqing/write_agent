@@ -6,7 +6,7 @@ import { getBook, type BookMeta } from '@/api/books';
 import type { Task } from '@/api/tasks';
 
 /**
- * 自然排序函数，用于正确排序 '1.2', '1.10' 这样的字符串
+ * 自然排序函数, 用于正确排序 '1.2', '1.10' 这样的字符串
  * @param a 字符串a
  * @param b 字符串b
  */
@@ -18,7 +18,7 @@ function buildTaskTree(tasks: Task[]): Task[] {
     const taskMap = new Map<string, Task>();
     const rootTasks: Task[] = [];
 
-    // 初始化所有任务，并为其添加 subtasks 数组
+    // 初始化所有任务, 并为其添加 subtasks 数组
     tasks.forEach(task => {
         task.subtasks = [];
         taskMap.set(task.task_id, task);
@@ -76,7 +76,7 @@ export const useTaskStore = defineStore('tasks', () => {
         }
     }
 
-    // 辅助函数：在树中查找任务
+    // 辅助函数: 在树中查找任务
     function findTaskInTree(taskId: string, taskList: Task[]): Task | null {
         for (const task of taskList) {
             if (task.task_id === taskId) return task;
@@ -93,7 +93,7 @@ export const useTaskStore = defineStore('tasks', () => {
         try {
             const response = await apiUpdateTask(currentRunId.value, taskId, taskUpdate);
             const updatedTaskData = response.data;
-            // 在本地更新任务数据，UI会自动响应
+            // 在本地更新任务数据, UI会自动响应
             const taskToUpdate = findTaskInTree(taskId, tasks.value);
             if (taskToUpdate) {
                 Object.assign(taskToUpdate, updatedTaskData);
@@ -106,7 +106,7 @@ export const useTaskStore = defineStore('tasks', () => {
 
     async function runTask(taskId: string): Promise<TaskRunResponse | undefined> {
         if (!currentRunId.value) return;
-        // 运行任务通常是异步的，可以只改变状态，不阻塞整体 isLoading
+        // 运行任务通常是异步的, 可以只改变状态, 不阻塞整体 isLoading
         const task = findTaskInTree(taskId, tasks.value);
         if (task) task.status = 'running';
         error.value = null;
@@ -116,12 +116,12 @@ export const useTaskStore = defineStore('tasks', () => {
         } catch (err) {
             error.value = `运行任务 ${taskId} 失败`;
             console.error(error.value, err);
-            if (task) task.status = 'failed'; // 运行失败，更新状态
+            if (task) task.status = 'failed'; // 运行失败, 更新状态
             throw err;
         }
     }
 
-    // 辅助函数：在树中查找并删除任务
+    // 辅助函数: 在树中查找并删除任务
     function findAndRemoveTask(taskId: string, taskList: Task[]): boolean {
         const index = taskList.findIndex(t => t.task_id === taskId);
         if (index !== -1) {

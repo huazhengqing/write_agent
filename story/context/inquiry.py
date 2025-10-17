@@ -1,7 +1,7 @@
 import importlib
 from typing import Literal
 from loguru import logger
-from story.prompts.models.inquiry import InquiryOutput
+from story.models.inquiry import InquiryOutput
 from utils import call_llm
 from utils.llm import get_llm_messages, get_llm_params
 from utils.models import Task
@@ -19,8 +19,8 @@ async def inquiry(
     overall_planning: str,
 ) -> InquiryOutput:
     task_db = get_task_db(task.run_id)
-    field_name = f"inquiry_{inquiry_type}"
     task_data = task_db.get_task_by_id(task.id)
+    field_name = f"inquiry_{inquiry_type}"
     if task_data and (existing_inquiry := task_data.get(field_name)):
         try:
             return InquiryOutput.model_validate_json(existing_inquiry)
@@ -39,9 +39,9 @@ async def inquiry(
     module = importlib.import_module(f"story.prompts.inquiry.{inquiry_type}")
     messages = get_llm_messages(module.system_prompt, module.user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.1)
-    llm_message = await call_llm.completion(llm_params, output_cls=InquiryOutput)
+    response = await call_llm.completion(llm_params, output_cls=InquiryOutput)
     
-    inquiry_result = llm_message.validated_data
+    inquiry_result = response.validated_data
     if inquiry_result:
         inquiry_content = inquiry_result.model_dump_json(indent=2, ensure_ascii=False)
         task_db.update_task_inquiry(task.id, inquiry_type, inquiry_content)

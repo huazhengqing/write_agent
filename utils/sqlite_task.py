@@ -3,8 +3,8 @@ import json
 from typing import Any, Dict, List, Optional
 from loguru import logger
 from functools import lru_cache
-from utils.file import get_text_file_path, text_file_append
-from utils.models import Task, natural_sort_key
+from utils.file import get_text_file_path, text_file_append, data_dir
+from utils.models import Task, natural_sort_key, TaskType, TaskStatusType, get_args, is_valid_task_id, get_parent_id
 
 
 """
@@ -68,6 +68,7 @@ class TaskDB:
         import threading
         self._lock = threading.Lock()
         self._create_table()
+
 
     def _create_table(self):
         with self._lock:
@@ -137,9 +138,10 @@ class TaskDB:
             """)
             self.conn.commit()
 
+
     def _get_dedicated_result_columns(self) -> List[str]:
         """获取在t_tasks表中作为独立列存在的结果字段名"""
-        # 这些字段存在于 t_tasks 表中，但其数据源于 Task.results
+        # 这些字段存在于 t_tasks 表中, 但其数据源于 Task.results
         return [
             "expert", "atom", "atom_reasoning", "plan", "plan_reasoning",
             "design", "design_reasoning", "search", "search_reasoning",
@@ -151,6 +153,7 @@ class TaskDB:
             "inquiry_design", "inquiry_summary", "inquiry_search"
         ]
 
+
     def _prepare_remaining_results(self, task_results: Dict[str, Any]) -> str:
         """从任务结果中分离出需要存入JSON字段的数据"""
         dedicated_cols = self._get_dedicated_result_columns()
@@ -160,7 +163,21 @@ class TaskDB:
         }
         return json.dumps(remaining_results, ensure_ascii=False, indent=2) if remaining_results else "{}"
 
+
     def add_task(self, task: Task):
+        # 验证 id
+        if not is_valid_task_id(task.id):
+            raise ValueError(f"无效的任务ID格式: '{task.id}'。")
+        # 验证 parent_id 与 id 的关系
+        expected_parent_id = get_parent_id(task.id)
+        if task.parent_id != expected_parent_id:
+            raise ValueError(f"任务ID '{task.id}' 的 parent_id '{task.parent_id}' 不正确, 应为 '{expected_parent_id}'。")
+        # 验证 task_type
+        if task.task_type not in get_args(TaskType):
+            raise ValueError(f"无效的 task_type: '{task.task_type}'。有效值为: {get_args(TaskType)}")
+        # 验证 status
+        if task.status not in get_args(TaskStatusType):
+            raise ValueError(f"无效的 status: '{task.status}'。有效值为: {get_args(TaskStatusType)}")
         task_data = {
             "id": task.id,
             "parent_id": task.parent_id,
@@ -190,6 +207,7 @@ class TaskDB:
                 tuple(task_data.values())
             )
             self.conn.commit()
+
 
     def add_sub_tasks(self, task: Task):
         import collections
@@ -291,10 +309,8 @@ class TaskDB:
         with self._lock:
             self.cursor.execute("SELECT * FROM t_tasks")
             rows = self.cursor.fetchall()
-
         if not rows:
             return []
-
         tasks_data = [dict(row) for row in rows]
         for task_data in tasks_data:
             # 将存储在 'results' 字段的JSON字符串解码并合并
@@ -316,14 +332,11 @@ class TaskDB:
         """
         if not parent_id:
             return []
-        
         query = "SELECT id FROM t_tasks WHERE parent_id = ?"
         params = [parent_id]
-
         if task_type:
             query += " AND task_type = ?"
             params.append(task_type)
-
         with self._lock:
             self.cursor.execute(
                 query,
@@ -350,36 +363,30 @@ class TaskDB:
             parent_ids_to_query = {''} 
             if task.parent_id:
                 parent_ids_to_query.add(task.parent_id)
-
             id_parts = task.id.split('.')
             if len(id_parts) > 1:
                 # 例如, task.id '1.2.3', id_parts ['1', '2', '3']
                 # 父任务链的 parent_id 是 '1' (1.2的父)
                 for i in range(1, len(id_parts) - 1):
                     parent_ids_to_query.add(".".join(id_parts[:i]))
-
             # 2. 构建查询
             # 使用一个查询获取所有相关任务, 提高效率
             query_conditions = []
             params = []
-            
             # 处理非 NULL 的 parent_id
             non_null_parent_ids = [pid for pid in parent_ids_to_query if pid != '']
             if non_null_parent_ids:
                 placeholders = ','.join(['?'] * len(non_null_parent_ids))
                 query_conditions.append(f"parent_id IN ({placeholders})")
                 params.extend(non_null_parent_ids)
-            
             # 处理根任务 (parent_id = '' 或 parent_id IS NULL)
             if '' in parent_ids_to_query:
                 query_conditions.append("(parent_id = '' OR parent_id IS NULL)")
-
             query = f"SELECT id, hierarchical_position, task_type, goal, length FROM t_tasks WHERE {' OR '.join(query_conditions)}"
             self.cursor.execute(query, tuple(params))
             rows = self.cursor.fetchall()
             for row in rows:
                 all_task_data[row[0]] = (row[1], row[2], row[3], row[4])
-
         all_task_data[task.id] = (task.hierarchical_position, task.task_type, task.goal, task.length)
         sorted_ids = sorted(all_task_data.keys(), key=natural_sort_key)
         output_lines = []
@@ -403,13 +410,11 @@ class TaskDB:
             current_seq = int(id_parts[-1])
         except ValueError:
             return ""
-
         # 生成需要查询的兄弟任务及当前任务自身的ID列表
         # 例如, 当前是 1.5, 则查询 1.1, 1.2, 1.3, 1.4, 1.5
         dependent_ids = [f"{task.parent_id}.{i}" for i in range(1, current_seq + 1)]
         if not dependent_ids:
             return ""
-
         with self._lock:
             placeholders = ','.join(['?'] * len(dependent_ids))
             self.cursor.execute(
@@ -450,15 +455,12 @@ class TaskDB:
             current_seq = int(id_parts[-1])
         except ValueError:
             return False
-
         # 如果是第一个子任务, 就没有前置兄弟任务
         if current_seq <= 1:
             return False
-
         # 生成需要查询的前置兄弟任务ID列表
         # 例如, 当前是 1.5, 则查询 1.1, 1.2, 1.3, 1.4
         preceding_sibling_ids = [f"{task.parent_id}.{i}" for i in range(1, current_seq)]
-
         with self._lock:
             placeholders = ','.join(['?'] * len(preceding_sibling_ids))
             # 使用 SELECT 1 ... LIMIT 1 来高效地检查存在性
@@ -467,7 +469,6 @@ class TaskDB:
                 tuple(preceding_sibling_ids)
             )
             row = self.cursor.fetchone()
-        
         exists = row is not None
         return exists
 
@@ -490,7 +491,6 @@ class TaskDB:
         dependent_ids = [f"{task.parent_id}.{i}" for i in range(1, current_seq + 1)]
         if not dependent_ids:
             return ""
-        
         with self._lock:
             placeholders = ','.join(['?'] * len(dependent_ids))
             self.cursor.execute(
@@ -522,10 +522,8 @@ class TaskDB:
                 (parent_id,)
             )
             rows = self.cursor.fetchall()
-
         if not rows:
             return ""
-
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = []
         for row in sorted_rows:
@@ -548,10 +546,8 @@ class TaskDB:
                 (parent_id,)
             )
             rows = self.cursor.fetchall()
-
         if not rows:
             return ""
-
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
         return "\n\n".join(content_list)
@@ -570,16 +566,11 @@ class TaskDB:
                 (parent_id,)
             )
             rows = self.cursor.fetchall()
-
         if not rows:
             return ""
-
         sorted_rows = sorted(rows, key=lambda row: natural_sort_key(row[0]))
         content_list = [row[1] for row in sorted_rows if row[1]]
-        
         return "\n\n".join(content_list)
-
-
 
 
 
@@ -733,6 +724,9 @@ class TaskDB:
         """
         if not task_id or not status:
             return
+        # 验证 status
+        if status not in get_args(TaskStatusType):
+            raise ValueError(f"无效的 status: '{status}'。有效值为: {get_args(TaskStatusType)}")
         with self._lock:
             self.cursor.execute(
                 """
@@ -743,6 +737,7 @@ class TaskDB:
                 (status, task_id)
             )
             self.conn.commit()
+
 
     def update_task_expert(self, task_id: str, expert: str):
         """
@@ -767,13 +762,11 @@ class TaskDB:
         """
         if not task_id or not inquiry_type or inquiry_content is None:
             return
-        
         field_name = f"inquiry_{inquiry_type}"
-        # 简单的白名单校验，防止SQL注入
+        # 简单的白名单校验, 防止SQL注入
         if field_name not in ["inquiry_design", "inquiry_summary", "inquiry_search"]:
             logger.error(f"无效的 inquiry_type: {inquiry_type}")
             return
-
         with self._lock:
             self.cursor.execute(
                 f"UPDATE t_tasks SET {field_name} = ? WHERE id = ?",
@@ -789,13 +782,11 @@ class TaskDB:
         """
         if not task_id or not context_type or context_content is None:
             return
-
         field_name = f"context_{context_type}"
-        # 简单的白名单校验，防止SQL注入
+        # 简单的白名单校验, 防止SQL注入
         if field_name not in ["context_design", "context_summary", "context_search"]:
             logger.error(f"无效的 context_type: {context_type}")
             return
-
         with self._lock:
             self.cursor.execute(
                 f"UPDATE t_tasks SET {field_name} = ? WHERE id = ?",
@@ -807,14 +798,12 @@ class TaskDB:
 
     def delete_task_and_subtasks(self, task_id: str):
         """
-        删除指定任务及其所有子任务（级联删除）。
+        删除指定任务及其所有子任务(级联删除)。
         """
         if not task_id:
             return
-
         tasks_to_delete = [task_id]
         queue = [task_id]
-
         # 使用广度优先搜索找到所有子孙任务
         while queue:
             current_id = queue.pop(0)
@@ -822,7 +811,6 @@ class TaskDB:
             if sub_ids:
                 tasks_to_delete.extend(sub_ids)
                 queue.extend(sub_ids)
-
         with self._lock:
             placeholders = ','.join(['?'] * len(tasks_to_delete))
             self.cursor.execute(
@@ -846,17 +834,15 @@ def dict_to_task(task_data: dict) -> Task | None:
     """将从数据库查询出的字典转换为 Task 模型对象"""
     if not task_data:
         return None
-
     # 将存储在 'results' 字段的JSON字符串解码并合并到主字典中
     if task_data.get('results') and isinstance(task_data['results'], str):
         try:
             remaining_results = json.loads(task_data['results'])
-            # 合并时，数据库中的独立列数据优先级更高
+            # 合并时, 数据库中的独立列数据优先级更高
             task_data = {**remaining_results, **task_data}
         except (json.JSONDecodeError, TypeError):
             logger.warning(f"无法解析任务 {task_data.get('id')} 的 'results' JSON 字段: {task_data['results']}")
-
-    # 2. 准备 Task 模型的构造函数参数，并处理 results 字段
+    # 2. 准备 Task 模型的构造函数参数, 并处理 results 字段
     task_args = {}
     results = {}
     for key, value in task_data.items():
@@ -865,7 +851,6 @@ def dict_to_task(task_data: dict) -> Task | None:
         elif value is not None:
             results[key] = value
     task_args['results'] = results
-    
     # 3. 创建 Task 实例
     return Task(**task_args)
 

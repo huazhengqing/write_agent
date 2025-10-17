@@ -11,7 +11,7 @@ const routes = [
     component: CreateBookView
   },
   {
-    path: '/dashboard', // 将路径修改为 /dashboard，与 App.vue 中的菜单项匹配
+    path: '/dashboard', // 将路径修改为 /dashboard, 与 App.vue 中的菜单项匹配
     name: 'dashboard',
     component: DashboardView,
   },

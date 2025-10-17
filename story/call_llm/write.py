@@ -1,5 +1,4 @@
 from story.context import get_context
-from story.prompts.models.atom import AtomOutput
 from story.rag import save
 from utils import call_llm
 from utils.models import Task
@@ -30,12 +29,13 @@ async def atom(task: Task) -> Task:
     }
 
     from story.prompts.atom import system_prompt, user_prompt
+    from story.models.atom import AtomOutput
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.0)
-    llm_message = await call_llm.completion(llm_params, output_cls=AtomOutput)
+    response = await call_llm.completion(llm_params, output_cls=AtomOutput)
 
-    data = llm_message.validated_data
-    reasoning = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
+    data = response.validated_data
+    reasoning = response.get("reasoning_content") or response.get("reasoning", "")
     updated_task = task.model_copy(deep=True)
     updated_task.results["atom"] = data.atom_result
     updated_task.results["atom_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
@@ -83,15 +83,15 @@ async def write(task: Task) -> Task:
     from story.prompts.write.write import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.75)
-    llm_message = await call_llm.completion(llm_params)
+    response = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
-    updated_task.results["write"] = llm_message.content
-    updated_task.results["write_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
+    updated_task.results["write"] = response.content
+    updated_task.results["write_reasoning"] = response.get("reasoning_content") or response.get("reasoning", "")
     
     task_db.add_result(updated_task)
 
-    save.write(task, llm_message.content)
+    save.write(task, response.content)
     return updated_task
 
 
@@ -131,13 +131,13 @@ async def review(task: Task) -> Task:
     from story.prompts.write.review import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.1)
-    llm_message = await call_llm.completion(llm_params)
+    response = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
-    updated_task.results["review"] = llm_message.content
-    updated_task.results["review_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
+    updated_task.results["review"] = response.content
+    updated_task.results["review_reasoning"] = response.get("reasoning_content") or response.get("reasoning", "")
     
     task_db.add_result(updated_task)
 
-    save.design(task, llm_message.content)
+    save.design(task, response.content)
     return updated_task

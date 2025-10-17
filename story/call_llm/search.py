@@ -1,6 +1,4 @@
 from loguru import logger
-from story.prompts.models.atom import AtomOutput
-from story.prompts.models.plan import PlanOutput, convert_plan_to_tasks
 from story.rag import save
 from utils import call_llm
 from utils.models import Task
@@ -21,7 +19,7 @@ async def atom(task: Task) -> Task:
         if parent_task_data and parent_task_data.get("task_type") == "search":
             updated_task = task.model_copy(deep=True)
             updated_task.results["atom"] = "atom"
-            updated_task.results["atom_reasoning"] = "父任务是 search 类型，为防止无限分解，此任务被强制设为原子任务。"
+            updated_task.results["atom_reasoning"] = "父任务是 search 类型, 为防止无限分解, 此任务被强制设为原子任务。"
             task_db.add_result(updated_task)
             return updated_task
     
@@ -39,12 +37,13 @@ async def atom(task: Task) -> Task:
     }
 
     from story.prompts.search.atom import system_prompt, user_prompt
+    from story.models.atom import AtomOutput
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.0)
-    llm_message = await call_llm.completion(llm_params, output_cls=AtomOutput)
+    response = await call_llm.completion(llm_params, output_cls=AtomOutput)
 
-    data = llm_message.validated_data
-    reasoning = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
+    data = response.validated_data
+    reasoning = response.get("reasoning_content") or response.get("reasoning", "")
     updated_task = task.model_copy(deep=True)
     updated_task.results["atom"] = data.atom_result
     updated_task.results["atom_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
@@ -83,6 +82,7 @@ async def decomposition(task: Task) -> Task:
 
     context = {
         "task": task.to_context(),
+        "complex_reasons": task.results.get("complex_reasons", ""), 
         "book_level_design": book_level_design,
         "global_state_summary": global_state_summary,
         "design_dependent": design_dependent,
@@ -92,13 +92,15 @@ async def decomposition(task: Task) -> Task:
     }
 
     from story.prompts.search.decomposition import system_prompt, user_prompt
+    from story.models.plan import PlanOutput, plan_to_tasks
+    
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.1)
-    llm_message = await call_llm.completion(llm_params, output_cls=PlanOutput)
+    response = await call_llm.completion(llm_params, output_cls=PlanOutput)
 
-    plan_output = llm_message.validated_data
+    plan_output = response.validated_data
     updated_task = task.model_copy(deep=True)
-    sub_tasks = convert_plan_to_tasks(plan_output.sub_tasks, parent_task=updated_task)
+    sub_tasks = plan_to_tasks(plan_output.sub_tasks, parent_task=updated_task)
     updated_task.sub_tasks = sub_tasks
     updated_task.results["decomposition_reasoning"] = plan_output.reasoning
 
@@ -184,12 +186,12 @@ async def aggregate(task: Task) -> Task:
     from story.prompts.search.aggregate import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.4)
-    llm_message = await call_llm.completion(llm_params)
+    response = await call_llm.completion(llm_params)
     updated_task = task.model_copy(deep=True)
-    updated_task.results["search"] = llm_message.content
-    updated_task.results["search_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
+    updated_task.results["search"] = response.content
+    updated_task.results["search_reasoning"] = response.get("reasoning_content") or response.get("reasoning", "")
     
     task_db.add_result(updated_task)
 
-    save.search(task, llm_message.content)
+    save.search(task, response.content)
     return updated_task

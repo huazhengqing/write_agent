@@ -2,11 +2,9 @@
 .bug/
 .cache/
 .data/
-.gemini/
 .prefect/
-.vscode/
 logs/*
-models/
+embedding_models/
 output/*
 searxng/
 venv/

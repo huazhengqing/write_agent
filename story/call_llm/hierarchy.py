@@ -1,7 +1,6 @@
 from typing import Optional
 import story
 from story.context import get_context
-from story.prompts.models.plan import PlanOutput, plan_to_task
 from utils import call_llm
 from utils.models import Task
 from utils.llm import get_llm_messages, get_llm_params, template_fill
@@ -44,11 +43,11 @@ async def all(task: Task) -> Task:
     from story.prompts.hierarchy.all import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.75)
-    llm_message = await call_llm.completion(llm_params)
+    response = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
-    updated_task.results["hierarchy"] = llm_message.content
-    updated_task.results["hierarchy_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
+    updated_task.results["hierarchy"] = response.content
+    updated_task.results["hierarchy_reasoning"] = response.get("reasoning_content") or response.get("reasoning", "")
 
     task_db.add_result(updated_task)
     return updated_task
@@ -78,7 +77,7 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
                 pre_task = dict_to_task(pre_task_data)
 
     if not pre_task:
-        raise ValueError(f"无法为父任务 '{parent_task.id}' 生成下一个子任务，因为找不到任何前置任务。")
+        raise ValueError(f"无法为父任务 '{parent_task.id}' 生成下一个子任务, 因为找不到任何前置任务。")
 
     book_meta = get_meta_db().get_book_meta(parent_task.run_id) or {}
     book_level_design = book_meta.get("book_level_design", "")
@@ -102,13 +101,14 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
     }
     
     structured_response = None
+    from story.models.plan import PlanOutput
     # 根任务的层级规划使用直接调用, 确保稳定性和效率
     if parent_task.id == "1":
         from story.prompts.hierarchy.next import system_prompt, user_prompt
         messages = get_llm_messages(system_prompt, user_prompt, None, context)
         llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.1)
-        llm_message = await call_llm.completion(llm_params, output_cls=PlanOutput)
-        structured_response = llm_message.validated_data
+        response = await call_llm.completion(llm_params, output_cls=PlanOutput)
+        structured_response = response.validated_data
     else:
         # 深层任务使用 react 模式, 允许动态检索信息
         from story.prompts.hierarchy.next_react import system_prompt, user_prompt
@@ -122,11 +122,11 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
     if not structured_response:
         return None
 
-    # llm_message 已经是验证过的 PlanOutput 实例了
+    # response 已经是验证过的 PlanOutput 实例了
     if not structured_response.goal:
         return None
         
-    task_next = plan_to_task(structured_response)
+    task_next = structured_response.to_task()
 
     # pre_task 在此函数逻辑中必然存在
     parts = pre_task.id.split('.')

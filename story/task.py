@@ -45,8 +45,8 @@ def create_root_task(run_id: str):
 @contextmanager
 def manage_project_status(run_id: str):
     """
-    一个上下文管理器，用于在任务执行期间管理项目的运行状态。
-    进入时将项目状态设置为 'running'，退出时（无论成功或异常）设置为 'idle'。
+    一个上下文管理器, 用于在任务执行期间管理项目的运行状态。
+    进入时将项目状态设置为 'running', 退出时(无论成功或异常)设置为 'idle'。
     """
     meta_db: BookMetaDB = get_meta_db()
     meta_db.update_status(run_id, "running")
@@ -59,7 +59,7 @@ def manage_project_status(run_id: str):
 
 async def do_task(task: Task):
     """
-    外部调用接口，统一的入口
+    外部调用接口, 统一的入口
     """
     meta_db = get_meta_db()
     book_meta = meta_db.get_book_meta(task.run_id)

@@ -1,0 +1,24 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "Run in WSL Python",
+            "type": "shell",
+            "command": "wsl",  // 调用WSL命令
+            // 核心: 通过llWSL执行Python, 注意替换为你的WSL Python路径和项目路径
+            "args": [
+                "/usr/bin/python3",  // WSL中Python解释器路径
+                "${file}"  // 当前打开的Python文件(会自动转换为WSL路径)
+            ],
+            "group": {
+                "kind": "build",
+                "isDefault": true  // 设置为默认任务
+            },
+            "presentation": {
+                "reveal": "always",
+                "panel": "new"
+            },
+            "problemMatcher": []
+        }
+    ]
+}

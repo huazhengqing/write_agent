@@ -1,6 +1,5 @@
 from typing import Optional
 import story
-from story.prompts.models.plan import PlanOutput, plan_to_task
 from story.context import get_context
 from utils import call_llm
 from utils.models import Task
@@ -44,10 +43,10 @@ async def all(task: Task) -> Task:
     from story.prompts.plan.all import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.75)
-    llm_message = await call_llm.completion(llm_params)
+    response = await call_llm.completion(llm_params)
     updated_task = task.model_copy(deep=True)
-    updated_task.results["plan"] = llm_message.content
-    updated_task.results["plan_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
+    updated_task.results["plan"] = response.content
+    updated_task.results["plan_reasoning"] = response.get("reasoning_content") or response.get("reasoning", "")
     
     task_db.add_result(updated_task)
     return updated_task
@@ -97,12 +96,13 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
     }
 
     structured_response = None
+    from story.models.plan import PlanOutput
     if parent_task.id == "1":
         from story.prompts.plan.next import system_prompt, user_prompt
         messages = get_llm_messages(system_prompt, user_prompt, None, context)
         llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.1)
-        llm_message = await call_llm.completion(llm_params, output_cls=PlanOutput)
-        structured_response = llm_message.validated_data
+        response = await call_llm.completion(llm_params, output_cls=PlanOutput)
+        structured_response = response.validated_data
     else:
         from story.prompts.plan.next_react import system_prompt, user_prompt
         structured_response = await story.rag.react.react(
@@ -115,11 +115,11 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
     if not structured_response:
         return None
 
-    # llm_message 已经是验证过的 PlanOutput 实例了
+    # response 已经是验证过的 PlanOutput 实例了
     if not structured_response.goal:
         return None
 
-    task_next = plan_to_task(structured_response)
+    task_next = structured_response.to_task()
 
     if pre_task:
         parts = pre_task.id.split('.')

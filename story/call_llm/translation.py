@@ -38,11 +38,11 @@ async def translation(task: Task) -> Task:
     from story.prompts.translation.translation import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.75)
-    llm_message = await call_llm.completion(llm_params)
+    response = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
-    updated_task.results["translation"] = llm_message.content
-    updated_task.results["translation_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
+    updated_task.results["translation"] = response.content
+    updated_task.results["translation_reasoning"] = response.get("reasoning_content") or response.get("reasoning", "")
     
     task_db.add_result(updated_task)
     return updated_task

@@ -26,13 +26,13 @@ from story.idea import generate_idea, IdeaOutput
 
 app = FastAPI(
     title="AI 写作智能体 API",
-    description="一个用于管理写作项目（书籍）和任务的 API。",
+    description="一个用于管理写作项目(书籍)和任务的 API。",
     version="1.0.0",
 )
 
 # --- CORS 中间件配置 ---
-# 允许所有来源，所有方法，所有头，这在开发阶段非常方便。
-# 在生产环境中，您应该将其限制为您的前端域名。
+# 允许所有来源, 所有方法, 所有头, 这在开发阶段非常方便。
+# 在生产环境中, 您应该将其限制为您的前端域名。
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # 或者指定前端地址, 如 ["http://localhost:5173"]
@@ -47,7 +47,7 @@ app.add_middleware(
 
 
 class BookMeta(BaseModel):
-    """书籍元数据的完整模型，用于响应"""
+    """书籍元数据的完整模型, 用于响应"""
     run_id: str
     name: str
     goal: Optional[str] = None
@@ -70,8 +70,8 @@ class BookMeta(BaseModel):
 
 class BookCreate(BaseModel):
     """创建书籍时请求体使用的模型。""" 
-    name: str = Field(..., min_length=1, description="书名/项目名，不能为空")
-    goal: str = Field(..., min_length=1, description="核心目标，不能为空")
+    name: str = Field(..., min_length=1, description="书名/项目名, 不能为空")
+    goal: str = Field(..., min_length=1, description="核心目标, 不能为空")
     category: Optional[str] = "story"
     language: Optional[str] = "cn"
     instructions: Optional[str] = ""
@@ -83,7 +83,7 @@ class BookCreate(BaseModel):
 
 
 class TaskUpdate(BaseModel):
-    """用于更新任务的模型，包含所有可更新的字段"""
+    """用于更新任务的模型, 包含所有可更新的字段"""
     parent_id: Optional[str] = None
     hierarchical_position: Optional[str] = None
     task_type: Optional[str] = None
@@ -153,14 +153,14 @@ def create_book_api(book_data: BookCreate):
     run_id = meta_db.add_book(book_data.model_dump())
     new_book_meta = meta_db.get_book_meta(run_id)
     if not new_book_meta:
-        raise HTTPException(status_code=500, detail="创建书籍后无法立即找到，请检查数据库。")   
+        raise HTTPException(status_code=500, detail="创建书籍后无法立即找到, 请检查数据库。")   
     return new_book_meta
 
 
 @app.post("/api/books/generate-idea", response_model=IdeaOutput, tags=["Books"])
 async def generate_idea_api():
     """
-    使用 AI 生成一个新的书籍创意，包含名称、目标、指令等元信息。
+    使用 AI 生成一个新的书籍创意, 包含名称、目标、指令等元信息。
     """
     try:
         idea = await generate_idea()
@@ -185,7 +185,7 @@ def get_book_api(run_id: str):
 
 @app.post("/api/books/{run_id}/sync", status_code=200, tags=["Books"])
 def sync_book_to_task_db_api(run_id: str):
-    """将书籍项目同步到任务库，创建根任务。"""
+    """将书籍项目同步到任务库, 创建根任务。"""
     meta_db = get_meta_db()
     if not meta_db.get_book_meta(run_id):
         raise HTTPException(status_code=404, detail=f"未找到 run_id 为 '{run_id}' 的书籍。")
@@ -214,7 +214,7 @@ def update_book_api(run_id: str, book_update: BookMeta):
     meta_db.add_book(update_data)
     updated_book = meta_db.get_book_meta(run_id)
     if not updated_book:
-         raise HTTPException(status_code=500, detail="更新书籍后无法立即找到，请检查数据库。")
+         raise HTTPException(status_code=500, detail="更新书籍后无法立即找到, 请检查数据库。")
     task_db = get_task_db(run_id)
     updated_book['word_count_today'] = task_db.get_word_count_last_24h()
     return updated_book
@@ -235,7 +235,7 @@ def delete_book_api(run_id: str):
     if project_path.exists() and project_path.is_dir():
         shutil.rmtree(project_path)
 
-    return None # 对于 204 No Content，不需要返回任何内容
+    return None # 对于 204 No Content, 不需要返回任何内容
 
 
 @app.get("/api/books/{run_id}/tasks", response_model=List[Task], tags=["Tasks"])
@@ -291,7 +291,7 @@ def update_task_api(task_id: str, run_id: str, task_update: TaskUpdate):
 
     updated_task = task_db.get_task_by_id(task_id)
     if not updated_task:
-        raise HTTPException(status_code=500, detail="更新任务后无法立即找到，请检查数据库。")
+        raise HTTPException(status_code=500, detail="更新任务后无法立即找到, 请检查数据库。")
 
     return dict_to_task({**updated_task, "run_id": run_id})
 
@@ -312,7 +312,7 @@ def delete_task_api(task_id: str, run_id: str):
 async def run_task_api(task_id: str, run_id: str, background_tasks: BackgroundTasks):
     """
     在后台开始执行一个指定的任务。
-    此接口会立即返回，任务将在后台运行。
+    此接口会立即返回, 任务将在后台运行。
     """
     task_db = get_task_db(run_id)
     task_data = task_db.get_task_by_id(task_id)
@@ -338,7 +338,7 @@ async def run_task_api(task_id: str, run_id: str, background_tasks: BackgroundTa
 # 1. 确保你已经安装了 fastapi 和 uvicorn:
 #    pip install fastapi "uvicorn[standard]"
 #
-# 2. 在命令行中，切换到 `ai_book` 目录，然后运行:
+# 2. 在命令行中, 切换到 `ai_book` 目录, 然后运行:
 #    uvicorn write_agent.api.main:app --reload
 #
 # 3. API 将在 http://127.0.0.1:8000 启动。

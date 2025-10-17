@@ -13,7 +13,7 @@ export const useBookStore = defineStore('books', () => {
     error.value = null;
     try {
       const response = await getAllBooks();
-      // 修复：将获取到的书籍数据赋值给 store 中的 books ref
+      // 修复: 将获取到的书籍数据赋值给 store 中的 books ref
       books.value = response.data;
       return books.value;
     } catch (err: any) {
@@ -54,7 +54,7 @@ export const useBookStore = defineStore('books', () => {
       const response = await updateBook(runId, dataToUpdate);
       const index = books.value.findIndex(b => b.run_id === runId);
       if (index !== -1) {
-        // 后端返回了完整的更新后的 book 对象，直接替换即可
+        // 后端返回了完整的更新后的 book 对象, 直接替换即可
         books.value[index] = response.data;
       } else {
         await fetchAllBooks();

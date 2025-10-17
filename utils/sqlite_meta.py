@@ -4,7 +4,7 @@ from loguru import logger
 from typing import List, Optional, Dict, Any
 from functools import lru_cache
 from utils.file import sanitize_filename
-from utils.models import Task
+from utils.models import Task, CategoryType, LanguageType, get_args
 
 
 """
@@ -84,9 +84,17 @@ class BookMetaDB:
             self.conn.commit()
 
     def add_book(self, book_info: Dict[str, Any]) -> str:
+        # 验证 category
+        if "category" in book_info and book_info["category"] not in get_args(CategoryType):
+            raise ValueError(f"无效的 category: '{book_info['category']}'。有效值为: {get_args(CategoryType)}")
+
+        # 验证 language
+        if "language" in book_info and book_info["language"] not in get_args(LanguageType):
+            raise ValueError(f"无效的 language: '{book_info['language']}'。有效值为: {get_args(LanguageType)}")
+
         if "run_id" not in book_info or not book_info["run_id"]:
             if "name" not in book_info or not book_info["name"]:
-                raise ValueError("创建新书时，'name' 字段不能为空。")
+                raise ValueError("创建新书时, 'name' 字段不能为空。")
             book_info["run_id"] = sanitize_filename(book_info["name"])
         if "status" not in book_info:
             book_info["status"] = "idle"

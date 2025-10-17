@@ -51,7 +51,7 @@
           <div class="details-header">
             <h3>任务详情</h3>
             <div class="action-buttons">
-              <el-popconfirm title="确定要删除此任务及其所有子任务吗？" @confirm="handleDeleteTask">
+              <el-popconfirm title="确定要删除此任务及其所有子任务吗?" @confirm="handleDeleteTask">
                 <template #reference><el-button type="danger">删除</el-button></template>
               </el-popconfirm>
               <el-button type="primary" @click="handleUpdateTask" :loading="isUpdating">保存</el-button>
@@ -191,7 +191,7 @@ watch(selectedTaskInfo, (newInfo) => {
         // 清空旧数据并用新任务数据填充
         Object.keys(editForm).forEach(key => delete editForm[key as keyof Task]);
         const taskData = JSON.parse(JSON.stringify(newInfo.task));
-        // 确保 task_id 字段存在且正确，因为 el-tree 的 node-key 和模板都依赖它
+        // 确保 task_id 字段存在且正确, 因为 el-tree 的 node-key 和模板都依赖它
         taskData.task_id = taskData.id;
         Object.assign(editForm, taskData);
     } else {
@@ -212,27 +212,27 @@ const hasAnyProjectRunning = computed(() => {
 });
 
 const getTaskDisplayStatus = (task: Task, book: BookMeta): string => {
-  // 如果项目正在运行，并且任务不是一个终态，我们乐观地认为它可能在运行。
-  // 这是一个简化处理，因为后端现在只提供项目级别的运行状态。
+  // 如果项目正在运行, 并且任务不是一个终态, 我们乐观地认为它可能在运行。
+  // 这是一个简化处理, 因为后端现在只提供项目级别的运行状态。
   if (book.status === 'running' && !['completed', 'failed', 'cancelled', 'paused'].includes(task.status)) {
     return 'running';
   }
-  // 否则，返回任务自身的数据库状态。
+  // 否则, 返回任务自身的数据库状态。
   return task.status;
 };
 
 const findBook = (runId: string) => booksWithTasks.value.find(b => b.run_id === runId);
 
-// 辅助函数：构建任务树
+// 辅助函数: 构建任务树
 function buildTaskTree(tasks: Task[]): Task[] {
     const taskMap = new Map<string, Task>();
     const rootTasks: Task[] = [];
 
     if (!tasks) return [];
 
-    // 初始化所有任务，并为其添加 subtasks 数组
+    // 初始化所有任务, 并为其添加 subtasks 数组
     tasks.forEach(task => {
-        // 确保 task_id 存在，因为 el-tree 的 node-key 和模板都依赖它
+        // 确保 task_id 存在, 因为 el-tree 的 node-key 和模板都依赖它
         const taskWithId = { ...task, task_id: task.id, subtasks: [] };
         taskMap.set(task.task_id, taskWithId);
     });
@@ -272,7 +272,7 @@ const fetchAllTasks = async (isManual = false) => {
   if (isManual) isManualRefreshing.value = true;
   isLoading.value = true;
   try {
-    // 关键加固：每次刷新都先获取最新的全量项目列表
+    // 关键加固: 每次刷新都先获取最新的全量项目列表
     await bookStore.fetchAllBooks(true);
     const taskPromises = books.value.map(book =>
       getTasksForBook(book.run_id)
@@ -454,17 +454,17 @@ const handleDeleteTask = async () => {
     word-break: break-all;
 }
 
-/* 新增：为正在运行的任务行添加背景色 */
+/* 新增: 为正在运行的任务行添加背景色 */
 .custom-tree-node.is-running {
   background-color: #ecf5ff; /* element-plus primary-light-9 */
   color: #409eff; /* element-plus primary */
 }
-/* 新增：调整高亮选中行的样式，使其优先级更高 */
+/* 新增: 调整高亮选中行的样式, 使其优先级更高 */
 .el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content .custom-tree-node {
-  background-color: #d9ecff; /* 更深一点的蓝色，用于区分选中和运行 */
+  background-color: #d9ecff; /* 更深一点的蓝色, 用于区分选中和运行 */
 }
 
-/* 覆盖 element-plus 的默认样式，确保 task-id 不会因为 flex 布局被挤压 */
+/* 覆盖 element-plus 的默认样式, 确保 task-id 不会因为 flex 布局被挤压 */
 .el-tree-node__content > .custom-tree-node {
   display: flex;
   align-items: center;

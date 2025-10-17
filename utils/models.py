@@ -1,24 +1,41 @@
 from functools import lru_cache
 from datetime import datetime
-from typing import List, Optional, Dict, Literal, Any
-from pydantic import BaseModel, Field
+from typing import List, Optional, Dict, Literal, Any, get_args as typing_get_args
+from pydantic import BaseModel, Field, validator, root_validator
+import re
+
+
+@lru_cache(maxsize=None)
+def get_args(literal_type):
+    """从 Literal 类型中获取所有允许的值。"""
+    return typing_get_args(literal_type)
 
 
 CategoryType = Literal["story", "book", "report"]
-TaskType = Literal["write", "design", "search"]
 LanguageType = Literal["cn", "en"]
 
 
-"""
-待处理 (Pending): 任务已创建，但尚未开始执行。
-执行中 (Running): 任务正在执行。
-已完成 (Completed): 任务已成功完成。
-已失败 (Failed): 任务执行失败。
-已取消 (Cancelled): 任务被取消执行。
-已暂停 (Paused): 任务执行被暂停。
-"""
+TaskType = Literal["write", "design", "search"]
 TaskStatusType = Literal["pending", "running", "completed", "failed", "cancelled", "paused"]
 
+
+# 正则表达式用于验证任务ID格式: '1', '1.1', '1.2.1'
+# 规则:
+# 1. 顶级任务ID必须是 '1'。
+# 2. 子任务ID的每个数字段都必须是正整数 (从1开始)。
+# 3. 不允许出现 '0' 作为任何段的值。
+# 4. 不允许前导零 (e.g., '01', '1.01')。
+# 合法示例: '1', '1.1', '1.2.1', '1.23.456'
+# 非法示例: '2', '12', '0', '1.0', '0.1', '01', '1.01', '.1', '1.', '1..1', '1.a'
+TASK_ID_PATTERN = re.compile(r"^1(\.[1-9]\d*)*$")
+
+def is_valid_task_id(task_id: str) -> bool:
+    """
+    检查任务ID是否符合 '1', '1.1', '1.2.1' 这样的层级任务ID格式。
+    """
+    if not task_id:
+        return False
+    return bool(TASK_ID_PATTERN.fullmatch(task_id))
 
 
 class Task(BaseModel):

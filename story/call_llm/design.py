@@ -1,6 +1,4 @@
 import importlib
-from story.prompts.models.atom import AtomOutput
-from story.prompts.models.plan import PlanOutput, convert_plan_to_tasks
 from story.prompts.route.expert import RouteExpertOutput
 from story.context import get_context
 from utils import call_llm
@@ -27,7 +25,7 @@ async def atom(task: Task) -> Task:
                 if grandparent_task_data and grandparent_task_data.get("task_type") == "design":
                     updated_task = task.model_copy(deep=True)
                     updated_task.results["atom"] = "atom"
-                    updated_task.results["atom_reasoning"] = "父任务和祖父任务均为 design 类型，为防止无限分解，此任务被强制设为原子任务。"
+                    updated_task.results["atom_reasoning"] = "父任务和祖父任务均为 design 类型, 为防止无限分解, 此任务被强制设为原子任务。"
                     task_db.add_result(updated_task)
                     return updated_task
 
@@ -44,12 +42,13 @@ async def atom(task: Task) -> Task:
     }
 
     from story.prompts.design.atom import system_prompt, user_prompt
+    from story.models.atom import AtomOutput
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.0)
-    llm_message = await call_llm.completion(llm_params, output_cls=AtomOutput)
+    response = await call_llm.completion(llm_params, output_cls=AtomOutput)
 
-    data = llm_message.validated_data
-    reasoning = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
+    data = response.validated_data
+    reasoning = response.get("reasoning_content") or response.get("reasoning", "")
     updated_task = task.model_copy(deep=True)
     updated_task.results["atom"] = data.atom_result
     updated_task.results["atom_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
@@ -87,6 +86,7 @@ async def decomposition(task: Task) -> Task:
 
     context = {
         "task": task.to_context(),
+        "complex_reasons": task.results.get("complex_reasons", ""), 
         "book_level_design": book_level_design,
         "global_state_summary": global_state_summary,
         "design_dependent": design_dependent,
@@ -96,13 +96,14 @@ async def decomposition(task: Task) -> Task:
     }
 
     from story.prompts.design.decomposition import system_prompt, user_prompt
+    from story.models.plan import PlanOutput, plan_to_tasks
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.1)
-    llm_message = await call_llm.completion(llm_params, output_cls=PlanOutput)
-    plan_output = llm_message.validated_data
+    response = await call_llm.completion(llm_params, output_cls=PlanOutput)
+    plan_output = response.validated_data
 
     updated_task = task.model_copy(deep=True)
-    sub_tasks = convert_plan_to_tasks(plan_output.sub_tasks, parent_task=updated_task)
+    sub_tasks = plan_to_tasks(plan_output.sub_tasks, parent_task=updated_task)
     updated_task.sub_tasks = sub_tasks
     updated_task.results["decomposition_reasoning"] = plan_output.reasoning
 
@@ -141,8 +142,8 @@ async def route(task: Task) -> RouteExpertOutput:
     from story.prompts.route.expert import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.0)
-    llm_message = await call_llm.completion(llm_params, output_cls=RouteExpertOutput)
-    expert_output = llm_message.validated_data
+    response = await call_llm.completion(llm_params, output_cls=RouteExpertOutput)
+    expert_output = response.validated_data
 
     task_db.update_task_expert(task.id, expert_output.expert)
     return expert_output
@@ -182,22 +183,22 @@ async def design(task: Task, expert: str) -> Task:
     module = importlib.import_module(f"story.prompts.design.{expert}")
     messages = get_llm_messages(module.system_prompt, module.user_prompt, None, context)
     llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.75)
-    llm_message = await call_llm.completion(llm_params)
+    response = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
-    updated_task.results["design"] = llm_message.content
-    updated_task.results["design_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
+    updated_task.results["design"] = response.content
+    updated_task.results["design_reasoning"] = response.get("reasoning_content") or response.get("reasoning", "")
     
     task_db.add_result(updated_task)
     meta_db = get_meta_db()
     if expert == "style":
-        meta_db.update_style(task.run_id, llm_message.content)
+        meta_db.update_style(task.run_id, response.content)
     elif expert == "synopsis":
-        meta_db.update_synopsis(task.run_id, llm_message.content)
+        meta_db.update_synopsis(task.run_id, response.content)
     elif expert == "title":
-        meta_db.update_title(task.run_id, llm_message.content)
+        meta_db.update_title(task.run_id, response.content)
 
-    save.design(task, llm_message.content)
+    save.design(task, response.content)
     return updated_task
 
 
@@ -229,15 +230,15 @@ async def aggregate(task: Task) -> Task:
     from story.prompts.design.aggregate import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.4)
-    llm_message = await call_llm.completion(llm_params)
+    response = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
-    updated_task.results["design"] = llm_message.content
-    updated_task.results["design_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
+    updated_task.results["design"] = response.content
+    updated_task.results["design_reasoning"] = response.get("reasoning_content") or response.get("reasoning", "")
     
     task_db.add_result(updated_task)
     
-    save.design(task, llm_message.content)
+    save.design(task, response.content)
     return updated_task
 
 
@@ -276,12 +277,12 @@ async def book_level_design(task: Task) -> Task:
     from story.prompts.design.book_level_design import system_prompt, user_prompt
     messages = get_llm_messages(system_prompt, user_prompt, None, context)
     llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.2)
-    llm_message = await call_llm.completion(llm_params)
+    response = await call_llm.completion(llm_params)
 
     updated_task = task.model_copy(deep=True)
-    updated_task.results["book_level_design"] = llm_message.content
-    updated_task.results["book_level_design_reasoning"] = llm_message.get("reasoning_content") or llm_message.get("reasoning", "")
+    updated_task.results["book_level_design"] = response.content
+    updated_task.results["book_level_design_reasoning"] = response.get("reasoning_content") or response.get("reasoning", "")
     
     task_db.add_result(updated_task)
-    meta_db.update_book_level_design(task.run_id, llm_message.content)
+    meta_db.update_book_level_design(task.run_id, response.content)
     return updated_task

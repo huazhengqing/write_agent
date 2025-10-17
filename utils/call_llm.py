@@ -157,7 +157,7 @@ async def completion_once(llm_params: Dict[str, Any], output_cls: Optional[Type[
             if message.validated_data:
                 logger.success(f"LLM 成功返回内容 output_cls=\n{message.validated_data.model_dump_json(indent=2, ensure_ascii=False)}")
             else:
-                logger.info("完成, LLM 返回 'null'，表示任务完成。")
+                logger.info("完成, LLM 返回 'null', 表示任务完成。")
 
         except (json.JSONDecodeError, ValidationError) as e:
             delete_cache(message.cache_key)
@@ -294,7 +294,7 @@ async def react(
     # 优先检查原始输出是否为 'null'
     raw_output = clean_markdown_fences(agentOutput.response)
     if raw_output.strip().lower() == 'null':
-        logger.info("完成, Agent 返回 'null'，表示任务完成。")
+        logger.info("完成, Agent 返回 'null', 表示任务完成。")
         return None
 
     if output_cls:
@@ -302,7 +302,7 @@ async def react(
             logger.info(f"完成 output_cls=\n{agentOutput.structured_response.model_dump_json(indent=2, ensure_ascii=False)}")
             return agentOutput.structured_response
         else:
-            logger.warning("Agent 配置了 output_cls 但 structured_response 为空，且原始响应不是 'null'。")
+            logger.warning("Agent 配置了 output_cls 但 structured_response 为空, 且原始响应不是 'null'。")
             raise ValueError("")
     else:
         logger.info(f"完成 output=\n{raw_output}")

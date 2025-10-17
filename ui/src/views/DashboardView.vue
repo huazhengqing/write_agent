@@ -17,7 +17,7 @@
                 </span>
                 <div>
                 <el-popconfirm
-                    title="确定要删除这个项目吗？所有相关数据将无法恢复。"
+                    title="确定要删除这个项目吗?所有相关数据将无法恢复。"
                     @confirm="handleDeleteBook(book.run_id)"
                 >
                     <template #reference>
@@ -73,7 +73,7 @@
             </div>
         </el-card>
     </div>
-    <el-empty v-else-if="!isComponentLoading && books.length === 0" description="暂无项目，请从侧边栏“创建项目”开始。"></el-empty>
+    <el-empty v-else-if="!isComponentLoading && books.length === 0" description="暂无项目, 请从侧边栏“创建项目”开始。"></el-empty>
     </div>
     <div v-else>
        <el-alert title="页面加载失败" :description="initError" type="error" show-icon :closable="false" />
@@ -94,13 +94,13 @@ const initError = ref<string | null>(null);
 
 const router = useRouter();
 
-// 修复：使用 const 和 storeToRefs 直接从 store 获取响应式状态，避免重新赋值。
+// 修复: 使用 const 和 storeToRefs 直接从 store 获取响应式状态, 避免重新赋值。
 const bookStore = useBookStore();
 const { books, isLoading } = storeToRefs(bookStore);
 
 try {
   // 可以在这里保留 try-catch 以捕获 useBookStore() 可能出现的罕见初始化错误
-  // 但 storeToRefs 的操作是安全的，不需要放在这里。
+  // 但 storeToRefs 的操作是安全的, 不需要放在这里。
 } catch (e: any) {
   initError.value = `初始化数据存储失败: ${e.message}. 请检查 Pinia store 配置。`;
   isComponentLoading.value = false;
@@ -132,7 +132,7 @@ const handleCollapseChange = (book: BookMeta) => {
     activeCollapse[book.run_id] = isActive;
 
     if (isActive && !editingBooks[book.run_id]) {
-        // 深拷贝一份数据用于编辑，避免直接修改 store
+        // 深拷贝一份数据用于编辑, 避免直接修改 store
         editingBooks[book.run_id] = JSON.parse(JSON.stringify(book));
     }
 };
@@ -142,8 +142,8 @@ const handleSyncBook = async (runId: string) => {
   try {
     const res = await bookStore.syncBookById(runId);
     ElMessage.success(res.data.message || '项目同步成功！正在等待后台启动...');
-    // 同步成功后，全局轮询会自动检测到状态变化并开始工作
-    await bookStore.updateBooksStatus(); // 立即手动更新一次状态，以便全局轮询能够尽快检测到
+    // 同步成功后, 全局轮询会自动检测到状态变化并开始工作
+    await bookStore.updateBooksStatus(); // 立即手动更新一次状态, 以便全局轮询能够尽快检测到
   } catch (error) {
     ElMessage.error('项目同步失败！');
   } finally {
@@ -165,8 +165,8 @@ const handleUpdateBook = async (book: BookMeta) => {
     try {
         const updatedBook = await bookStore.updateBookById(book.run_id, book);
         ElMessage.success(`项目《${updatedBook.name}》已更新！`);
-        // 将 store 中最新的数据同步回 editingBooks，防止再次展开时看到旧数据
-        // 必须从 store.books 中找到最新的 book 数据，因为它包含了 word_count_today
+        // 将 store 中最新的数据同步回 editingBooks, 防止再次展开时看到旧数据
+        // 必须从 store.books 中找到最新的 book 数据, 因为它包含了 word_count_today
         const latestBookFromStore = books.value.find(b => b.run_id === book.run_id);
         if (latestBookFromStore) editingBooks[book.run_id] = JSON.parse(JSON.stringify(latestBookFromStore));
         // 更新后自动折叠
@@ -181,7 +181,7 @@ const handleUpdateBook = async (book: BookMeta) => {
 onMounted(async () => {
   try {
     await bookStore.fetchAllBooks();
-    // 检查路由参数，看是否是从创建页面跳转而来
+    // 检查路由参数, 看是否是从创建页面跳转而来
     const newBookId = router.currentRoute.value.query.newBookId as string;
     if (newBookId) {
       const newBook = books.value.find(b => b.run_id === newBookId);
@@ -190,7 +190,7 @@ onMounted(async () => {
       }
     }
   } catch (e: any) {
-    ElMessage.error('获取项目列表失败，请稍后重试。');
+    ElMessage.error('获取项目列表失败, 请稍后重试。');
     console.error('Failed to fetch all books:', e);
   }
   isComponentLoading.value = false;
