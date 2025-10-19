@@ -1,114 +1,11 @@
+import os
 from loguru import logger
 from story.rag import save
-from utils import call_llm
+from utils.llm import clean_markdown_fences, template_fill
 from utils.models import Task
-from utils.llm import get_llm_messages, get_llm_params
 from utils.sqlite_meta import get_meta_db
 from utils.sqlite_task import dict_to_task, get_task_db
 
-
-
-async def atom(task: Task) -> Task:
-    task_db = get_task_db(run_id=task.run_id)
-    db_task_data = task_db.get_task_by_id(task.id)
-    if db_task_data and db_task_data.get("atom_result") in ["atom", "complex"]:
-        return dict_to_task(db_task_data)
-
-    if task.parent_id:
-        parent_task_data = task_db.get_task_by_id(task.parent_id)
-        if parent_task_data and parent_task_data.get("task_type") == "search":
-            updated_task = task.model_copy(deep=True)
-            updated_task.results["atom"] = "atom"
-            updated_task.results["atom_reasoning"] = "父任务是 search 类型, 为防止无限分解, 此任务被强制设为原子任务。"
-            task_db.add_result(updated_task)
-            return updated_task
-    
-    book_meta = get_meta_db().get_book_meta(task.run_id) or {}
-    book_level_design = book_meta.get("book_level_design", "")
-    global_state_summary = book_meta.get("global_state_summary", "")
-    
-    overall_planning = task_db.get_overall_planning(task)
-
-    context = {
-        "task": task.to_context(),
-        "book_level_design": book_level_design,
-        "global_state_summary": global_state_summary,
-        "overall_planning": overall_planning,
-    }
-
-    from story.prompts.search.atom import system_prompt, user_prompt
-    from story.models.atom import AtomOutput
-    messages = get_llm_messages(system_prompt, user_prompt, None, context)
-    llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.0)
-    response = await call_llm.completion(llm_params, output_cls=AtomOutput)
-
-    data = response.validated_data
-    reasoning = response.get("reasoning_content") or response.get("reasoning", "")
-    updated_task = task.model_copy(deep=True)
-    updated_task.results["atom"] = data.atom_result
-    updated_task.results["atom_reasoning"] = "\n\n".join(filter(None, [reasoning, data.reasoning]))
-    if data.complex_reasons:
-        updated_task.results["complex_reasons"] = data.complex_reasons
-
-    task_db.add_result(updated_task)
-    return updated_task
-
-
-
-###############################################################################
-
-
-
-async def decomposition(task: Task) -> Task:
-    task_db = get_task_db(run_id=task.run_id)
-    subtask_ids = task_db.get_subtask_ids(task.id)
-    if subtask_ids:
-        updated_task = task.model_copy(deep=True)
-        sub_tasks = []
-        for sub_id in subtask_ids:
-            sub_task_data = task_db.get_task_by_id(sub_id)
-            sub_tasks.append(dict_to_task(sub_task_data))
-        updated_task.sub_tasks = sub_tasks
-        return updated_task
-
-    book_meta = get_meta_db().get_book_meta(task.run_id) or {}
-    book_level_design = book_meta.get("book_level_design", "")
-    global_state_summary = book_meta.get("global_state_summary", "")
-    
-    design_dependent = task_db.get_dependent_design(task)
-    search_dependent = task_db.get_dependent_search(task)
-    latest_text = task_db.get_text_latest()
-    overall_planning = task_db.get_overall_planning(task)
-
-    context = {
-        "task": task.to_context(),
-        "complex_reasons": task.results.get("complex_reasons", ""), 
-        "book_level_design": book_level_design,
-        "global_state_summary": global_state_summary,
-        "design_dependent": design_dependent,
-        "search_dependent": search_dependent,
-        "latest_text": latest_text,
-        "overall_planning": overall_planning,
-    }
-
-    from story.prompts.search.decomposition import system_prompt, user_prompt
-    from story.models.plan import PlanOutput, plan_to_tasks
-    
-    messages = get_llm_messages(system_prompt, user_prompt, None, context)
-    llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.1)
-    response = await call_llm.completion(llm_params, output_cls=PlanOutput)
-
-    plan_output = response.validated_data
-    updated_task = task.model_copy(deep=True)
-    sub_tasks = plan_to_tasks(plan_output.sub_tasks, parent_task=updated_task)
-    updated_task.sub_tasks = sub_tasks
-    updated_task.results["decomposition_reasoning"] = plan_output.reasoning
-
-    task_db.add_sub_tasks(updated_task)
-    return updated_task
-
-
-###############################################################################
 
 
 async def search(task: Task) -> Task:
@@ -116,45 +13,52 @@ async def search(task: Task) -> Task:
     db_task_data = task_db.get_task_by_id(task.id)
     if db_task_data and db_task_data.get("search"):
         return dict_to_task(db_task_data)
-
-    book_meta = get_meta_db().get_book_meta(task.run_id) or {}
-    book_level_design = book_meta.get("book_level_design", "")
-    global_state_summary = book_meta.get("global_state_summary", "")
-    
-    design_dependent = task_db.get_dependent_design(task)
-    search_dependent = task_db.get_dependent_search(task)
-    latest_text = task_db.get_text_latest()
-    overall_planning = task_db.get_overall_planning(task)
-    
+        
     context = {
         "task": task.to_context(),
-        "book_level_design": book_level_design,
-        "global_state_summary": global_state_summary,
-        "design_dependent": design_dependent,
-        "search_dependent": search_dependent,
-        "latest_text": latest_text,
-        "overall_planning": overall_planning,
     }
-    
+
+    from llama_index.llms.litellm import LiteLLM
+    from llama_index.core.agent.workflow import FunctionAgent
     from story.prompts.search.search import system_prompt, user_prompt
     from utils.search import web_search_tools
-    
-    messages = get_llm_messages(system_prompt, user_prompt, None, context)
-    final_system_prompt = messages[0]["content"]
-    final_user_prompt = messages[1]["content"]
-    search_result = await call_llm.react(
-        system_prompt=final_system_prompt,
-        user_prompt=final_user_prompt,
-        tools=web_search_tools,
+
+    llm = LiteLLM(
+        model = f"openai/summary",
+        temperature = 0.1, 
+        max_tokens = None,
+        max_retries = 10,
+        api_key = os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
+        api_base = os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
     )
-    if search_result is None:
-        raise ValueError(f"Agent在为任务 '{task.id}' 执行搜索时, 经过多次重试后仍然失败。")
+    agent = FunctionAgent(
+        system_prompt = system_prompt,
+        tools = web_search_tools,
+        llm = llm,
+        output_cls = None, 
+        streaming = False,
+        timeout = 600,
+        verbose= False
+    )
+    user_msg = template_fill(user_prompt, context)
+    handler = agent.run(user_msg)
+
+    logger.info(f"system_prompt=\n{system_prompt}")
+    logger.info(f"user_msg=\n{user_msg}")
+
+    agentOutput = await handler
+
+    raw_output = clean_markdown_fences(agentOutput.response)
+    if not raw_output:
+        raise ValueError(f"")
+    logger.info(f"完成 \n{raw_output}")
+
     updated_task = task.model_copy(deep=True)
-    updated_task.results["search"] = search_result
- 
+    updated_task.results["search"] = raw_output
+
     task_db.add_result(updated_task)
 
-    save.search(task, search_result)
+    save.search(task, raw_output)
     return updated_task
 
 
@@ -183,15 +87,45 @@ async def aggregate(task: Task) -> Task:
         "subtask_search": task_db.get_subtask_search(task.id),
     }
 
+    from llama_index.llms.litellm import LiteLLM
+    from llama_index.core.agent.workflow import FunctionAgent
     from story.prompts.search.aggregate import system_prompt, user_prompt
-    messages = get_llm_messages(system_prompt, user_prompt, None, context)
-    llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.4)
-    response = await call_llm.completion(llm_params)
+
+    llm = LiteLLM(
+        model = f"openai/summary",
+        temperature = 0.4, 
+        max_tokens = None,
+        max_retries = 10,
+        api_key = os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
+        api_base = os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
+    )
+    agent = FunctionAgent(
+        system_prompt = system_prompt,
+        tools = [],
+        llm = llm,
+        output_cls = None, 
+        streaming = False,
+        timeout = 600,
+        verbose= False
+    )
+    user_msg = template_fill(user_prompt, context)
+    handler = agent.run(user_msg)
+
+    logger.info(f"system_prompt=\n{system_prompt}")
+    logger.info(f"user_msg=\n{user_msg}")
+
+    agentOutput = await handler
+
+    raw_output = clean_markdown_fences(agentOutput.response)
+    if not raw_output:
+        raise ValueError(f"Agent在为任务 '{task.id}' 执行聚合搜索结果时, 经过多次重试后仍然失败。")
+    logger.info(f"完成 \n{raw_output}")
+
     updated_task = task.model_copy(deep=True)
-    updated_task.results["search"] = response.content
-    updated_task.results["search_reasoning"] = response.get("reasoning_content") or response.get("reasoning", "")
+    updated_task.results["search"] = raw_output
+    updated_task.results["search_reasoning"] = agentOutput.raw.get("reasoning_content", "") or agentOutput.raw.get("reasoning", "")
     
     task_db.add_result(updated_task)
 
-    save.search(task, response.content)
+    save.search(task, raw_output)
     return updated_task

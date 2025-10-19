@@ -99,12 +99,14 @@ class TaskUpdate(BaseModel):
     atom_reasoning: Optional[str] = None
     plan: Optional[str] = None
     plan_reasoning: Optional[str] = None
+    plan_completed: Optional[int] = None
     design: Optional[str] = None
     design_reasoning: Optional[str] = None
     search: Optional[str] = None
     search_reasoning: Optional[str] = None
     hierarchy: Optional[str] = None
     hierarchy_reasoning: Optional[str] = None
+    hierarchy_completed: Optional[int] = None
     write: Optional[str] = None
     write_reasoning: Optional[str] = None
     summary: Optional[str] = None
@@ -115,14 +117,6 @@ class TaskUpdate(BaseModel):
     write_review_reasoning: Optional[str] = None
     translation: Optional[str] = None
     translation_reasoning: Optional[str] = None
-    context_design: Optional[str] = None
-    context_summary: Optional[str] = None
-    context_search: Optional[str] = None
-    kg_design: Optional[str] = None
-    kg_write: Optional[str] = None
-    inquiry_design: Optional[str] = None
-    inquiry_summary: Optional[str] = None
-    inquiry_search: Optional[str] = None
     results: Optional[Dict[str, Any]]=None
 
 

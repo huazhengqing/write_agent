@@ -29,14 +29,14 @@ def design(task: Task, content: str) -> None:
         content_format="md",
         doc_id=task.id
     )
-    from story.prompts.kg.design import kg_extraction_prompt
+    from story.prompts.kg.design import extract_prompt
     kg_add(
         kg_store=kg_store,
         content=content,
         metadata=doc_metadata,
         doc_id=task.id,
         content_format="md",
-        kg_extraction_prompt=kg_extraction_prompt
+        extract_prompt=extract_prompt
     )
 
 
@@ -67,14 +67,14 @@ def write(task: Task, content: str) -> None:
         "hierarchical_position": task.hierarchical_position,
         "created_at": datetime.now().isoformat()
     }
-    from story.prompts.kg.write import kg_extraction_prompt
+    from story.prompts.kg.write import extract_prompt
     kg_add(
         kg_store=kg_store,
         content=content,
         metadata=doc_metadata,
         doc_id=task.id,
         content_format="txt",
-        kg_extraction_prompt=kg_extraction_prompt
+        extract_prompt=extract_prompt
     )
 
 

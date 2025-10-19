@@ -8,7 +8,6 @@ from llama_index.core.prompts import PromptTemplate
 from llama_index.embeddings.litellm import LiteLLMEmbedding
 from llama_index.core.indices.prompt_helper import PromptHelper
 from llama_index.core.response_synthesizers import TreeSummarize
-from utils.llm import get_llm_params
 from rag.vector_prompts import tree_summary_prompt
 
 
@@ -22,18 +21,24 @@ if hasattr(ChromaVectorStore, 'model_rebuild'):
 
 @lru_cache(maxsize=None)
 def init_llama_settings():
-    llm_params = get_llm_params(llm_group="summary", temperature=0.2)
-    Settings.llm = LiteLLM(**llm_params)
+    Settings.llm = LiteLLM(
+        model="openai/summary",
+        temperature=0.2,
+        max_tokens=None,
+            max_retries=10,
+        api_key=os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
+        api_base=os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
+    )
 
     Settings.prompt_helper = PromptHelper(
-        # context_window=llm_params.get('context_window', 8192),
-        # num_output=llm_params.get('max_tokens', 2048),
+        # context_window=8192, # 默认值
+        # num_output=2048, # 默认值
         chunk_overlap_ratio=0.2,
     )
     Settings.embed_model = LiteLLMEmbedding(
         model_name="openai/embedding",
-        api_base=os.getenv("LITELLM_PROXY_URL"),
-        api_key=os.getenv("LITELLM_MASTER_KEY"),
+        api_base=os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
+        api_key=os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
     )
 
 
@@ -62,13 +67,19 @@ def get_vector_store(db_path: str, collection_name: str) -> ChromaVectorStore:
 
 @lru_cache(maxsize=None)
 def get_synthesizer():
-    synthesis_llm_params = get_llm_params(llm_group="summary", temperature=0.4)
     synthesizer = TreeSummarize(
-        llm=LiteLLM(**synthesis_llm_params),
+        llm=LiteLLM(
+            model="openai/summary",
+            temperature=0.4,
+            max_tokens=None,
+                    max_retries=10,
+            api_key=os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
+                api_base=os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
+        ),
         summary_template=PromptTemplate(tree_summary_prompt),
         prompt_helper = PromptHelper(
-            context_window=synthesis_llm_params.get('context_window', 8192),
-            num_output=synthesis_llm_params.get('max_tokens', 2048),
+            context_window=8192,
+            num_output=2048,
             chunk_overlap_ratio=0.2,
         ),
         use_async=True,

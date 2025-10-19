@@ -3,8 +3,6 @@ import os
 from loguru import logger
 from typing import List, Optional, Callable, Any, Tuple
 from llama_index.core.tools import FunctionTool
-from utils.file import cache_dir
-
 
 
 async def search_with_searxng(query: str, max_results: int) -> str:

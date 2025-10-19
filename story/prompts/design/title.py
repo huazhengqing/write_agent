@@ -1,12 +1,6 @@
 
 
 
-comment = """
-书名
-"""
-
-
-
 system_prompt = """
 # 角色
 你是一位顶级的图书营销战略家与创意命名大师, 擅长为小说(尤其是网络小说)精准定位并赋予其一击即中的“爆款”书名。
@@ -33,9 +27,7 @@ system_prompt = """
 # 输出
 - 格式: Markdown。
 - 禁止任何解释性文字或元注释。
-- 结构:
-    - 方案应包含按“动态生成的风格”分类的备选书名列表, 并附上简要推荐理由。
-
+- 结构: 方案应包含按“动态生成的风格”分类的备选书名列表, 并附上简要推荐理由。
 ```markdown
 # 书名设计方案
 
@@ -74,12 +66,6 @@ user_prompt = """
 {book_level_design}
 </book_level_design>
 
-## 相关设计方案
-- 与当前任务相关的指导性设计方案, 提供直接的、具有约束力的指令。
-<outside_design>
-{outside_design}
-</outside_design>
-
 ## 依赖的设计方案
 - 当前任务执行所依赖的前置任务的产出。
 <design_dependent>
@@ -103,12 +89,6 @@ user_prompt = """
 <latest_text>
 {latest_text}
 </latest_text>
-
-## 相关的搜索信息
-- 收集的背景知识和研究成果。
-<outside_search>
-{outside_search}
-</outside_search>
 
 ## 依赖的搜索信息
 - 当前任务依赖的事实材料

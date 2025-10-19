@@ -1,9 +1,8 @@
+import os
 from typing import Optional
-import story
-from story.context import get_context
-from utils import call_llm
+from loguru import logger
 from utils.models import Task
-from utils.llm import get_llm_messages, get_llm_params, template_fill
+from utils.llm import clean_markdown_fences, template_fill
 from utils.sqlite_task import get_task_db, dict_to_task
 from utils.sqlite_meta import get_meta_db
 
@@ -22,8 +21,6 @@ async def all(task: Task) -> Task:
     book_level_design = book_meta.get("book_level_design", "")
     global_state_summary = book_meta.get("global_state_summary", "")
 
-    design_dependent = task_db.get_dependent_design(task)
-    search_dependent = task_db.get_dependent_search(task)
     latest_text = task_db.get_text_latest()
     overall_planning = task_db.get_overall_planning(task)
     
@@ -31,23 +28,49 @@ async def all(task: Task) -> Task:
         "task": task.to_context(),
         "book_level_design": book_level_design,
         "global_state_summary": global_state_summary,
-        "design_dependent": design_dependent,
-        "search_dependent": search_dependent,
         "latest_text": latest_text,
         "overall_planning": overall_planning,
-        "outside_design": await get_context.design(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
-        "outside_search": await get_context.search(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
-        "text_summary": await get_context.summary(task, book_level_design, global_state_summary, design_dependent, search_dependent, latest_text, overall_planning),
     }
 
+    from llama_index.llms.litellm import LiteLLM
+    from llama_index.core.agent.workflow import FunctionAgent
+    from story.rag.tools import get_design_tool, get_plot_history_tool, get_search_tool
     from story.prompts.plan.all import system_prompt, user_prompt
-    messages = get_llm_messages(system_prompt, user_prompt, None, context)
-    llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.75)
-    response = await call_llm.completion(llm_params)
+
+    llm = LiteLLM(
+        model = f"openai/summary",
+        temperature = 0.75, 
+        max_tokens = None,
+        max_retries = 10,
+        api_key = os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
+        api_base = os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
+    )
+    agent = FunctionAgent(
+        system_prompt = system_prompt,
+        tools = [get_design_tool(task.run_id), get_plot_history_tool(task.run_id), get_search_tool(task.run_id)],
+        llm = llm,
+        output_cls = None, 
+        streaming = False,
+        timeout = 600,
+        verbose= False
+    )
+    user_msg = template_fill(user_prompt, context)
+    handler = agent.run(user_msg)
+
+    logger.info(f"system_prompt=\n{system_prompt}")
+    logger.info(f"user_msg=\n{user_msg}")
+
+    agentOutput = await handler
+
+    raw_output = clean_markdown_fences(agentOutput.response)
+    if not raw_output:
+        raise ValueError("")
+    logger.info(f"完成 \n{raw_output}")
+
     updated_task = task.model_copy(deep=True)
-    updated_task.results["plan"] = response.content
-    updated_task.results["plan_reasoning"] = response.get("reasoning_content") or response.get("reasoning", "")
-    
+    updated_task.results["plan"] = raw_output
+    updated_task.results["plan_reasoning"] = agentOutput.raw.get("reasoning_content", "") or agentOutput.raw.get("reasoning", "")
+
     task_db.add_result(updated_task)
     return updated_task
 
@@ -62,6 +85,12 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
         raise ValueError(f"plan.next 只能处理 'write' 类型的任务, 但收到了 '{parent_task.task_type}' 类型。")
 
     task_db = get_task_db(run_id=parent_task.run_id)
+
+    # 从数据库获取最新的任务状态, 如果 plan 已完成, 直接返回 None
+    db_task_data = task_db.get_task_by_id(parent_task.id)
+    if db_task_data and db_task_data.get("plan_completed"):
+        return None
+
     subtask_ids = task_db.get_subtask_ids(parent_task.id)
     if len(subtask_ids) > 30:
         raise ValueError(f"父任务 '{parent_task.id}' 的 子任务数量已超过30个的限制。")
@@ -78,10 +107,10 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
     book_level_design = book_meta.get("book_level_design", "")
     global_state_summary = book_meta.get("global_state_summary", "")
     
-    design_dependent = task_db.get_dependent_design(pre_task)
-    search_dependent = task_db.get_dependent_search(pre_task)
     latest_text = task_db.get_text_latest()
     overall_planning = task_db.get_overall_planning(pre_task or parent_task)
+    design_dependent = task_db.get_dependent_design(pre_task)
+    search_dependent = task_db.get_dependent_search(pre_task)
     
     context = {
         "parent_task": parent_task.to_context(),
@@ -95,32 +124,53 @@ async def next(parent_task: Task, pre_task: Optional[Task]) -> Optional[Task]:
         "latest_text": latest_text,
     }
 
-    structured_response = None
+    from llama_index.llms.litellm import LiteLLM
+    from llama_index.core.agent.workflow import FunctionAgent
+    from story.rag.tools import get_design_tool, get_plot_history_tool, get_search_tool
+    from story.prompts.plan.next import system_prompt, user_prompt
     from story.models.plan import PlanOutput
-    if parent_task.id == "1":
-        from story.prompts.plan.next import system_prompt, user_prompt
-        messages = get_llm_messages(system_prompt, user_prompt, None, context)
-        llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.1)
-        response = await call_llm.completion(llm_params, output_cls=PlanOutput)
-        structured_response = response.validated_data
-    else:
-        from story.prompts.plan.next_react import system_prompt, user_prompt
-        structured_response = await story.rag.react.react(
-            run_id=parent_task.run_id,
-            system_header=system_prompt,
-            user_prompt=template_fill(user_prompt, context),
-            output_cls=PlanOutput
-        )
 
-    if not structured_response:
+    llm = LiteLLM(
+        model = f"openai/summary",
+        temperature = 0.1, 
+        max_tokens = None,
+        max_retries = 10,
+        api_key = os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
+        api_base = os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
+    )
+    agent = FunctionAgent(
+        system_prompt = system_prompt,
+        tools = [get_design_tool(parent_task.run_id), get_plot_history_tool(parent_task.run_id), get_search_tool(parent_task.run_id)],
+        llm = llm,
+        output_cls = PlanOutput, 
+        streaming = False,
+        timeout = 600,
+        verbose= False
+    )
+    user_msg = template_fill(user_prompt, context)
+    handler = agent.run(user_msg)
+    
+    logger.info(f"system_prompt=\n{system_prompt}")
+    logger.info(f"user_msg=\n{user_msg}")
+
+    agentOutput = await handler
+
+    # 优先检查原始输出是否为 'null'
+    raw_output = clean_markdown_fences(agentOutput.response)
+    if raw_output.strip().lower() == 'null':
+        logger.info("完成, Agent 返回 'null', 表示任务完成。")
+        parent_task.results["plan_completed"] = 1
+        task_db.add_result(parent_task)
         return None
+ 
+    if not agentOutput.structured_response:
+        raise ValueError("") 
+    if not agentOutput.structured_response.goal:
+        raise ValueError("")
 
-    # response 已经是验证过的 PlanOutput 实例了
-    if not structured_response.goal:
-        return None
+    logger.info(f"完成 \n{agentOutput.structured_response.model_dump_json(indent=2, ensure_ascii=False)}")
 
-    task_next = structured_response.to_task()
-
+    task_next = agentOutput.structured_response.to_task()
     if pre_task:
         parts = pre_task.id.split('.')
         parts[-1] = str(int(parts[-1]) + 1)

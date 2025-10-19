@@ -1,8 +1,7 @@
+import os
 from typing import List
 from loguru import logger
 from llama_index.core.base.base_query_engine import BaseQueryEngine
-from utils import call_llm
-from utils.llm import get_llm_params, get_llm_messages
 from rag.hybrid_prompts import synthesis_system_prompt, synthesis_user_prompt
 
 
@@ -19,10 +18,12 @@ async def hybrid_query(
         return ""
 
     logger.info(f"开始对问题 '{question}' 执行混合查询...")
+    
     from rag.vector_query import index_query
+    import asyncio
+
     vector_task = index_query(vector_query_engine, question)
     kg_task = index_query(kg_query_engine, question)
-    import asyncio
     vector_content, kg_content = await asyncio.gather(vector_task, kg_task)
 
     if not vector_content and not kg_content:
@@ -36,11 +37,42 @@ async def hybrid_query(
         "kg_str": formatted_kg_str, 
         "question": question
     }
-    messages = get_llm_messages(synthesis_system_prompt, synthesis_user_prompt, None, context_dict_user)
-    final_llm_params = get_llm_params(llm_group='summary', messages=messages, temperature=0.4)
-    final_message = await call_llm.completion(final_llm_params)
-    final_answer = final_message.content.strip()
-    return final_answer
+
+    from llama_index.llms.litellm import LiteLLM
+    from llama_index.core.agent.workflow import FunctionAgent
+    from utils.llm import template_fill, clean_markdown_fences
+
+    llm = LiteLLM(
+        model = f"openai/summary",
+        temperature = 0.4, 
+        max_tokens = None,
+        max_retries = 10,
+        api_key = os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
+        api_base = os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
+    )
+    agent = FunctionAgent(
+        system_prompt = synthesis_system_prompt,
+        tools = [],
+        llm = llm,
+        output_cls = None, 
+        streaming = False,
+        timeout = 600,
+        verbose= False
+    )
+    user_msg = template_fill(synthesis_user_prompt, context_dict_user)
+    handler = agent.run(user_msg)
+
+    logger.info(f"system_prompt=\n{synthesis_system_prompt}")
+    logger.info(f"user_msg=\n{user_msg}")
+
+    agentOutput = await handler
+
+    raw_output = clean_markdown_fences(agentOutput.response)
+    if not raw_output:
+        logger.warning(f"Agent在为问题 '{question}' 综合答案时, 经过多次重试后仍然失败。")
+        return ""
+    logger.success(f"混合查询答案综合完成。")
+    return raw_output.strip()
 
 
 
@@ -77,5 +109,3 @@ async def hybrid_query_batch(
     results = await asyncio.gather(*tasks)
     logger.success(f"批量混合查询完成。")
     return results
-
-

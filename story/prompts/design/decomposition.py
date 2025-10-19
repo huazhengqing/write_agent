@@ -46,7 +46,7 @@ system_prompt = """
     "goal": "[String] '当前任务'的goal",
     "sub_tasks": [
         {
-            "id": "[String] 格式为'父任务ID.1'",
+            "id": "[String] 格式为'父任务ID.子任务序号'",
             "task_type": "[String] 'design' 或 'search'",
             "hierarchical_position": "[String] 与父任务保持一致",
             "goal": "[String] 对该子任务核心目标的精确描述。",
@@ -89,12 +89,6 @@ user_prompt = """
 {book_level_design}
 </book_level_design>
 
-## 相关设计方案
-- 与当前任务相关的指导性设计方案, 提供直接的、具有约束力的指令。
-<outside_design>
-{outside_design}
-</outside_design>
-
 ## 依赖的设计方案
 - 当前任务执行所依赖的前置任务的产出。
 <design_dependent>
@@ -118,12 +112,6 @@ user_prompt = """
 <latest_text>
 {latest_text}
 </latest_text>
-
-## 相关的搜索信息
-- 收集的背景知识和研究成果。
-<outside_search>
-{outside_search}
-</outside_search>
 
 ## 依赖的搜索信息
 - 当前任务依赖的事实材料

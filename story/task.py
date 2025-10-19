@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 from loguru import logger
-from utils import call_llm
+import story
 from utils.log import ensure_task_logger
 from utils.models import Task
 from utils.sqlite_meta import BookMetaDB, get_meta_db
@@ -142,15 +142,16 @@ async def do_write(current_task: Task):
         
     with track_task_execution(current_task):
         await do_plan(current_task)
-        task_result = call_llm.design.aggregate(current_task)
-        task_result = call_llm.write.atom(task_result)
+        task_result = await story.call_llm.design.aggregate(task_result)
+        task_result = await story.call_llm.search.aggregate(task_result)
+        task_result = await story.call_llm.write.atom(task_result)
         if task_result.results["atom"] == "atom":
-            task_result = call_llm.write.write(task_result)
-            task_result = call_llm.summary.summary(task_result)
-            task_result = call_llm.summary.global_state(task_result)
+            task_result = await story.call_llm.write.write(task_result)
+            task_result = await story.call_llm.summary.summary(task_result)
+            task_result = await story.call_llm.summary.global_state(task_result)
         elif task_result.results["atom"] == "complex":
             await do_hierarchy(task_result)
-            call_llm.summary.aggregate(task_result)
+            await story.call_llm.summary.aggregate(task_result)
         else:
             raise ValueError(f"未知的 'atom' 类型: '{task_result.results.get('atom')}'")
         
@@ -158,35 +159,35 @@ async def do_write(current_task: Task):
 
 async def do_plan(parent_task: Task):
     if not parent_task.results.get("plan", ""):
-        parent_task = await call_llm.plan.all(parent_task)
+        parent_task = await story.call_llm.plan.all(parent_task)
     if not parent_task.results.get("plan", ""):
         raise ValueError(f"任务 '{parent_task.id}' 在执行 plan.all 后未能生成计划。")
-    sub_task = await call_llm.plan.next(parent_task, None)
+    sub_task = await story.call_llm.plan.next(parent_task, None)
     while sub_task:
         if sub_task.task_type == "design":
-            sub_task = await do_design(sub_task)
+            await do_design(sub_task)
         elif sub_task.task_type == "search":
-            sub_task = await do_search(sub_task)
+            await do_search(sub_task)
         else:
             raise ValueError(f"do_plan 无法处理类型为 '{sub_task.task_type}' 的子任务。")
-        sub_task = await call_llm.plan.next(parent_task, sub_task)
+        sub_task = await story.call_llm.plan.next(parent_task, sub_task)
 
 
 
 async def do_hierarchy(parent_task: Task):
     if not parent_task.results.get("hierarchy", ""):
-        parent_task = await call_llm.hierarchy.all(parent_task)
+        parent_task = await story.call_llm.hierarchy.all(parent_task)
     if not parent_task.results.get("hierarchy", ""):
         raise ValueError(f"任务 '{parent_task.id}' 在执行 hierarchy.all 后未能生成层级结构。")
-    sub_task = await call_llm.hierarchy.next(parent_task, None)
+    sub_task = await story.call_llm.hierarchy.next(parent_task, None)
     while sub_task:
         if sub_task.task_type == "write":
             if is_daily_word_goal_reached(parent_task.run_id):
                 return
-            sub_task = await do_write(sub_task)
+            await do_write(sub_task)
         else:
             raise ValueError(f"do_hierarchy 无法处理类型为 '{sub_task.task_type}' 的子任务。")
-        sub_task = await call_llm.hierarchy.next(parent_task, sub_task)
+        sub_task = await story.call_llm.hierarchy.next(parent_task, sub_task)
 
 
 
@@ -204,14 +205,14 @@ async def do_design(current_task: Task):
         return
         
     with track_task_execution(current_task):
-        task_result = call_llm.design.atom(current_task)
+        task_result = await story.call_llm.design.atom(current_task)
         if task_result.results["atom"] == "atom":
-            route_result = call_llm.design.route(task_result)
-            task_result = call_llm.design.design(task_result, route_result.expert)
+            task_result = await story.call_llm.design.route(task_result)
+            task_result = await story.call_llm.design.design(task_result, task_result.results["expert"])
             if len(task_result.id.split(".")) <= 2:
-                call_llm.design.book_level_design(task_result)
+                await story.call_llm.design.book_level_design(task_result)
         elif task_result.results["atom"] == "complex":
-            task_result = call_llm.design.decomposition(task_result)
+            task_result = await story.call_llm.design.decomposition(task_result)
             if task_result.sub_tasks:
                 for sub_task in task_result.sub_tasks:
                     if sub_task.task_type == "design":
@@ -220,9 +221,9 @@ async def do_design(current_task: Task):
                         await do_search(sub_task)
                     else:
                         raise ValueError(f"do_design 无法处理分解出的类型为 '{sub_task.task_type}' 的子任务。")
-                task_result = call_llm.design.aggregate(task_result)
+                task_result = await story.call_llm.design.aggregate(task_result)
                 if len(task_result.id.split(".")) <= 2:
-                    call_llm.design.book_level_design(task_result)
+                    await story.call_llm.design.book_level_design(task_result)
             else:
                 raise ValueError(f"复杂设计任务 '{task_result.id}' 分解后没有产生子任务。")
         else:
@@ -243,17 +244,17 @@ async def do_search(current_task: Task):
         return
     
     with track_task_execution(current_task):
-        task_result = call_llm.search.atom(current_task)
-        if task_result.results["atom"] == "atom":
-            call_llm.search.search(task_result)
-        elif task_result.results["atom"] == "complex":
-            task_result = call_llm.search.decomposition(task_result)
-            if task_result.sub_tasks:
-                for sub_task in task_result.sub_tasks:
-                    await do_search(sub_task)
-                call_llm.search.aggregate(task_result)
-            else:
-                raise ValueError(f"复杂搜索任务 '{task_result.id}' 分解后没有产生子任务。")
-        else:
-            raise ValueError(f"未知的 'atom' 类型: '{task_result.results.get('atom')}'")
-        
+        await story.call_llm.search.search(current_task)
+        # task_result = story.call_llm.search.atom(current_task)
+        # if task_result.results["atom"] == "atom":
+        #     story.call_llm.search.search(task_result)
+        # elif task_result.results["atom"] == "complex":
+        #     task_result = story.call_llm.search.decomposition(task_result)
+        #     if task_result.sub_tasks:
+        #         for sub_task in task_result.sub_tasks:
+        #             await do_search(sub_task)
+        #         story.call_llm.search.aggregate(task_result)
+        #     else:
+        #         raise ValueError(f"复杂搜索任务 '{task_result.id}' 分解后没有产生子任务。")
+        # else:
+        #     raise ValueError(f"未知的 'atom' 类型: '{task_result.results.get('atom')}'")

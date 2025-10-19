@@ -107,14 +107,20 @@
               </el-col>
             </el-row>
             <el-form-item label="原子任务判断推理 (Atom Reasoning)"><el-input v-model="editForm.atom_reasoning" type="textarea" autosize /></el-form-item>
-            <el-form-item label="任务分解结果 (Plan)"><el-input v-model="editForm.plan" type="textarea" autosize /></el-form-item>
-            <el-form-item label="任务分解推理 (Plan Reasoning)"><el-input v-model="editForm.plan_reasoning" type="textarea" autosize /></el-form-item>
+            <el-row :gutter="20">
+              <el-col :span="20"><el-form-item label="任务分解结果 (Plan)"><el-input v-model="editForm.plan" type="textarea" autosize /></el-form-item></el-col>
+              <el-col :span="4"><el-form-item label="Plan Completed"><el-input v-model.number="editForm.results.plan_completed" type="number" /></el-form-item></el-col>
+            </el-row>
+            <el-form-item label="任务分解推理 (Plan Reasoning)"><el-input v-model="editForm.plan_reasoning" type="textarea" autosize /></el-form-item>            
+            <el-row :gutter="20">
+              <el-col :span="20"><el-form-item label="结构划分结果 (Hierarchy)"><el-input v-model="editForm.hierarchy" type="textarea" autosize /></el-form-item></el-col>
+              <el-col :span="4"><el-form-item label="Hierarchy Completed"><el-input v-model.number="editForm.results.hierarchy_completed" type="number" /></el-form-item></el-col>
+            </el-row>
+            <el-form-item label="结构划分推理 (Hierarchy Reasoning)"><el-input v-model="editForm.hierarchy_reasoning" type="textarea" autosize /></el-form-item>
             <el-form-item label="设计方案 (Design)"><el-input v-model="editForm.design" type="textarea" autosize /></el-form-item>
             <el-form-item label="设计方案推理 (Design Reasoning)"><el-input v-model="editForm.design_reasoning" type="textarea" autosize /></el-form-item>
             <el-form-item label="搜索结果 (Search)"><el-input v-model="editForm.search" type="textarea" autosize /></el-form-item>
             <el-form-item label="搜索结果推理 (Search Reasoning)"><el-input v-model="editForm.search_reasoning" type="textarea" autosize /></el-form-item>
-            <el-form-item label="结构划分结果 (Hierarchy)"><el-input v-model="editForm.hierarchy" type="textarea" autosize /></el-form-item>
-            <el-form-item label="结构划分推理 (Hierarchy Reasoning)"><el-input v-model="editForm.hierarchy_reasoning" type="textarea" autosize /></el-form-item>
             <el-form-item label="正文 (Write)"><el-input v-model="editForm.write" type="textarea" autosize /></el-form-item>
             <el-form-item label="正文推理 (Write Reasoning)"><el-input v-model="editForm.write_reasoning" type="textarea" autosize /></el-form-item>
             <el-form-item label="正文摘要 (Summary)"><el-input v-model="editForm.summary" type="textarea" autosize /></el-form-item>

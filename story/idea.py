@@ -1,9 +1,10 @@
+import os
+from loguru import logger
 from story.models.idea import IdeaOutput
-from utils import call_llm
-from utils.llm import get_llm_messages, get_llm_params
+from utils.llm import template_fill
 
 
-system_prompt = """
+generate_idea_system_prompt = """
 # 角色与目标
 你是一位顶级的、以数据驱动的网文市场分析师和小说策划专家。你的唯一目标是: **创造商业上最成功的小说创意**。你将遵循一套严谨的、分步的思考流程来构建你的创意, 确保每一个决策都服务于最终的商业回报。
 
@@ -42,7 +43,7 @@ system_prompt = """
 请直接以JSON格式返回你的构思。
 """
 
-user_prompt = """
+generate_idea_user_prompt = """
 请严格遵循你的思考流程, 开始分析。
 找出当前市场中最具爆款潜力的平台和主题组合。
 给我一个能够最大化商业回报的、独一-无二的小说创意。
@@ -50,16 +51,44 @@ user_prompt = """
 """
 
 async def generate_idea():
-    messages = get_llm_messages(system_prompt, user_prompt)
-    llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.8)
-    response = await call_llm.completion(llm_params, output_cls=IdeaOutput)
-    return response.validated_data
+    from llama_index.llms.litellm import LiteLLM
+    from llama_index.core.agent.workflow import FunctionAgent
+
+    llm = LiteLLM(
+        model = f"openai/summary",
+        temperature = 0.8, 
+        max_tokens = None,
+        max_retries = 10,
+        api_key = os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
+        api_base = os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
+    )
+    agent = FunctionAgent(
+        system_prompt = generate_idea_system_prompt,
+        tools = [],
+        llm = llm,
+        output_cls = IdeaOutput, 
+        streaming = False,
+        timeout = 600,
+        verbose= False
+    )
+    handler = agent.run(generate_idea_user_prompt)
+
+    logger.info(f"system_prompt=\n{generate_idea_system_prompt}")
+    logger.info(f"user_msg=\n{generate_idea_user_prompt}")
+
+    agentOutput = await handler
+
+    if not agentOutput.structured_response:
+        raise ValueError("Agent在生成小说创意时, 经过多次重试后仍然失败。")
+    logger.info(f"完成 \n{agentOutput.structured_response.model_dump_json(indent=2, ensure_ascii=False)}")
+
+    return agentOutput.structured_response
 
 
 ###############################################################################
 
 
-system_prompt = """
+idea_to_json_system_prompt = """
 你是一个世界级的小说家和创意总监。你的任务是分析用户提供的初步小说创意, 并将其完善、扩展成一个结构完整、细节丰富的书籍企划案。
 
 你的工作流程如下: 
@@ -69,7 +98,7 @@ system_prompt = """
 你的输出必须是、且只能是一个符合 Pydantic 模型 `IdeaOutput` 结构的 JSON 对象。
 """
 
-user_prompt = """请基于以下创意, 生成书籍企划案: 
+idea_to_json_user_prompt = """请基于以下创意, 生成书籍企划案: 
 ---
 创意: 
 {idea}
@@ -77,11 +106,39 @@ user_prompt = """请基于以下创意, 生成书籍企划案:
 """
 
 async def idea_to_json(idea: str) -> IdeaOutput:
-    formatted_user_prompt = user_prompt.format(idea=idea)
-    messages = get_llm_messages(system_prompt, formatted_user_prompt)
-    llm_params = get_llm_params(llm_group="summary", messages=messages, temperature=0.1)
-    response = await call_llm.completion(llm_params, output_cls=IdeaOutput)
-    return response.validated_data
+    from llama_index.llms.litellm import LiteLLM
+    from llama_index.core.agent.workflow import FunctionAgent
+
+    llm = LiteLLM(
+        model = f"openai/summary",
+        temperature = 0.1, 
+        max_tokens = None,
+        max_retries = 10,
+        api_key = os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
+        api_base = os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
+    )
+    agent = FunctionAgent(
+        system_prompt = idea_to_json_system_prompt,
+        tools = [],
+        llm = llm,
+        output_cls = IdeaOutput, 
+        streaming = False,
+        timeout = 600,
+        verbose= False
+    )
+    user_msg = template_fill(idea_to_json_user_prompt, {"idea": idea})
+    handler = agent.run(user_msg)
+
+    logger.info(f"system_prompt=\n{idea_to_json_system_prompt}")
+    logger.info(f"user_msg=\n{user_msg}")
+
+    agentOutput = await handler
+
+    if not agentOutput.structured_response:
+        raise ValueError("Agent在将文本创意转换为JSON时, 经过多次重试后仍然失败。")
+    logger.info(f"完成 \n{agentOutput.structured_response.model_dump_json(indent=2, ensure_ascii=False)}")
+
+    return agentOutput.structured_response
 
 
 ###############################################################################

@@ -28,6 +28,7 @@ Table: t_tasks
 - atom: TEXT - 判断原子任务的结果 ('atom' 或 'complex')
 - atom_reasoning: TEXT - 判断原子任务的推理过程
 - plan: TEXT - 任务分解结果
+- plan_completed: INTEGER - plan动作是否完成 (0: 未完成, 1: 已完成)
 - plan_reasoning: TEXT - 任务分解的推理过程
 - design: TEXT - 设计方案
 - design_reasoning: TEXT - 设计方案的推理过程
@@ -35,6 +36,7 @@ Table: t_tasks
 - search_reasoning: TEXT - 搜索结果的推理过程
 - hierarchy: TEXT - 结构划分结果
 - hierarchy_reasoning: TEXT - 结构划分的推理过程
+- hierarchy_completed: INTEGER - hierarchy动作是否完成 (0: 未完成, 1: 已完成)
 - write: TEXT - 正文
 - write_reasoning: TEXT - 正文的推理过程
 - summary: TEXT - 正文摘要
@@ -45,14 +47,6 @@ Table: t_tasks
 - write_review_reasoning: TEXT - 正文评审的推理过程
 - translation: TEXT - 翻译结果
 - translation_reasoning: TEXT - 翻译的推理过程
-- context_design TEXT - 上下文,
-- context_summary TEXT - 上下文,
-- context_search TEXT - 上下文,
-- kg_design TEXT - 知识图谱提取,
-- kg_write TEXT - 知识图谱提取,
-- inquiry_design TEXT - 检索词,
-- inquiry_summary TEXT - 检索词,
-- inquiry_search TEXT - 检索词,
 - created_at: TIMESTAMP - 记录创建时的时间戳。
 - updated_at: TIMESTAMP - 记录最后更新时的时间戳。
 """
@@ -91,6 +85,7 @@ class TaskDB:
                 atom_reasoning TEXT,
                 plan TEXT,
                 plan_reasoning TEXT,
+                plan_completed INTEGER DEFAULT 0,
                 design TEXT,
                 design_reasoning TEXT,
                 search TEXT,
@@ -98,6 +93,7 @@ class TaskDB:
                 hierarchy TEXT,
                 hierarchy_reasoning TEXT,
                 write TEXT,
+                hierarchy_completed INTEGER DEFAULT 0,
                 write_reasoning TEXT,
                 summary TEXT,
                 summary_reasoning TEXT,
@@ -107,14 +103,6 @@ class TaskDB:
                 write_review_reasoning TEXT,
                 translation TEXT,
                 translation_reasoning TEXT,
-                context_design TEXT,
-                context_summary TEXT,
-                context_search TEXT,
-                kg_design TEXT,
-                kg_write TEXT,
-                inquiry_design TEXT,
-                inquiry_summary TEXT,
-                inquiry_search TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -143,16 +131,13 @@ class TaskDB:
         """获取在t_tasks表中作为独立列存在的结果字段名"""
         # 这些字段存在于 t_tasks 表中, 但其数据源于 Task.results
         return [
-            "expert", "atom", "atom_reasoning", "plan", "plan_reasoning",
+            "expert", "atom", "atom_reasoning", "plan", "plan_reasoning", "plan_completed", 
             "design", "design_reasoning", "search", "search_reasoning",
-            "hierarchy", "hierarchy_reasoning", "write", "write_reasoning",
+            "hierarchy", "hierarchy_reasoning", "hierarchy_completed", "write", "write_reasoning",
             "summary", "summary_reasoning", "book_level_design", "global_state",
-            "write_review", "write_review_reasoning", "translation",
-            "translation_reasoning", "context_design", "context_summary",
-            "context_search", "kg_design", "kg_write",
-            "inquiry_design", "inquiry_summary", "inquiry_search"
+            "write_review", "write_review_reasoning", "translation", "translation_reasoning"
         ]
-
+    
 
     def _prepare_remaining_results(self, task_results: Dict[str, Any]) -> str:
         """从任务结果中分离出需要存入JSON字段的数据"""
@@ -221,16 +206,19 @@ class TaskDB:
     def add_result(self, task: Task):
         # 1. 准备要更新到独立列的字段
         update_fields = {
+            "expert": task.results.get("expert"),
             "atom": task.results.get("atom"),
             "atom_reasoning": task.results.get("atom_reasoning"),
             "plan": task.results.get("plan"),
             "plan_reasoning": task.results.get("plan_reasoning"),
+            "plan_completed": task.results.get("plan_completed"),
             "design": task.results.get("design"),
             "design_reasoning": task.results.get("design_reasoning"),
             "search": task.results.get("search"),
             "search_reasoning": task.results.get("search_reasoning"),
             "hierarchy": task.results.get("hierarchy"),
             "hierarchy_reasoning": task.results.get("hierarchy_reasoning"),
+            "hierarchy_completed": task.results.get("hierarchy_completed"),
             "write": task.results.get("write"),
             "write_reasoning": task.results.get("write_reasoning"),
             "summary": task.results.get("summary"),
@@ -517,7 +505,8 @@ class TaskDB:
                 """
                 SELECT id, design
                 FROM t_tasks 
-                WHERE parent_id = ? AND task_type = 'design'
+                WHERE parent_id = ? 
+                AND design IS NOT NULL AND design != ''
                 """,
                 (parent_id,)
             )
@@ -540,7 +529,7 @@ class TaskDB:
                 """
                 SELECT id, search 
                 FROM t_tasks 
-                WHERE parent_id = ? AND task_type = 'search' 
+                WHERE parent_id = ? 
                 AND search IS NOT NULL AND search != ''
                 """,
                 (parent_id,)
@@ -737,63 +726,6 @@ class TaskDB:
                 (status, task_id)
             )
             self.conn.commit()
-
-
-    def update_task_expert(self, task_id: str, expert: str):
-        """
-        更新指定任务的 expert 字段。
-        """
-        if not task_id or not expert:
-            return
-        with self._lock:
-            self.cursor.execute(
-                """
-                UPDATE t_tasks 
-                SET expert = ?
-                WHERE id = ?
-                """,
-                (expert, task_id)
-            )
-            self.conn.commit()
-
-    def update_task_inquiry(self, task_id: str, inquiry_type: str, inquiry_content: str):
-        """
-        更新指定任务的 inquiry 字段。
-        """
-        if not task_id or not inquiry_type or inquiry_content is None:
-            return
-        field_name = f"inquiry_{inquiry_type}"
-        # 简单的白名单校验, 防止SQL注入
-        if field_name not in ["inquiry_design", "inquiry_summary", "inquiry_search"]:
-            logger.error(f"无效的 inquiry_type: {inquiry_type}")
-            return
-        with self._lock:
-            self.cursor.execute(
-                f"UPDATE t_tasks SET {field_name} = ? WHERE id = ?",
-                (inquiry_content, task_id)
-            )
-            self.conn.commit()
-
-
-
-    def update_task_context(self, task_id: str, context_type: str, context_content: str):
-        """
-        更新指定任务的 context 字段。
-        """
-        if not task_id or not context_type or context_content is None:
-            return
-        field_name = f"context_{context_type}"
-        # 简单的白名单校验, 防止SQL注入
-        if field_name not in ["context_design", "context_summary", "context_search"]:
-            logger.error(f"无效的 context_type: {context_type}")
-            return
-        with self._lock:
-            self.cursor.execute(
-                f"UPDATE t_tasks SET {field_name} = ? WHERE id = ?",
-                (context_content, task_id)
-            )
-            self.conn.commit()
-
 
 
     def delete_task_and_subtasks(self, task_id: str):

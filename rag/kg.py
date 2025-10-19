@@ -1,29 +1,34 @@
 import os
 from functools import lru_cache
-from typing import Any, Dict, Literal
+from typing import Any, Dict, Literal, Optional
 from loguru import logger
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.llms.litellm import LiteLLM
 from llama_index.graph_stores.kuzu.kuzu_property_graph import KuzuPropertyGraphStore
-from utils.llm import get_llm_params
-from rag.kg_prompts import kg_extraction_prompt
-
 
 
 from rag.vector import init_llama_settings
 init_llama_settings()
 
 
+llm_for_extraction = LiteLLM(
+    model="openai/summary",
+    temperature=0.0,
+    max_tokens=None,
+    max_retries=10,
+    api_key=os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
+    api_base=os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
+)
 
-llm_params_for_extraction = get_llm_params(llm_group="summary", temperature=0.0)
-llm_for_extraction = LiteLLM(**llm_params_for_extraction)
 
-
-
-reasoning_llm_params = get_llm_params(llm_group="summary", temperature=0.1)
-llm_for_reasoning = LiteLLM(**reasoning_llm_params)
-
-
+llm_for_reasoning = LiteLLM(
+    model="openai/summary",
+    temperature=0.1,
+    max_tokens=None,
+    max_retries=10,
+    api_key=os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
+    api_base=os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
+)
 
 @lru_cache(maxsize=None)
 def get_kg_store(db_path: str) -> KuzuPropertyGraphStore:
@@ -63,7 +68,7 @@ def kg_add(
     metadata: Dict[str, Any],
     doc_id: str,
     content_format: Literal["md", "txt", "json"] = "md",
-    kg_extraction_prompt: str = kg_extraction_prompt,
+    extract_prompt: Optional[str] = None
 ) -> None:
     logger.info(f"开始向知识图谱添加内容, doc_id='{doc_id}', format='{content_format}'...")
 
@@ -77,6 +82,16 @@ def kg_add(
     if doc_cache and doc_cache.get(new_content_hash):
         return
 
+    logger.info(f"为 doc_id '{doc_id}' 执行更新操作, 将首先删除旧的图谱数据。")
+    # 1. 删除与 doc_id 关联的 Chunk 节点及其关系
+    kg_store.delete(properties={"ref_doc_id": doc_id})
+    # 2. 删除不再被任何 Chunk 提及的孤立实体节点
+    kg_store.structured_query(
+        """
+        MATCH (e:Entity) WHERE NOT EXISTS ((:Chunk)-[:MENTIONS]->(e)) DETACH DELETE e
+        """
+    )
+
     from llama_index.core import Document
     doc = Document(id_=doc_id, text=content, metadata=metadata)
     
@@ -86,8 +101,8 @@ def kg_add(
     from llama_index.core.indices.property_graph import SimpleLLMPathExtractor
     path_extractor = SimpleLLMPathExtractor(
         llm=llm_for_extraction,
-        extract_prompt=kg_extraction_prompt,
-        max_paths_per_chunk=150,
+        extract_prompt=extract_prompt,
+        max_paths_per_chunk=50,
     )
 
     logger.info(f"开始为 doc_id '{doc_id}' 构建知识图谱索引...")

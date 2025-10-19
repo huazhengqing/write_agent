@@ -33,22 +33,14 @@ system_prompt = """
 2. 整合: 基于原则解决所有冲突, 构思最终方案的蓝图。创造性地融合各方案精华, 撰写必要的过渡内容, 形成逻辑严密的整合草案。
 3. 定稿: 对照`父任务`目标, 对草案进行最终审查, 确保其完整、自洽、无懈可击, 然后格式化输出。
 
--# 输出
+# 输出
 - 格式: Markdown。
-- 禁止任何解释性文字或元注释。
-- 结构:
-    - 最终输出必须是一个完整的、结构化的设计文档。
-    - 文档的结构应根据`父任务`的性质自适应生成, 确保逻辑清晰、重点突出。
-
-```markdown
-# [在此填写父任务的标题] 设计方案
-
-## 1. [根据任务性质自适应生成的第一个标题]
-...
-
-## 2. [根据任务性质自适应生成的第二个标题]
-...
-```
+- 语言: 清晰、精确、简洁，避免不必要的修饰、比喻或哲学思辨。
+- 结构: 输出完整的结构化设计文档。文档结构和标题需根据任务自适应生成，确保逻辑清晰。
+- 可视化: 优先使用表格(Table)和图表(Mermaid)呈现结构化信息。
+- 禁止:
+    - 输出任何元信息 (如自我评价、过程描述)。
+    - 使用“赋能”、“底层逻辑”等AI特征词汇。
 """
 
 
@@ -64,58 +56,4 @@ user_prompt = """
 <subtask_design>
 {subtask_design}
 </subtask_design>
-
-## 全书已完成的整体任务规划(任务树)
-- 项目进展, 当前任务的层级位置
-<overall_planning>
-{overall_planning}
-</overall_planning>
-
-## 全书设计方案
-- 包含核心世界观、主题、角色弧光和情节框架的顶层设计摘要, 作为项目的最高指导原则。
-<book_level_design>
-{book_level_design}
-</book_level_design>
-
-## 相关设计方案
-- 与当前任务相关的指导性设计方案, 提供直接的、具有约束力的指令。
-<outside_design>
-{outside_design}
-</outside_design>
-
-## 依赖的设计方案
-- 当前任务执行所依赖的前置任务的产出。
-<design_dependent>
-{design_dependent}
-</design_dependent>
-
-## 正文全局状态摘要
-- 动态生成的全局故事快照, 包含主角的核心目标、最大矛盾、关键角色关系和待回收伏笔。
-<global_state_summary>
-{global_state_summary}
-</global_state_summary>
-
-## 正文历史情节摘要
-- 当前任务相关的历史情节或角色信息。
-<text_summary>
-{text_summary}
-</text_summary>
-
-## 依赖的正文最新章节(续写起点, 从此处无缝衔接)
-- 最近完成的写作单元的原文, 为写作任务提供无缝衔接的起点。
-<latest_text>
-{latest_text}
-</latest_text>
-
-## 相关的搜索信息
-- 收集的背景知识和研究成果。
-<outside_search>
-{outside_search}
-</outside_search>
-
-## 依赖的搜索信息
-- 当前任务依赖的事实材料
-<search_dependent>
-{search_dependent}
-</search_dependent>
 """

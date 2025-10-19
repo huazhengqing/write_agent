@@ -72,46 +72,4 @@ user_prompt = """
 <book_level_design>
 {book_level_design}
 </book_level_design>
-
-## 相关设计方案
-- 与当前任务相关的指导性设计方案, 提供直接的、具有约束力的指令。
-<outside_design>
-{outside_design}
-</outside_design>
-
-## 依赖的设计方案
-- 当前任务执行所依赖的前置任务的产出。
-<design_dependent>
-{design_dependent}
-</design_dependent>
-
-## 正文全局状态摘要
-- 动态生成的全局故事快照, 包含主角的核心目标、最大矛盾、关键角色关系和待回收伏笔。
-<global_state_summary>
-{global_state_summary}
-</global_state_summary>
-
-## 正文历史情节摘要
-- 当前任务相关的历史情节或角色信息。
-<text_summary>
-{text_summary}
-</text_summary>
-
-## 依赖的正文最新章节(续写起点, 从此处无缝衔接)
-- 最近完成的写作单元的原文, 为写作任务提供无缝衔接的起点。
-<latest_text>
-{latest_text}
-</latest_text>
-
-## 相关的搜索信息
-- 收集的背景知识和研究成果。
-<outside_search>
-{outside_search}
-</outside_search>
-
-## 依赖的搜索信息
-- 当前任务依赖的事实材料
-<search_dependent>
-{search_dependent}
-</search_dependent>
 """

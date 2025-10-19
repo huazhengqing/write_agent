@@ -1,12 +1,6 @@
 
 
 
-comment = """
-简介
-"""
-
-
-
 system_prompt = """
 # 角色
 你是一位顶级的图书营销文案大师与爆款简介策划专家, 深谙不同平台读者的阅读心理和消费冲动。
@@ -34,9 +28,7 @@ system_prompt = """
 # 输出
 - 格式: Markdown。
 - 禁止任何解释性文字或元注释。
-- 结构:
-    - 方案应包含多个版本, 并为每个版本提供多个备选方案及简要说明。
-
+- 结构: 方案应包含多个版本, 并为每个版本提供多个备选方案及简要说明。
 ```markdown
 # 书籍简介方案
 
@@ -84,12 +76,6 @@ user_prompt = """
 {book_level_design}
 </book_level_design>
 
-## 相关设计方案
-- 与当前任务相关的指导性设计方案, 提供直接的、具有约束力的指令。
-<outside_design>
-{outside_design}
-</outside_design>
-
 ## 依赖的设计方案
 - 当前任务执行所依赖的前置任务的产出。
 <design_dependent>
@@ -113,12 +99,6 @@ user_prompt = """
 <latest_text>
 {latest_text}
 </latest_text>
-
-## 相关的搜索信息
-- 收集的背景知识和研究成果。
-<outside_search>
-{outside_search}
-</outside_search>
 
 ## 依赖的搜索信息
 - 当前任务依赖的事实材料

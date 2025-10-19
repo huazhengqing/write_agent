@@ -55,6 +55,11 @@ system_prompt = """
 
 
 user_prompt = """
+# 上下文说明
+- 以下所有`<...>`标签内的上下文，是本次任务的**唯一且完整**的信息源。
+- 如果某个部分为空，则明确代表该信息**目前不存在**，你**不应该**尝试通过工具检索来填充这些空缺。
+
+
 # 请对以下章节正文进行评审
 ## 你要评审的章节正文
 <text>
@@ -77,12 +82,6 @@ user_prompt = """
 <book_level_design>
 {book_level_design}
 </book_level_design>
-
-## 相关设计方案
-- 与当前任务相关的指导性设计方案, 提供直接的、具有约束力的指令。
-<outside_design>
-{outside_design}
-</outside_design>
 
 ## 依赖的设计方案
 - 当前任务执行所依赖的前置任务的产出。
@@ -107,12 +106,6 @@ user_prompt = """
 <latest_text>
 {latest_text}
 </latest_text>
-
-## 相关的搜索信息
-- 收集的背景知识和研究成果。
-<outside_search>
-{outside_search}
-</outside_search>
 
 ## 依赖的搜索信息
 - 当前任务依赖的事实材料

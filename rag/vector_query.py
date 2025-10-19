@@ -9,7 +9,6 @@ from llama_index.core.vector_stores import VectorStoreInfo
 from llama_index.core.vector_stores.types import VectorStore
 from llama_index.core.base.base_query_engine import BaseQueryEngine
 from llama_index.core.vector_stores import MetadataFilters, VectorStoreInfo
-from utils.llm import get_llm_params
 from rag.vector_prompts import vector_store_query_prompt
 from rag.vector import get_synthesizer
 
@@ -59,8 +58,14 @@ def _create_auto_retriever_engine(
     node_postprocessors: List,
 ) -> BaseQueryEngine:
     logger.info("正在创建 Auto-Retriever 查询引擎...")
-    reasoning_llm_params = get_llm_params(llm_group="summary", temperature=0.1)
-    reasoning_llm = LiteLLM(**reasoning_llm_params)
+    reasoning_llm = LiteLLM(
+        model="openai/summary",
+        temperature=0.1,
+        max_tokens=None,
+            max_retries=10,
+        api_key=os.getenv("LITELLM_MASTER_KEY", "sk-1234"),
+        api_base=os.getenv("LITELLM_PROXY_URL", "http://0.0.0.0:4000"),
+    )
     from llama_index.core.retrievers import VectorIndexAutoRetriever
     retriever = VectorIndexAutoRetriever(
         index=index,
