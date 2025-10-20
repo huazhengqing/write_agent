@@ -82,3 +82,18 @@ def vector_add(
 
     logger.success(f"成功将内容 (id: {effective_doc_id}, {len(nodes_to_insert)}个节点) 添加到向量库。")
     return True
+
+
+
+def vector_delete(
+    vector_store: VectorStore,
+    doc_id: str,
+) -> None:
+    """从向量库中删除指定 doc_id 的所有相关节点。"""
+    logger.info(f"开始从向量库删除内容, doc_id='{doc_id}'...")
+    if not doc_id:
+        logger.warning("doc_id 为空, 跳过删除。")
+        return
+    
+    vector_store.delete(doc_id)
+    logger.success(f"成功从向量库中删除 doc_id='{doc_id}' 的相关节点。")

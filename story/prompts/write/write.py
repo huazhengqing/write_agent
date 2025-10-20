@@ -96,12 +96,6 @@ user_prompt = """
 {global_state_summary}
 </global_state_summary>
 
-## 正文历史情节摘要
-- 当前任务相关的历史情节或角色信息。
-<text_summary>
-{text_summary}
-</text_summary>
-
 ## 依赖的搜索信息
 - 当前任务依赖的事实材料
 <search_dependent>

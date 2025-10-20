@@ -11,6 +11,9 @@ def get_args(literal_type):
     return typing_get_args(literal_type)
 
 
+BookStatusType = Literal["idle", "running", "stopping", "completed", "archived", "deleting"]
+
+
 CategoryType = Literal["story", "book", "report"]
 LanguageType = Literal["cn", "en"]
 

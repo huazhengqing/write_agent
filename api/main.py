@@ -1,6 +1,5 @@
 import os
 import sys
-import shutil
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel, Field, AnyHttpUrl
 from fastapi import FastAPI, HTTPException, Body, BackgroundTasks, status
@@ -19,8 +18,8 @@ load_dotenv()
 from utils.sqlite_meta import get_meta_db
 from utils.sqlite_task import get_task_db, dict_to_task, TaskDB
 from utils.models import Task
-from utils.file import data_dir 
-from story.task import create_root_task, do_task
+from utils.file import data_dir
+from story.task import create_root_task, do_task, delete_task, stop_task
 from story.idea import generate_idea, IdeaOutput
 
 
@@ -183,9 +182,24 @@ def sync_book_to_task_db_api(run_id: str):
     meta_db = get_meta_db()
     if not meta_db.get_book_meta(run_id):
         raise HTTPException(status_code=404, detail=f"未找到 run_id 为 '{run_id}' 的书籍。")
-    
     create_root_task(run_id)
     return {"message": f"项目 {run_id} 已成功同步到任务库！"}
+
+
+@app.post("/api/books/{run_id}/stop", status_code=status.HTTP_200_OK, tags=["Books"])
+def stop_book_task_api(run_id: str):
+    """停止正在运行的书籍项目。"""
+    meta_db = get_meta_db()
+    book_meta = meta_db.get_book_meta(run_id)
+    if not book_meta:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"未找到 run_id 为 '{run_id}' 的书籍。")
+    if book_meta.get("status") != "running":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"项目 '{run_id}' 当前状态为 '{book_meta.get('status')}', 无法停止。只有 'running' 状态的项目才能被停止。"
+        )
+    meta_db.update_status(run_id, "stopping")
+    return {"message": f"项目 '{run_id}' 已被标记为暂停。任务将在下一个检查点停止。"}
 
 
 @app.get("/api/books/{run_id}/word-count-today", response_model=Dict[str, int], tags=["Books"])
@@ -202,7 +216,6 @@ def update_book_api(run_id: str, book_update: BookMeta):
     meta_db = get_meta_db()
     if not meta_db.get_book_meta(run_id):
         raise HTTPException(status_code=404, detail=f"未找到 run_id 为 '{run_id}' 的书籍。")
-    
     # Pydantic 的 model_dump 可以方便地将模型转为字典
     update_data = book_update.model_dump(exclude={'word_count_today'})
     meta_db.add_book(update_data)
@@ -220,16 +233,9 @@ def delete_book_api(run_id: str):
     meta_db = get_meta_db()
     if not meta_db.get_book_meta(run_id):
         raise HTTPException(status_code=404, detail=f"未找到 run_id 为 '{run_id}' 的书籍。")
-
     # 删除元数据
     meta_db.delete_book_meta(run_id)
-
-    # 删除项目文件夹
-    project_path = data_dir / run_id
-    if project_path.exists() and project_path.is_dir():
-        shutil.rmtree(project_path)
-
-    return None # 对于 204 No Content, 不需要返回任何内容
+    return None
 
 
 @app.get("/api/books/{run_id}/tasks", response_model=List[Task], tags=["Tasks"])
@@ -238,10 +244,8 @@ def get_tasks_for_book_api(run_id: str):
     meta_db = get_meta_db()
     if not meta_db.get_book_meta(run_id):
         raise HTTPException(status_code=404, detail=f"未找到 run_id 为 '{run_id}' 的书籍。")
-    
     task_db = get_task_db(run_id)
     tasks_data = task_db.get_all_tasks()
-
     return [dict_to_task({**t, "run_id": run_id}) for t in tasks_data if t]
 
 
@@ -282,7 +286,6 @@ def update_task_api(task_id: str, run_id: str, task_update: TaskUpdate):
 
     task_db.add_task(task_data)
     task_db.add_result(task_data)
-
     updated_task = task_db.get_task_by_id(task_id)
     if not updated_task:
         raise HTTPException(status_code=500, detail="更新任务后无法立即找到, 请检查数据库。")
@@ -290,15 +293,25 @@ def update_task_api(task_id: str, run_id: str, task_update: TaskUpdate):
     return dict_to_task({**updated_task, "run_id": run_id})
 
 
-@app.delete("/api/tasks/{task_id}", status_code=204, tags=["Tasks"])
-def delete_task_api(task_id: str, run_id: str):
-    """递归删除指定 task_id 的任务及其所有子任务。"""
+@app.delete("/api/tasks/{task_id}", status_code=status.HTTP_202_ACCEPTED, tags=["Tasks"])
+def delete_task_api(task_id: str, run_id: str, background_tasks: BackgroundTasks):
+    """在后台递归删除指定 task_id 的任务及其所有子任务。"""
+    meta_db = get_meta_db()
+    book_meta = meta_db.get_book_meta(run_id)
+    if book_meta and book_meta.get("status") != "idle":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"项目 '{run_id}' 当前状态为 '{book_meta.get('status')}', 无法执行删除操作。请等待其变为空闲(idle)状态。"
+        )
     task_db = get_task_db(run_id)
-    if not task_db.get_task_by_id(task_id):
+    task_data = task_db.get_task_by_id(task_id)
+    if not task_data:
         raise HTTPException(status_code=404, detail=f"未找到 id 为 '{task_id}' 的任务。")
-
-    task_db.delete_task_and_subtasks(task_id)
-    return None
+    task = dict_to_task({**task_data, "run_id": run_id})
+    if not task:
+        raise HTTPException(status_code=500, detail=f"无法将任务数据转换为任务对象 for task_id '{task_id}'。")
+    background_tasks.add_task(delete_task, task)
+    return {"message": f"任务 '{task_id}' 已被接受并将在后台删除。"}
 
 
 
@@ -308,18 +321,19 @@ async def run_task_api(task_id: str, run_id: str, background_tasks: BackgroundTa
     在后台开始执行一个指定的任务。
     此接口会立即返回, 任务将在后台运行。
     """
+    meta_db = get_meta_db()
+    book_meta = meta_db.get_book_meta(run_id)
+    if book_meta and book_meta.get("status") in ["running", "deleting"]:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"项目 '{run_id}' 当前状态为 '{book_meta.get('status')}', 无法执行新任务。"
+        )
     task_db = get_task_db(run_id)
     task_data = task_db.get_task_by_id(task_id)
-
     if not task_data:
         raise HTTPException(status_code=404, detail=f"在项目 '{run_id}' 中未找到 id 为 '{task_id}' 的任务。")
-
-    if task_data.get("status") == "running":
-        raise HTTPException(status_code=409, detail=f"任务 '{task_id}' 已经在运行中。")
-
     task = dict_to_task({**task_data, "run_id": run_id})
     background_tasks.add_task(do_task, task)
-
     return TaskRunResponse(
         message=f"任务 '{task_id}' 已开始在后台执行。",
         run_id=run_id,

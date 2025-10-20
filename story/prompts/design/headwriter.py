@@ -93,12 +93,6 @@ user_prompt = """
 {global_state_summary}
 </global_state_summary>
 
-## 正文历史情节摘要
-- 当前任务相关的历史情节或角色信息。
-<text_summary>
-{text_summary}
-</text_summary>
-
 ## 依赖的正文最新章节(续写起点, 从此处无缝衔接)
 - 最近完成的写作单元的原文, 为写作任务提供无缝衔接的起点。
 <latest_text>

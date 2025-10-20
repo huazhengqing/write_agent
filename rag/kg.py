@@ -132,6 +132,28 @@ def kg_add(
 
 
 
+def kg_delete(
+    kg_store: KuzuPropertyGraphStore,
+    doc_id: str,
+) -> None:
+    """从知识图谱中删除与指定 doc_id 关联的数据。"""
+    logger.info(f"开始从知识图谱删除内容, doc_id='{doc_id}'...")
+    if not doc_id:
+        logger.warning("doc_id 为空, 跳过删除。")
+        return
+
+    # 1. 删除与 doc_id 关联的 Chunk 节点及其关系
+    kg_store.delete(properties={"ref_doc_id": doc_id})
+    # 2. 删除不再被任何 Chunk 提及的孤立实体节点
+    kg_store.structured_query(
+        """
+        MATCH (e:Entity) WHERE NOT EXISTS ((:Chunk)-[:MENTIONS]->(e)) DETACH DELETE e
+        """
+    )
+    logger.success(f"成功从知识图谱中删除 doc_id='{doc_id}' 的相关数据。")
+
+
+
 def get_kg_query_engine(
     kg_store: KuzuPropertyGraphStore,
     kg_similarity_top_k: int = 500, 

@@ -728,29 +728,41 @@ class TaskDB:
             self.conn.commit()
 
 
-    def delete_task_and_subtasks(self, task_id: str):
+    def get_tasks_to_delete(self, task_id: str) -> List[tuple[str, str]]:
         """
-        删除指定任务及其所有子任务(级联删除)。
+        查找指定任务及其所有子孙任务, 返回一个包含 (id, task_type) 元组的列表。
+        此方法不执行删除操作, 仅用于获取待删除任务列表。
         """
         if not task_id:
-            return
-        tasks_to_delete = [task_id]
+            return []
+        
+        # 检查起始任务是否存在
+        start_task_info = self.get_task_type(task_id)
+        if not start_task_info:
+            return []
+
+        tasks_to_process = [(task_id, start_task_info)]
         queue = [task_id]
+        
         # 使用广度优先搜索找到所有子孙任务
         while queue:
             current_id = queue.pop(0)
             sub_ids = self.get_subtask_ids(current_id)
-            if sub_ids:
-                tasks_to_delete.extend(sub_ids)
-                queue.extend(sub_ids)
+            for sub_id in sub_ids:
+                task_type = self.get_task_type(sub_id)
+                if task_type:
+                    tasks_to_process.append((sub_id, task_type))
+                    queue.append(sub_id)
+        return tasks_to_process
+
+
+    def delete_task_by_id(self, task_id: str):
+        """根据ID从数据库中删除单个任务。"""
+        if not task_id:
+            return
         with self._lock:
-            placeholders = ','.join(['?'] * len(tasks_to_delete))
-            self.cursor.execute(
-                f"DELETE FROM t_tasks WHERE id IN ({placeholders})",
-                tuple(tasks_to_delete)
-            )
+            self.cursor.execute("DELETE FROM t_tasks WHERE id = ?", (task_id,))
             self.conn.commit()
-        logger.info(f"已级联删除任务: {task_id} 及其所有子任务。共删除 {len(tasks_to_delete)} 个任务。")
 
 
     def close(self):

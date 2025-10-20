@@ -28,7 +28,7 @@ Table: t_book_meta
 - style: TEXT - 叙事风格。
 - book_level_design: TEXT - 全书设计方案
 - global_state_summary: TEXT - 全局状态摘要
-- status: TEXT - 项目状态 ('idle', 'running', 'paused', 'completed', 'archived')。
+- status: TEXT - 项目状态 ('idle', 'running', 'stopping', 'completed', 'archived', 'deleting')。
 - created_at: TIMESTAMP - 记录创建时的时间戳。
 - updated_at: TIMESTAMP - 记录最后更新时的时间戳。
 """

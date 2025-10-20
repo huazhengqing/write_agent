@@ -1,6 +1,7 @@
 from contextlib import contextmanager
 from loguru import logger
 import story
+import threading
 from utils.log import ensure_task_logger
 from utils.models import Task
 from utils.sqlite_meta import BookMetaDB, get_meta_db
@@ -45,7 +46,7 @@ def create_root_task(run_id: str):
 @contextmanager
 def manage_project_status(run_id: str):
     """
-    一个上下文管理器, 用于在任务执行期间管理项目的运行状态。
+    一个上下文管理器, 用于在任务执行期间管理项目的数据库状态。
     进入时将项目状态设置为 'running', 退出时(无论成功或异常)设置为 'idle'。
     """
     meta_db: BookMetaDB = get_meta_db()
@@ -63,8 +64,9 @@ async def do_task(task: Task):
     """
     meta_db = get_meta_db()
     book_meta = meta_db.get_book_meta(task.run_id)
-    if book_meta and book_meta.get("status") == "running":
+    if book_meta and book_meta.get("status") in ["running", "deleting"]:
         return
+
     ensure_task_logger(task.run_id)
     with manage_project_status(task.run_id), logger.contextualize(run_id=task.run_id):
         if task.task_type == "write":
@@ -76,6 +78,95 @@ async def do_task(task: Task):
         else:
             raise ValueError(f"不支持的任务类型: {task.task_type}")
 
+
+
+###############################################################################
+
+
+def check_and_handle_pause(run_id: str):
+    """
+    检查项目状态, 如果在数据库中被标记为 'stopping', 则抛出异常以停止任务。
+    """
+    meta_db = get_meta_db()
+    book_meta = meta_db.get_book_meta(run_id)
+    if book_meta and book_meta.get("status") in ["stopping"]:
+        logger.info(f"检测到项目 '{run_id}' 状态为 'stopping', 正在停止当前任务...")
+        raise ValueError(f"任务因项目 '{run_id}' 状态变为 'stopping' 而停止。")
+
+
+
+###############################################################################
+
+
+@contextmanager
+def manage_delete_status(run_id: str):
+    """
+    一个上下文管理器, 用于在任务删除期间管理项目的运行状态。
+    进入时将项目状态设置为 'deleting', 退出时(无论成功或异常)设置为 'idle'。
+    """
+    meta_db: BookMetaDB = get_meta_db()
+    meta_db.update_status(run_id, "deleting")
+    try:
+        yield
+    finally:
+        meta_db.update_status(run_id, "idle")
+
+
+def delete_task(task: Task):
+    """
+    删除指定任务及其所有子任务, 并清理所有相关数据。
+    """
+    if not task:
+        raise ValueError("task 不能为空。")
+    run_id = task.run_id
+    task_id = task.id
+    if not run_id or not task_id:
+        raise ValueError("任务的 run_id 和 id 不能为空。")
+
+    meta_db = get_meta_db()
+    book_meta = meta_db.get_book_meta(run_id)
+    if book_meta and book_meta.get("status") != "idle":
+        logger.warning(f"项目 '{run_id}' 当前状态为 '{book_meta.get('status')}', 无法执行删除操作。")
+        return
+
+    ensure_task_logger(run_id)
+    with manage_delete_status(run_id), logger.contextualize(run_id=run_id):
+        logger.info(f"开始删除任务 '{task_id}' (项目状态 -> deleting)...")
+        task_db = get_task_db(run_id)
+        # 1. 获取所有待删除的任务信息 (包括子任务), 但不实际删除
+        tasks_to_delete = task_db.get_tasks_to_delete(task_id)
+        if not tasks_to_delete:
+            logger.warning(f"在数据库中未找到任务 '{task_id}' 或其子任务, 无需删除。")
+            return
+
+        from story.rag.base import get_kg, get_vector
+        from rag.vector_add import vector_delete
+        from rag.kg import kg_delete
+        
+        # 2. 逆序遍历任务列表 (从子任务到父任务), 逐个清理RAG数据并从数据库删除
+        # 这样可以保证操作的原子性, 如果中途失败, 下次可以继续
+        for task_info in reversed(tasks_to_delete):
+            deleted_id, deleted_type = task_info
+            try:
+                logger.debug(f"正在清理任务 {deleted_id} (类型: {deleted_type}) 的RAG数据...")
+                if deleted_type == "design":
+                    vector_delete(get_vector(run_id, "design"), deleted_id)
+                    kg_delete(get_kg(run_id, "design"), deleted_id)
+                elif deleted_type == "search":
+                    vector_delete(get_vector(run_id, "search"), deleted_id)
+                elif deleted_type == "write":
+                    kg_delete(get_kg(run_id, "write"), deleted_id)
+                    vector_delete(get_vector(run_id, "summary"), deleted_id)
+                
+                # 3. 在RAG数据清理成功后, 从数据库中删除该任务记录
+                task_db.delete_task_by_id(deleted_id)
+                logger.debug(f"已从数据库中删除任务 {deleted_id}。")
+            except Exception as e:
+                logger.error(f"删除任务 {deleted_id} 的过程中发生错误: {e}")
+                # 决定是继续还是中断, 这里选择记录错误并继续, 以尝试清理其他任务
+                continue
+
+        logger.success(f"已成功删除任务 '{task_id}' 及其所有子任务和相关数据。共处理 {len(tasks_to_delete)} 个任务。")
 
 
 ###############################################################################
@@ -141,16 +232,25 @@ async def do_write(current_task: Task):
         return
         
     with track_task_execution(current_task):
+        check_and_handle_pause(current_task.run_id)
         await do_plan(current_task)
+        check_and_handle_pause(current_task.run_id)
         task_result = await story.call_llm.design.aggregate(task_result)
+        check_and_handle_pause(current_task.run_id)
         task_result = await story.call_llm.search.aggregate(task_result)
+        check_and_handle_pause(current_task.run_id)
         task_result = await story.call_llm.write.atom(task_result)
+        check_and_handle_pause(current_task.run_id)
         if task_result.results["atom"] == "atom":
             task_result = await story.call_llm.write.write(task_result)
+            check_and_handle_pause(current_task.run_id)
             task_result = await story.call_llm.summary.summary(task_result)
+            check_and_handle_pause(current_task.run_id)
             task_result = await story.call_llm.summary.global_state(task_result)
+            check_and_handle_pause(current_task.run_id)
         elif task_result.results["atom"] == "complex":
             await do_hierarchy(task_result)
+            check_and_handle_pause(current_task.run_id)
             await story.call_llm.summary.aggregate(task_result)
         else:
             raise ValueError(f"未知的 'atom' 类型: '{task_result.results.get('atom')}'")
@@ -160,14 +260,18 @@ async def do_write(current_task: Task):
 async def do_plan(parent_task: Task):
     if not parent_task.results.get("plan", ""):
         parent_task = await story.call_llm.plan.all(parent_task)
+        check_and_handle_pause(parent_task.run_id)
     if not parent_task.results.get("plan", ""):
         raise ValueError(f"任务 '{parent_task.id}' 在执行 plan.all 后未能生成计划。")
     sub_task = await story.call_llm.plan.next(parent_task, None)
     while sub_task:
+        check_and_handle_pause(parent_task.run_id)
         if sub_task.task_type == "design":
             await do_design(sub_task)
+            check_and_handle_pause(parent_task.run_id)
         elif sub_task.task_type == "search":
             await do_search(sub_task)
+            check_and_handle_pause(parent_task.run_id)
         else:
             raise ValueError(f"do_plan 无法处理类型为 '{sub_task.task_type}' 的子任务。")
         sub_task = await story.call_llm.plan.next(parent_task, sub_task)
@@ -177,14 +281,17 @@ async def do_plan(parent_task: Task):
 async def do_hierarchy(parent_task: Task):
     if not parent_task.results.get("hierarchy", ""):
         parent_task = await story.call_llm.hierarchy.all(parent_task)
+        check_and_handle_pause(parent_task.run_id)
     if not parent_task.results.get("hierarchy", ""):
         raise ValueError(f"任务 '{parent_task.id}' 在执行 hierarchy.all 后未能生成层级结构。")
     sub_task = await story.call_llm.hierarchy.next(parent_task, None)
     while sub_task:
+        check_and_handle_pause(parent_task.run_id)
         if sub_task.task_type == "write":
             if is_daily_word_goal_reached(parent_task.run_id):
                 return
             await do_write(sub_task)
+            check_and_handle_pause(parent_task.run_id)
         else:
             raise ValueError(f"do_hierarchy 无法处理类型为 '{sub_task.task_type}' 的子任务。")
         sub_task = await story.call_llm.hierarchy.next(parent_task, sub_task)
@@ -205,16 +312,22 @@ async def do_design(current_task: Task):
         return
         
     with track_task_execution(current_task):
+        check_and_handle_pause(current_task.run_id)
         task_result = await story.call_llm.design.atom(current_task)
         if task_result.results["atom"] == "atom":
+            check_and_handle_pause(task_result.run_id)
             task_result = await story.call_llm.design.route(task_result)
+            check_and_handle_pause(task_result.run_id)
             task_result = await story.call_llm.design.design(task_result, task_result.results["expert"])
             if len(task_result.id.split(".")) <= 2:
+                check_and_handle_pause(task_result.run_id)
                 await story.call_llm.design.book_level_design(task_result)
         elif task_result.results["atom"] == "complex":
+            check_and_handle_pause(task_result.run_id)
             task_result = await story.call_llm.design.decomposition(task_result)
             if task_result.sub_tasks:
                 for sub_task in task_result.sub_tasks:
+                    check_and_handle_pause(task_result.run_id)
                     if sub_task.task_type == "design":
                         await do_design(sub_task)
                     elif sub_task.task_type == "search":
@@ -223,6 +336,7 @@ async def do_design(current_task: Task):
                         raise ValueError(f"do_design 无法处理分解出的类型为 '{sub_task.task_type}' 的子任务。")
                 task_result = await story.call_llm.design.aggregate(task_result)
                 if len(task_result.id.split(".")) <= 2:
+                    check_and_handle_pause(task_result.run_id)
                     await story.call_llm.design.book_level_design(task_result)
             else:
                 raise ValueError(f"复杂设计任务 '{task_result.id}' 分解后没有产生子任务。")
@@ -244,6 +358,7 @@ async def do_search(current_task: Task):
         return
     
     with track_task_execution(current_task):
+        check_and_handle_pause(current_task.run_id)
         await story.call_llm.search.search(current_task)
         # task_result = story.call_llm.search.atom(current_task)
         # if task_result.results["atom"] == "atom":
@@ -258,3 +373,6 @@ async def do_search(current_task: Task):
         #         raise ValueError(f"复杂搜索任务 '{task_result.id}' 分解后没有产生子任务。")
         # else:
         #     raise ValueError(f"未知的 'atom' 类型: '{task_result.results.get('atom')}'")
+
+
+###############################################################################
